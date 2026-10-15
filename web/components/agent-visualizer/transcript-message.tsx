@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { historyArchive } from '@/lib/history-archive'
 import { COLORS } from '@/lib/colors'
 import { ToolContentRenderer } from './tool-content-renderer'
 import type { ConversationMessage } from '@/hooks/simulation/types'
@@ -21,8 +22,16 @@ export function HighlightText({ text, query }: { text: string; query?: string })
   )
 }
 
-export function TranscriptMessage({ message, compact = false, searchQuery, assistantLabel = 'CLAUDE' }: { message: ConversationMessage; compact?: boolean; searchQuery?: string; assistantLabel?: string }) {
+export function TranscriptMessage({ message: recentMessage, sessionId, compact = false, searchQuery, assistantLabel = 'CLAUDE' }: { message: ConversationMessage; sessionId?: string | null; compact?: boolean; searchQuery?: string; assistantLabel?: string }) {
   const [expanded, setExpanded] = useState(false)
+  const [detail, setDetail] = useState<ConversationMessage | undefined>()
+  useEffect(() => {
+    if (!sessionId || !recentMessage.hasDetails) return
+    let cancelled = false
+    void historyArchive.getMessageDetail(sessionId, recentMessage).then(value => { if (!cancelled) setDetail(value) }).catch(() => {})
+    return () => { cancelled = true; setDetail(undefined) }
+  }, [sessionId, recentMessage.id, recentMessage.hasDetails])
+  const message = detail ?? recentMessage
 
   switch (message.type) {
     case 'user':
@@ -119,7 +128,7 @@ export function TranscriptMessage({ message, compact = false, searchQuery, assis
 
     case 'tool_result': {
       const resultText = message.content.replace(/^< /, '')
-      const isBash = message.toolName === 'Bash'
+      const isBash = ['Bash', 'exec_command', 'exec', 'write_stdin'].includes(message.toolName?.split('.').pop() || '')
       return (
         <div
           className="rounded px-2.5 py-1 text-[9px] font-mono"

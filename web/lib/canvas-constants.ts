@@ -106,7 +106,7 @@ export const ANIM_SPEED = {
   /** Discovery fade-out after hold expires (opacity per dt) */
   discoveryFadeOut: 0.5,
   /** Particle speed multiplier */
-  particleSpeed: 1.2,
+  particleSpeed: 0.85,
   /** Default delta time cap (seconds) */
   maxDeltaTime: 0.1,
   /** Default delta time when time info unavailable */

@@ -54,7 +54,7 @@ export function drawCostLabels(
     if (cost < COST_DRAW.minDisplayCost) continue
 
     const r = agent.isMain ? NODE.radiusMain : NODE.radiusSub
-    const pillY = agent.y - r - COST_DRAW.pillYOffset
+    const pillY = agent.y - r - COST_DRAW.pillYOffset - 38
 
     // Floating cost pill
     const label = `$${cost < 0.01 ? cost.toFixed(4) : cost.toFixed(3)}`

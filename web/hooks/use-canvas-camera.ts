@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback, type MutableRefObject } from 'react'
 import { Agent, ToolCallNode, Discovery, ANIM, NODE } from '@/lib/agent-types'
 import { BUBBLE_HOLD, BUBBLE_FADE_OUT, BUBBLE_MAX_W, TOOL_CARD_W, TOOL_CARD_H, DISC_BOUNDS_HALF_W, DISC_BOUNDS_HALF_H } from '@/lib/canvas-constants'
+import { graphFit } from '@/lib/graph-presentation'
 
 /** Extra padding added to agent node radii for auto-fit bounding box */
 const AUTOFIT_AGENT_PADDING = 22
@@ -20,6 +21,8 @@ interface CameraOptions {
     dimensions: { width: number; height: number }
     selectedAgentId: string | null
     pauseAutoFit?: boolean
+    compact?: boolean
+    topInset?: number
     isDragging: boolean
   }>
   simTimeRef: MutableRefObject<number>
@@ -41,6 +44,7 @@ export function useCanvasCamera({
   const transformRef = useRef<Transform>({ x: 0, y: 0, scale: 1 })
   const userHasNavigatedRef = useRef(false)
   const targetTransformRef = useRef<Transform | null>(null)
+  const hasFittedRef = useRef(false)
   const panVelocityRef = useRef({ vx: 0, vy: 0, active: false })
 
   // Cache for computeFitTransform — avoids O(n) iteration every frame.
@@ -50,8 +54,11 @@ export function useCanvasCamera({
     toolCalls: Map<string, ToolCallNode> | null
     discoveries: Discovery[] | null
     selectedAgentId: string | null
+    dimensions: { width: number; height: number } | null
+    compact?: boolean
+    topInset?: number
     result: Transform | null
-  }>({ agents: null, toolCalls: null, discoveries: null, selectedAgentId: null, result: null })
+  }>({ agents: null, toolCalls: null, discoveries: null, selectedAgentId: null, dimensions: null, result: null })
 
   // Initialize transform centered on first agents
   useEffect(() => {
@@ -77,7 +84,7 @@ export function useCanvasCamera({
   }, [])
 
   const computeFitTransform = useCallback((): Transform | null => {
-    const { agents, toolCalls, discoveries, dimensions, selectedAgentId } = drawPropsRef.current
+    const { agents, toolCalls, discoveries, dimensions, selectedAgentId, compact, topInset } = drawPropsRef.current
     if (agents.size === 0) return null
 
     // Return cached result if inputs haven't changed (reference equality —
@@ -86,13 +93,14 @@ export function useCanvasCamera({
     if (cache.agents === agents
       && cache.toolCalls === toolCalls
       && cache.discoveries === discoveries
+      && cache.dimensions === dimensions && cache.compact === compact && cache.topInset === topInset
       && cache.selectedAgentId === selectedAgentId) {
       return cache.result
     }
 
     // Determine focus scope: if a non-main agent is selected, focus on it + descendants
     let focusScope: Set<string> | null = null
-    if (selectedAgentId) {
+    if (selectedAgentId && !compact) {
       const selected = agents.get(selectedAgentId)
       if (selected && !selected.isMain) {
         focusScope = getDescendantIds(agents, selectedAgentId)
@@ -103,11 +111,11 @@ export function useCanvasCamera({
     for (const [id, agent] of agents) {
       if (focusScope && !focusScope.has(id)) continue
       const r = (agent.isMain ? NODE.radiusMain : NODE.radiusSub) + AUTOFIT_AGENT_PADDING
-      minX = Math.min(minX, agent.x - r)
-      maxX = Math.max(maxX, agent.x + r)
+      minX = Math.min(minX, agent.x - Math.max(r, compact ? 115 : 130))
+      maxX = Math.max(maxX, agent.x + Math.max(r, compact ? 115 : 130))
       minY = Math.min(minY, agent.y - r)
-      maxY = Math.max(maxY, agent.y + r)
-      if (agent.messageBubbles.length > 0) {
+      maxY = Math.max(maxY, agent.y + r + 100)
+      if (!compact && agent.messageBubbles.length > 0) {
         const visibleCount = agent.messageBubbles.filter(b => {
           const age = (simTimeRef.current ?? 0) - b.time
           return age <= BUBBLE_HOLD + BUBBLE_FADE_OUT
@@ -140,21 +148,11 @@ export function useCanvasCamera({
       }
     }
     if (minX === Infinity) {
-      fitCacheRef.current = { agents, toolCalls, discoveries, selectedAgentId, result: null }
+      fitCacheRef.current = { agents, toolCalls, discoveries, selectedAgentId, dimensions, compact, topInset, result: null }
       return null
     }
-    const padding = ANIM.viewportPadding
-    const boundsW = maxX - minX + padding * 2
-    const boundsH = maxY - minY + padding * 2
-    const centerX = (minX + maxX) / 2
-    const centerY = (minY + maxY) / 2
-    const scale = Math.min(dimensions.width / boundsW, dimensions.height / boundsH, 2)
-    const result = {
-      x: dimensions.width / 2 - centerX * scale,
-      y: dimensions.height / 2 - centerY * scale,
-      scale,
-    }
-    fitCacheRef.current = { agents, toolCalls, discoveries, selectedAgentId, result }
+    const result = graphFit({ minX, maxX, minY, maxY }, dimensions.width, dimensions.height, !!compact, agents.size, topInset)
+    fitCacheRef.current = { agents, toolCalls, discoveries, selectedAgentId, dimensions, compact, topInset, result }
     return result
   }, [getDescendantIds, drawPropsRef, simTimeRef])
 
@@ -188,6 +186,8 @@ export function useCanvasCamera({
   /** Call from draw loop to update inertia and auto-fit lerp */
   const updateCamera = useCallback((isDragging: boolean, pauseAutoFit?: boolean) => {
     const transform = transformRef.current
+    // A pending fit must not keep moving the camera after manual pan/zoom.
+    if (userHasNavigatedRef.current || isDragging) targetTransformRef.current = null
 
     // Pan inertia
     const inertia = panVelocityRef.current
@@ -203,7 +203,13 @@ export function useCanvasCamera({
     // Auto-fit
     if (!userHasNavigatedRef.current && !isDragging && !pauseAutoFit) {
       const fit = computeFitTransform()
-      if (fit) targetTransformRef.current = fit
+      if (fit) {
+        if (!hasFittedRef.current) {
+          transformRef.current = fit
+          hasFittedRef.current = true
+        }
+        targetTransformRef.current = fit
+      }
     }
 
     // Smooth lerp toward target

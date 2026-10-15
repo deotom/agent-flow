@@ -5,9 +5,14 @@ import { COLORS, getStateColor } from '@/lib/colors'
 import { TranscriptMessage } from './transcript-message'
 import type { ConversationMessage } from '@/hooks/simulation/types'
 import { PanelHeader, SlidingPanel, stopPropagationHandlers } from './shared-ui'
+import { useArchivePage } from '@/hooks/use-archive-page'
+import type { MessageRow } from '@/lib/history-archive'
 import { useAutoScroll } from '@/hooks/use-auto-scroll'
 
 interface ChatPanelProps {
+  sessionId?: string | null
+  agentId?: string | null
+  round?: number
   visible: boolean
   agentName: string
   agentState: AgentState
@@ -17,13 +22,16 @@ interface ChatPanelProps {
 }
 
 export function AgentChatPanel({
+  sessionId, agentId, round,
   visible,
   agentName,
   agentState,
-  conversation,
+  conversation: recentConversation,
   runtime,
   onClose,
 }: ChatPanelProps) {
+  const archive = useArchivePage<MessageRow>(visible, sessionId, 'messages', { agent: agentId ?? undefined, round })
+  const conversation = archive.items.length && !archive.error ? [...archive.items].reverse() : recentConversation
   const { ref: logRef } = useAutoScroll(conversation.length, visible)
 
   const stateColor = getStateColor(agentState)
@@ -37,6 +45,7 @@ export function AgentChatPanel({
       {...stopPropagationHandlers}
     >
       <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', maxHeight: CARD.chat.maxHeight }}>
+        {sessionId && visible && <div className="flex justify-between text-xs p-2"><button disabled={archive.pageNumber === 1} onClick={archive.newer}>Newer messages</button><button disabled={!archive.more} onClick={archive.older}>Older messages</button></div>}
         <PanelHeader onClose={onClose} className="mb-2 flex-shrink-0">
           <div
             className="w-1.5 h-1.5 rounded-full"
@@ -64,7 +73,7 @@ export function AgentChatPanel({
             </div>
           ) : (
             conversation.map((msg) => (
-              <TranscriptMessage key={msg.id} message={msg} assistantLabel={runtime === 'codex' ? 'CODEX' : 'CLAUDE'} />
+              <TranscriptMessage sessionId={sessionId} key={msg.id} message={msg} assistantLabel={runtime === 'codex' ? 'CODEX' : 'CLAUDE'} />
             ))
           )}
         </div>

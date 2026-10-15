@@ -16,14 +16,21 @@
   "categories": ["Visualization", "Other"],
   "keywords": ["llm", "agent", "claude", "codex", "ai", "visualization", "orchestration"],
   "activationEvents": [
+    "onView:agentVisualizer.explorer",
     "onWebviewPanel:agentVisualizer"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
+        "command": "agentVisualizer.showInExplorer",
+        "title": "Show Graph in Explorer",
+        "category": "Agent Flow"
+      },
+      {
         "command": "agentVisualizer.open",
         "title": "Open Agent Flow",
+        "icon": "$(open-in-editor)",
         "category": "Agent Flow"
       },
       {
@@ -49,9 +56,50 @@
         "mac": "cmd+alt+a"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "id": "agentVisualizer.explorer",
+          "name": "Agent Flow",
+          "type": "webview",
+          "when": "config.agentVisualizer.showExplorerGraph"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "agentVisualizer.open",
+          "when": "view == agentVisualizer.explorer",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "Agent Flow",
       "properties": {
+        "agentVisualizer.animationMode": {
+          "type": "string",
+          "enum": ["full", "low", "off"],
+          "default": "full",
+          "description": "Graph effects: full animation, lower GPU usage, or static effects."
+        },
+        "agentVisualizer.animationSpeed": {
+          "type": "number", "minimum": 0.25, "maximum": 2, "default": 1,
+          "description": "Visual animation speed. Does not change agent execution or timeline playback speed."
+        },
+        "agentVisualizer.showExplorerGraph": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the compact Agent Flow graph in the Explorer sidebar."
+        },
+        "agentVisualizer.codexHistoryLimit": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 0,
+          "maximum": 50,
+          "description": "Number of recent Codex sessions to restore for this workspace on startup, regardless of creation date. Set to 0 for live sessions only. Reload the window after changing this setting."
+        },
         "agentVisualizer.runtime": {
           "type": "string",
           "enum": ["auto", "claude", "codex"],

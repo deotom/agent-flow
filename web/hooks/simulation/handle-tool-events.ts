@@ -16,6 +16,7 @@ export function handleToolCallStart(
 ): void {
   const agentName = asString(payload.agent)
   const toolName = asString(payload.tool)
+  const callId = typeof payload.callId === 'string' ? payload.callId : undefined
   const args = asString(payload.args)
   const inputData = (payload.inputData && typeof payload.inputData === 'object' && !Array.isArray(payload.inputData))
     ? payload.inputData as Record<string, unknown> : undefined
@@ -26,7 +27,7 @@ export function handleToolCallStart(
     // created within the last 3 seconds (race between Hook Server and Session Watcher)
     let isDuplicate = false
     for (const tc of state.toolCalls.values()) {
-      if (tc.agentId === agentName && tc.toolName === toolName && tc.state === 'running' && (currentTime - tc.startTime) < TOOL_DEDUP_WINDOW_S) {
+      if (callId ? tc.callId === callId : tc.agentId === agentName && tc.toolName === toolName && tc.state === 'running' && (currentTime - tc.startTime) < TOOL_DEDUP_WINDOW_S) {
         isDuplicate = true
         break
       }
@@ -40,12 +41,12 @@ export function handleToolCallStart(
       toolCalls: agent.toolCalls + 1
     })
 
-    const toolId = `tool-${agentName}-${toolName}-${currentTime}`
+    const toolId = callId ? `tool-${agentName}-${callId}` : `tool-${agentName}-${toolName}-${currentTime}`
 
     const pos = ctx.findToolSlot(agent, state.agents, state.toolCalls, currentTime)
 
     state.toolCalls.set(toolId, {
-      id: toolId, agentId: agentName, toolName,
+      id: toolId, agentId: agentName, toolName, callId,
       state: 'running',
       args,
       inputData,
@@ -72,18 +73,23 @@ export function handleToolCallStart(
     }
 
     // Track file attention
-    if (toolName === 'Read' || toolName === 'Edit' || toolName === 'Write') {
-      const filePath = extractFilePath(inputData, args)
-      if (filePath) {
-        const prev = state.fileAttention.get(filePath)
-        const updated = prev
-          ? { ...prev, agents: [...prev.agents] }
-          : { path: filePath, reads: 0, edits: 0, totalTokens: 0, lastAccessed: currentTime, agents: [] as string[] }
-        if (toolName === 'Read') updated.reads++
-        else updated.edits++
-        updated.lastAccessed = currentTime
-        if (!updated.agents.includes(agentName)) updated.agents.push(agentName)
-        state.fileAttention.set(filePath, updated)
+    const baseTool = toolName.split('.').pop()
+    if (baseTool === 'Read' || baseTool === 'Edit' || baseTool === 'Write' || baseTool === 'apply_patch') {
+      const paths = Array.isArray(inputData?.file_paths)
+        ? inputData.file_paths.filter((value): value is string => typeof value === 'string')
+        : [extractFilePath(inputData, args)]
+      for (const filePath of paths) {
+        if (filePath) {
+          const prev = state.fileAttention.get(filePath)
+          const updated = prev
+            ? { ...prev, agents: [...prev.agents] }
+            : { path: filePath, reads: 0, edits: 0, totalTokens: 0, lastAccessed: currentTime, agents: [] as string[] }
+          if (baseTool === 'Read') updated.reads++
+          else updated.edits++
+          updated.lastAccessed = currentTime
+          if (!updated.agents.includes(agentName)) updated.agents.push(agentName)
+          state.fileAttention.set(filePath, updated)
+        }
       }
     }
 
@@ -102,6 +108,7 @@ export function handleToolCallEnd(
 ): void {
   const agentName = asString(payload.agent)
   const toolName = asString(payload.tool)
+  const callId = typeof payload.callId === 'string' ? payload.callId : undefined
   const result = asString(payload.result, 'Done')
   const tokenCost = typeof payload.tokenCost === 'number' ? payload.tokenCost : undefined
   const isError = asBoolean(payload.isError)
@@ -118,8 +125,8 @@ export function handleToolCallEnd(
 
     const toolState: 'error' | 'complete' = isError ? 'error' : 'complete'
     for (const [id, tc] of state.toolCalls) {
-      if (tc.agentId === agentName && tc.toolName === toolName && tc.state === 'running') {
-        state.toolCalls.set(id, { ...tc, state: toolState, completeTime: currentTime, result, tokenCost, errorMessage: isError ? (errorMessage || result) : undefined })
+      if (tc.agentId === agentName && tc.toolName === toolName && tc.state === 'running' && (!callId || tc.callId === callId)) {
+        state.toolCalls.set(id, { ...tc, archived: false, historical: false, state: toolState, completeTime: currentTime, result, tokenCost, errorMessage: isError ? (errorMessage || result) : undefined })
 
         const edgeId = `edge-${id}`
         // Snap any still-traveling outgoing particle to the end
@@ -137,6 +144,12 @@ export function handleToolCallEnd(
       }
     }
 
+    const stillRunning = Array.from(state.toolCalls.values()).find(tc => tc.agentId === agentName && tc.state === 'running')
+    if (stillRunning) {
+      const updatedAgent = state.agents.get(agentName)!
+      state.agents.set(agentName, { ...updatedAgent, state: 'tool_calling', currentTool: stillRunning.toolName })
+    }
+
     // Timeline block end
     const entry = state.timelineEntries.get(agentName)
     if (entry) {
@@ -147,12 +160,12 @@ export function handleToolCallEnd(
           lastBlock.label = `${toolName}: FAILED`
         }
       }
-      pushTimelineBlock(entry, currentTime, { type: 'thinking', label: 'Thinking...', color: COLORS.thinking }, ctx)
+      if (!stillRunning) pushTimelineBlock(entry, currentTime, { type: 'thinking', label: 'Thinking...', color: COLORS.thinking }, ctx)
     }
 
     // File attention token cost
     if (tokenCost) {
-      const matchedTc = Array.from(state.toolCalls.values()).find(tc => tc.agentId === agentName && tc.toolName === toolName)
+      const matchedTc = Array.from(state.toolCalls.values()).find(tc => tc.agentId === agentName && tc.toolName === toolName && (!callId || tc.callId === callId))
       const filePath = extractFilePath(matchedTc?.inputData, matchedTc?.args)
       if (filePath) {
         const existing = state.fileAttention.get(filePath)

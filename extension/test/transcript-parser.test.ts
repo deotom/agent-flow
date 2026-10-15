@@ -122,7 +122,7 @@ describe('background subagents (#92)', () => {
     feed(taskNotification('toolu_1'))
 
     assert.deepEqual(ofType(events, 'subagent_return').map(e => e.payload), [
-      { child: 'Find callers', parent: 'orchestrator', summary: 'Found 3 callers.' },
+      { child: 'Find callers', parent: 'orchestrator', summary: 'Found 3 callers.', received: true },
     ])
     assert.deepEqual(ofType(events, 'agent_complete').map(e => e.payload), [{ name: 'Find callers' }])
     // The notification is not shown as a user message

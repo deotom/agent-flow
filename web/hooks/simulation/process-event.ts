@@ -7,10 +7,11 @@ import {
   type TimelineBlock,
 } from '@/lib/agent-types'
 import type { SimulationState, ConversationMessage } from './types'
-import { handleAgentSpawn, handleAgentComplete, handleAgentIdle, handlePermissionRequested, handleModelDetected } from './handle-agent-events'
+import { handleAgentSpawn, handleAgentComplete, handleAgentIdle, handleAgentThinking, handlePermissionRequested, handleModelDetected } from './handle-agent-events'
 import { handleToolCallStart, handleToolCallEnd } from './handle-tool-events'
 import { handleMessage, handleContextUpdate } from './handle-message-events'
 import { handleSubagentDispatch, handleSubagentReturn } from './handle-subagent-events'
+import { trackWorkEvent } from './work-rounds'
 
 export interface ProcessEventContext {
   syncForceSimulation: (agents: Map<string, Agent>, edges: Edge[]) => void
@@ -73,7 +74,8 @@ export function processEvent(event: SimulationEvent, prev: SimulationState, ctx:
       switch (event.type) {
         case 'agent_spawn':       handleAgentSpawn(event.payload, prev.currentTime, state, ctx); break
         case 'agent_complete':    handleAgentComplete(event.payload, prev.currentTime, state, ctx); break
-        case 'agent_idle':        handleAgentIdle(event.payload, state); break
+        case 'agent_idle':        handleAgentIdle(event.payload, state, prev.currentTime, ctx); break
+        case 'agent_thinking':    handleAgentThinking(event.payload, prev.currentTime, state, ctx); break
         case 'model_detected':    handleModelDetected(event.payload, state, ctx); break
         case 'tool_call_start':   handleToolCallStart(event.payload, prev.currentTime, state, ctx); break
         case 'tool_call_end':     handleToolCallEnd(event.payload, prev.currentTime, state, ctx); break
@@ -84,15 +86,30 @@ export function processEvent(event: SimulationEvent, prev: SimulationState, ctx:
         case 'permission_requested': handlePermissionRequested(event.payload, prev.currentTime, state, ctx); break
       }
 
+      if (event.historical) {
+        state.particles = []
+        state.discoveries = []
+        for (const [id, tool] of state.toolCalls) {
+          if (tool !== prev.toolCalls.get(id)) state.toolCalls.set(id, { ...tool, historical: true, opacity: 0 })
+        }
+        for (const [id, agent] of state.agents) {
+          if (agent !== prev.agents.get(id)) state.agents.set(id, {
+            ...agent, messageBubbles: [],
+            opacity: agent.state === 'complete' && !agent.isMain ? 0 : 1, scale: 1,
+          })
+        }
+      }
+
       // Stabilize references for unchanged collections to prevent
       // downstream React useMemo/re-render cascades (O(n log n) sorts etc.)
-      return {
+      return trackWorkEvent(event, prev, {
         ...prev,
+        receivedEventCount: Math.max(prev.receivedEventCount, event.sequence ?? 0),
         agents: state.agents, toolCalls: state.toolCalls,
         particles: state.particles, edges: state.edges,
         discoveries: state.discoveries,
         fileAttention: mapsEqual(prev.fileAttention, state.fileAttention) ? prev.fileAttention : state.fileAttention,
         timelineEntries: mapsEqual(prev.timelineEntries, state.timelineEntries) ? prev.timelineEntries : state.timelineEntries,
         conversations: mapsEqual(prev.conversations, state.conversations) ? prev.conversations : state.conversations,
-      }
+      })
 }

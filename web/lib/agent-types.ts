@@ -13,6 +13,7 @@ export interface ContextBreakdown {
 }
 
 export interface Agent {
+  round?: number
   id: string
   name: string
   state: AgentState
@@ -38,6 +39,9 @@ export interface Agent {
   task?: string
   spawnTime: number
   completeTime?: number
+  activityFade?: number
+  resultPulse?: number
+  returnStartedAt?: number
   opacity: number
   scale: number
   /** Queued text bubbles shown on canvas — newest pushed to end */
@@ -59,7 +63,13 @@ export interface MessageBubble {
 
 // Rich tool call with actual content
 export interface ToolCallNode {
+  archived?: boolean
+  inputsArchived?: boolean
+  round?: number
+  /** Restored calls retain correlation data without replaying canvas effects. */
+  historical?: boolean
   id: string
+  callId?: string
   agentId: string
   toolName: string
   state: 'running' | 'complete' | 'error'
@@ -102,6 +112,7 @@ export interface FileAttention {
 
 // Timeline entry for Gantt view
 export interface TimelineEntry {
+  model?: string
   id: string
   agentId: string
   agentName: string
@@ -129,6 +140,7 @@ export interface TimelineEvent {
 }
 
 export interface Edge {
+  flowLabel?: string
   id: string
   from: string
   to: string
@@ -148,11 +160,14 @@ export interface Particle {
 }
 
 export interface SimulationEvent {
+  sequence?: number
+  historical?: boolean
   time: number
   type:
     | 'agent_spawn'
     | 'agent_complete'
     | 'agent_idle'
+    | 'agent_thinking'
     | 'message'
     | 'context_update'
     | 'model_detected'
@@ -177,8 +192,8 @@ export interface DepthParticle {
 // ─── Layout Constants ────────────────────────────────────────────────────────
 
 export const NODE = {
-  radiusMain: 28,
-  radiusSub: 20,
+  radiusMain: 48,
+  radiusSub: 32,
 } as const
 
 export const CARD = {

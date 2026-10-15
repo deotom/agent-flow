@@ -32,5 +32,8 @@ jobs:
       - name: Extension typecheck
         run: pnpm --filter agent-flow run lint
 
+      - name: Web tests
+        run: pnpm --dir web test
+
       - name: Web typecheck
         run: pnpm --dir web exec tsc --noEmit

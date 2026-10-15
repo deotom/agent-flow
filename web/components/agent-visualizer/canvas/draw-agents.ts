@@ -1,13 +1,28 @@
 import { Agent, NODE, ANIM } from '@/lib/agent-types'
-import { COLORS, getStateColor, contextSegments } from '@/lib/colors'
+import { COLORS, getStateColor } from '@/lib/colors'
 import {
-  AGENT_DRAW, CONTEXT_BAR, CONTEXT_RING, STATS_OVERLAY,
+  AGENT_DRAW, STATS_OVERLAY,
 } from '@/lib/canvas-constants'
-import { alphaHex, formatTokens } from '@/lib/utils'
+import { alphaHex, formatModelName } from '@/lib/utils'
 import { truncateText, drawHexagon, CLAUDE_SPARK_D, OPENAI_LOGO_D, OPENAI_LOGO_VIEWBOX } from './draw-misc'
 import { getAgentGlowSprite } from './render-cache'
 
 let _claudeSparkPath: Path2D | null = null
+export function contextGaugeColor(used: number, capacity: number): string {
+  const usage = used / Math.max(1, capacity)
+  return usage >= 0.9 ? COLORS.error : usage >= 0.8 ? COLORS.tool : COLORS.holoBase
+}
+export function agentStatusLabel(agent: Pick<Agent, 'state' | 'currentTool'>, time: number): string {
+  switch (agent.state) {
+    case 'thinking': return `Thinking${'.'.repeat(1 + Math.floor(time * 2) % 3)}`
+    case 'tool_calling': return `Running ${agent.currentTool?.split('.').pop() ?? 'tool'}`
+    case 'waiting_permission': return 'Approval needed'
+    case 'complete': return 'Done'
+    case 'error': return 'Tool failed'
+    case 'paused': return 'Paused'
+    default: return 'Ready'
+  }
+}
 export function getClaudeSparkPath() {
   if (!_claudeSparkPath) _claudeSparkPath = new Path2D(CLAUDE_SPARK_D)
   return _claudeSparkPath
@@ -56,121 +71,53 @@ export function drawAgentBrand(
   else drawClaudeSpark(ctx, cx, cy, r, color)
 }
 
-export function drawContextComposition(
-  ctx: CanvasRenderingContext2D,
-  agent: Agent,
-  radius: number,
-) {
-  const bd = agent.contextBreakdown
-  const total = agent.tokensUsed
-  if (total <= 0) return
-
-  const barWidth = Math.max(CONTEXT_BAR.minWidth, radius * CONTEXT_BAR.widthMultiplier)
-  const barHeight = CONTEXT_BAR.barHeight
-  const barX = agent.x - barWidth / 2
-  const barY = agent.y + radius + CONTEXT_BAR.yOffset
-
-  // Background
-  ctx.fillStyle = COLORS.cardBgDark
+export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radius: number, time = 0, effectsEnabled = false) {
+  if (agent.state === 'complete' && !agent.isMain) return
+  const usage = Math.min(1, Math.max(0, agent.tokensUsed / Math.max(1, agent.tokensMax)))
+  const ringRadius = radius + 10
+  const slots = agent.isMain ? 36 : 24
+  const step = Math.PI * 2 / slots
+  const gap = step * 0.3
+  const filled = usage * slots
+  const last = Math.ceil(filled) - 1
+  ctx.save()
+  const opacity = ctx.globalAlpha
+  ctx.lineCap = 'butt'
+  ctx.lineWidth = 0.7
+  ctx.strokeStyle = COLORS.holoBase
+  ctx.globalAlpha = opacity * 0.12
   ctx.beginPath()
-  ctx.roundRect(barX - 2, barY - 2, barWidth + 4, barHeight + 14, CONTEXT_BAR.borderRadius)
-  ctx.fill()
-
-  // Label
-  ctx.fillStyle = COLORS.textMuted
-  ctx.font = `${CONTEXT_BAR.fontSize}px monospace`
-  ctx.textAlign = 'center'
-  ctx.fillText(`${formatTokens(total)} / ${formatTokens(agent.tokensMax)} tokens`, agent.x, barY + barHeight + CONTEXT_BAR.labelPadding)
-
-  // Segments
-  const segments = contextSegments(bd)
-
-  let x = barX
-  const maxWidth = barWidth * (total / agent.tokensMax)
-
-  for (const seg of segments) {
-    if (seg.value <= 0) continue
-    const segWidth = (seg.value / total) * maxWidth
-    ctx.fillStyle = seg.color
-    ctx.fillRect(x, barY, segWidth, barHeight)
-    x += segWidth
+  ctx.arc(agent.x, agent.y, ringRadius, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.lineWidth = agent.isMain ? 1.8 : 1.2
+  ctx.strokeStyle = contextGaugeColor(agent.tokensUsed, agent.tokensMax)
+  // Even angular spacing stays consistent at every zoom level. Only the tip pulses.
+  ctx.globalAlpha = opacity * 0.66
+  ctx.beginPath()
+  for (let index = 0; index < last; index++) {
+    const start = -Math.PI / 2 + index * step + gap / 2
+    ctx.moveTo(agent.x + Math.cos(start) * ringRadius, agent.y + Math.sin(start) * ringRadius)
+    ctx.arc(agent.x, agent.y, ringRadius, start, start + step - gap)
   }
-
-  // Remaining capacity
-  if (x < barX + barWidth) {
-    ctx.fillStyle = COLORS.holoBg05
-    ctx.fillRect(x, barY, barX + barWidth - x, barHeight)
+  if (last > 0) ctx.stroke()
+  if (last >= 0) {
+    const start = -Math.PI / 2 + last * step + gap / 2
+    const fraction = Math.min(1, filled - last)
+    ctx.globalAlpha = opacity * (effectsEnabled ? 0.58 + (1 - Math.cos(time * 2.2)) * 0.21 : 0.9)
+    ctx.beginPath()
+    ctx.arc(agent.x, agent.y, ringRadius, start, start + (step - gap) * fraction)
+    ctx.stroke()
   }
-
-  ctx.strokeStyle = COLORS.glassBorder
-  ctx.lineWidth = 0.5
-  ctx.strokeRect(barX, barY, barWidth, barHeight)
+  ctx.restore()
 }
 
-export function drawContextRing(
-  ctx: CanvasRenderingContext2D,
-  agent: Agent,
-  radius: number,
-  time: number,
-) {
-  const bd = agent.contextBreakdown
-  const total = agent.tokensUsed
-  if (total <= 0) return
-
-  const usage = total / agent.tokensMax
-  const ringR = radius + CONTEXT_RING.ringOffset
-  const ringW = CONTEXT_RING.ringWidth
-  const startAngle = -Math.PI / 2
-
-  // Background ring (empty capacity)
-  ctx.beginPath()
-  ctx.arc(agent.x, agent.y, ringR, 0, Math.PI * 2)
-  ctx.strokeStyle = COLORS.holoBorder06
-  ctx.lineWidth = ringW
-  ctx.stroke()
-
-  // Filled segments
-  const segments = contextSegments(bd)
-
-  let currentAngle = startAngle
-  for (const seg of segments) {
-    if (seg.value <= 0) continue
-    const sweep = (seg.value / agent.tokensMax) * Math.PI * 2
-    ctx.beginPath()
-    ctx.arc(agent.x, agent.y, ringR, currentAngle, currentAngle + sweep)
-    ctx.strokeStyle = seg.color
-    ctx.lineWidth = ringW
-    ctx.stroke()
-    currentAngle += sweep
-  }
-
-  // Warning glow at high usage
-  if (usage > CONTEXT_RING.warningThreshold) {
-    const warningColor = usage > CONTEXT_RING.criticalThreshold ? COLORS.error : COLORS.tool
-    const intensity = usage > CONTEXT_RING.criticalThreshold
-      ? 0.35 + Math.sin(time * 6) * 0.2
-      : 0.15 + Math.sin(time * 3) * 0.1
-
-    ctx.save()
-    ctx.beginPath()
-    ctx.arc(agent.x, agent.y, ringR + CONTEXT_RING.glowPadding, 0, Math.PI * 2)
-    ctx.strokeStyle = warningColor
-    ctx.lineWidth = CONTEXT_RING.glowLineWidth
-    ctx.globalAlpha = intensity
-    ctx.shadowColor = warningColor
-    ctx.shadowBlur = CONTEXT_RING.glowBlur
-    ctx.stroke()
-    ctx.restore()
-  }
-
-  // Percentage label when usage is high
-  if (usage > CONTEXT_RING.percentLabelThreshold) {
-    ctx.font = `${CONTEXT_BAR.fontSize}px monospace`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'bottom'
-    ctx.fillStyle = usage > CONTEXT_RING.criticalThreshold ? COLORS.error : usage > CONTEXT_RING.warningThreshold ? COLORS.tool : COLORS.textDim
-    ctx.fillText(`${Math.floor(usage * 100)}%`, agent.x, agent.y - radius - CONTEXT_RING.percentYOffset)
-  }
+export function drawContextComposition(ctx: CanvasRenderingContext2D, agent: Agent, radius: number, labelScale = 1) {
+  if (agent.tokensUsed <= 0) return
+  ctx.fillStyle = contextGaugeColor(agent.tokensUsed, agent.tokensMax)
+  ctx.font = `${10 * labelScale}px "Segoe UI", sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'top'
+  ctx.fillText(`CTX ${Math.round(agent.tokensUsed / Math.max(1, agent.tokensMax) * 100)}%`, agent.x, agent.y + radius + 12 + 57 * labelScale)
 }
 
 function drawDepthShadow(ctx: CanvasRenderingContext2D, agent: Agent, r: number) {
@@ -187,7 +134,7 @@ function drawDepthShadow(ctx: CanvasRenderingContext2D, agent: Agent, r: number)
 
 function drawAgentGlow(ctx: CanvasRenderingContext2D, agent: Agent, r: number, color: string, isHovered: boolean, isSelected: boolean, isWaiting: boolean) {
   const glowR = r + AGENT_DRAW.glowPadding
-  const glowAlpha = isHovered || isSelected ? 0.35 : isWaiting ? 0.3 : agent.state === 'thinking' ? 0.2 : 0.1
+  const glowAlpha = isHovered || isSelected ? 0.18 : isWaiting ? 0.12 : agent.state === 'thinking' ? 0.09 : 0.04
   // Pre-rendered glow sprite instead of per-frame gradient creation
   const sprite = getAgentGlowSprite(color, Math.round(r * 0.5), Math.ceil(glowR), alphaHex(glowAlpha))
   ctx.drawImage(sprite, agent.x - Math.ceil(glowR), agent.y - Math.ceil(glowR))
@@ -220,7 +167,7 @@ function drawScanline(ctx: CanvasRenderingContext2D, agent: Agent, r: number, co
   ctx.restore()
 }
 
-function drawStateRing(ctx: CanvasRenderingContext2D, agent: Agent, r: number, color: string, isHovered: boolean, isSelected: boolean, isWaiting: boolean, time: number) {
+function drawStateRing(ctx: CanvasRenderingContext2D, agent: Agent, r: number, color: string, isHovered: boolean, isSelected: boolean, isWaiting: boolean, time: number, effectsEnabled: boolean) {
   drawHexagon(ctx, agent.x, agent.y, r)
   ctx.strokeStyle = color
   ctx.lineWidth = (isSelected || isHovered) ? 2.5 : 2
@@ -235,6 +182,22 @@ function drawStateRing(ctx: CanvasRenderingContext2D, agent: Agent, r: number, c
   ctx.stroke()
   ctx.setLineDash([])
   ctx.lineDashOffset = 0
+  if (effectsEnabled) drawActivityOutline(ctx, agent, r, time)
+}
+
+/** Amber dashes travel along the node outline while it is actively working. */
+export function drawActivityOutline(ctx: CanvasRenderingContext2D, agent: Pick<Agent, 'state' | 'x' | 'y'>, radius: number, time: number) {
+  if (agent.state !== 'thinking' && agent.state !== 'tool_calling') return
+  ctx.save()
+  drawHexagon(ctx, agent.x, agent.y, radius + 4)
+  ctx.strokeStyle = COLORS.tool
+  ctx.lineWidth = 1.5
+  ctx.setLineDash([6, 7])
+  ctx.lineDashOffset = -time * 26
+  ctx.shadowColor = COLORS.tool
+  ctx.shadowBlur = 5
+  ctx.stroke()
+  ctx.restore()
 }
 
 function drawCenterIcon(ctx: CanvasRenderingContext2D, agent: Agent, r: number, color: string, isWaiting: boolean) {
@@ -279,6 +242,47 @@ function drawOrbitingParticles(ctx: CanvasRenderingContext2D, agent: Agent, r: n
   }
 }
 
+function drawMainInstrument(ctx: CanvasRenderingContext2D, agent: Agent, r: number, time: number, moving: boolean, detailed: boolean) {
+  ctx.save()
+  const rotation = moving ? time * (agent.state === 'idle' ? 0.12 : 0.65) : 0
+  ctx.strokeStyle = '#76c8ff90'
+  ctx.lineWidth = 0.8
+  for (let i = 0; i < 6; i++) {
+    const start = rotation + i * Math.PI / 3
+    ctx.beginPath()
+    ctx.arc(agent.x, agent.y, r + 19, start, start + Math.PI / 4)
+    ctx.stroke()
+  }
+  ctx.strokeStyle = '#76c8ff75'
+  for (let i = 0; i < (detailed ? 24 : 12); i++) {
+    const angle = i * Math.PI / (detailed ? 12 : 6)
+    const inner = r + 24, outer = inner + (i % 3 === 0 ? 4 : 2)
+    ctx.beginPath()
+    ctx.moveTo(agent.x + Math.cos(angle) * inner, agent.y + Math.sin(angle) * inner)
+    ctx.lineTo(agent.x + Math.cos(angle) * outer, agent.y + Math.sin(angle) * outer)
+    ctx.stroke()
+  }
+  if (moving && agent.state !== 'idle') {
+    ctx.shadowBlur = 0
+    ctx.strokeStyle = `rgba(123,201,255,${0.12 + (Math.sin(time * 2) + 1) * 0.08})`
+    ctx.lineWidth = 1
+    for (let i = 0; i < (detailed ? 3 : 0); i++) {
+      const angle = -rotation * 0.45 + i * Math.PI * 2 / 3
+      ctx.beginPath()
+      ctx.arc(agent.x, agent.y, r + 34, angle, angle + 0.8)
+      ctx.stroke()
+    }
+    const flare = rotation * 1.4
+    ctx.fillStyle = COLORS.holoBright
+    ctx.shadowColor = COLORS.holoBase
+    ctx.shadowBlur = 8
+    ctx.beginPath()
+    ctx.arc(agent.x + Math.cos(flare) * (r + 19), agent.y + Math.sin(flare) * (r + 19), 2, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.restore()
+}
+
 function drawWaitingRipples(ctx: CanvasRenderingContext2D, agent: Agent, r: number, color: string, time: number) {
   // Radar ripples — 2 concentric rings expanding outward, staggered
   for (let i = 0; i < 2; i++) {
@@ -306,14 +310,27 @@ function drawWaitingRipples(ctx: CanvasRenderingContext2D, agent: Agent, r: numb
   }
 }
 
-function drawAgentLabel(ctx: CanvasRenderingContext2D, agent: Agent, r: number, isHovered: boolean) {
-  ctx.fillStyle = isHovered ? COLORS.textPrimary : COLORS.textDim
-  ctx.font = '10px monospace'
+function drawAgentLabel(ctx: CanvasRenderingContext2D, agent: Agent, r: number, isHovered: boolean, time: number, compact: boolean, viewScale: number) {
+  const unit = Math.min(compact ? 2 : 1.25, 1 / Math.max(0.1, viewScale))
+  const width = compact ? 220 : 260
+  const line = (compact ? 16 : 19) * unit
+  const y = agent.y + r + 12
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
-  const maxLabelW = r * AGENT_DRAW.labelWidthMultiplier
-  const agentLabel = truncateText(ctx, agent.name, maxLabelW)
-  ctx.fillText(agentLabel, agent.x, agent.y + r + AGENT_DRAW.labelYOffset)
+  ctx.fillStyle = isHovered ? COLORS.holoBright : COLORS.textPrimary
+  ctx.font = `600 ${(compact ? 12 : 14) * unit}px "Segoe UI", sans-serif`
+  ctx.fillText(truncateText(ctx, agent.name, width), agent.x, y)
+  ctx.font = `${(compact ? 10.5 : 11) * unit}px "Segoe UI", sans-serif`
+  ctx.fillStyle = COLORS.textMuted
+  ctx.fillText(truncateText(ctx, agent.model ? formatModelName(agent.model) : 'Model unknown', width), agent.x, y + line)
+  ctx.fillStyle = getStateColor(agent.state)
+  ctx.font = `500 ${(compact ? 11 : 12) * unit}px "Segoe UI", sans-serif`
+  ctx.fillText(truncateText(ctx, agentStatusLabel(agent, time), width), agent.x, y + line * 2)
+  if (compact && agent.tokensUsed > 0) {
+    ctx.fillStyle = contextGaugeColor(agent.tokensUsed, agent.tokensMax)
+    ctx.font = `${10 * unit}px "Segoe UI", sans-serif`
+    ctx.fillText( `CTX ${Math.round(agent.tokensUsed / Math.max(1, agent.tokensMax) * 100)}%`, agent.x, y + line * 3)
+  }
 }
 
 function drawStatsOverlay(ctx: CanvasRenderingContext2D, agent: Agent, r: number) {
@@ -339,6 +356,10 @@ export function drawAgents(
   hoveredAgentId: string | null,
   showStats: boolean,
   time: number,
+  effectsEnabled = true,
+  compact = false,
+  viewScale = 1,
+  detailed = true,
 ) {
   for (const [id, agent] of agents) {
     const radius = agent.isMain ? NODE.radiusMain : NODE.radiusSub
@@ -347,40 +368,43 @@ export function drawAgents(
     const isSelected = id === selectedAgentId
 
     const isWaiting = agent.state === 'waiting_permission'
+    const activeEffects = effectsEnabled && ['thinking', 'tool_calling', 'waiting_permission'].includes(agent.state)
 
-    const breathe = isWaiting
-      ? Math.sin(time * AGENT_DRAW.waitingBreatheSpeed) * AGENT_DRAW.waitingBreatheAmp + 1
-      : agent.state === 'thinking'
-      ? Math.sin(time * ANIM.breathe.thinkingSpeed) * ANIM.breathe.thinkingAmp + 1
-      : agent.state === 'idle' ? Math.sin(time * ANIM.breathe.idleSpeed) * ANIM.breathe.idleAmp + 1 : 1
-
-    const r = radius * breathe * agent.scale
+    const r = radius * agent.scale
 
     ctx.save()
     ctx.globalAlpha = agent.opacity
 
-    drawDepthShadow(ctx, agent, r)
+    if (detailed) drawDepthShadow(ctx, agent, r)
     drawAgentGlow(ctx, agent, r, color, isHovered, isSelected, isWaiting)
-    drawScanline(ctx, agent, r, color, isHovered, isWaiting, time)
-    drawStateRing(ctx, agent, r, color, isHovered, isSelected, isWaiting, time)
+    if (agent.isMain && !compact) drawMainInstrument(ctx, agent, r, time, effectsEnabled && (activeEffects || agent.state === 'idle'), detailed)
+    if (agent.isMain && agent.state === 'idle') {
+      ctx.save()
+      ctx.globalAlpha *= effectsEnabled ? 0.3 + (1 - Math.cos(time * 1.6)) * 0.3 : 0.6
+      ctx.fillStyle = COLORS.holoBright
+      ctx.shadowBlur = 0
+      ctx.beginPath()
+      ctx.arc(agent.x, agent.y - r - 19, 1.8, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
+    if (activeEffects && detailed) drawScanline(ctx, agent, r, color, isHovered, isWaiting, time)
+    drawStateRing(ctx, agent, r, color, isHovered, isSelected, isWaiting, time, effectsEnabled)
+    drawContextHud(ctx, agent, r, time, effectsEnabled)
     drawCenterIcon(ctx, agent, r, color, isWaiting)
 
-    if (agent.state === 'thinking') {
+    if (activeEffects && detailed && !compact && agent.state === 'thinking') {
       drawOrbitingParticles(ctx, agent, r, color, time)
     }
 
-    if (isWaiting) {
+    if (activeEffects && detailed && isWaiting) {
       drawWaitingRipples(ctx, agent, r, color, time)
     }
 
-    drawAgentLabel(ctx, agent, r, isHovered)
+    drawAgentLabel(ctx, agent, r, isHovered, time, compact, viewScale)
 
-    // Context composition — ring for main agent, bar for sub-agents
-    if (agent.state !== 'complete' || agent.opacity > 0.5) {
-      if (agent.isMain) {
-        drawContextRing(ctx, agent, r, time)
-      }
-      drawContextComposition(ctx, agent, r)
+    if (!compact && (agent.state !== 'complete' || agent.opacity > 0.5)) {
+      drawContextComposition(ctx, agent, r, Math.min(1.25, 1 / Math.max(0.1, viewScale)))
     }
 
     if (showStats && agent.state !== 'complete') {

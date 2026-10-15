@@ -105,6 +105,9 @@ export function drawEdges(
   toolCalls: Map<string, ToolCallNode>,
   activeEdgeIds: Set<string>,
   time: number,
+  effectsEnabled = true,
+  compact = false,
+  lightweight = false,
 ) {
   for (const edge of edges) {
     const fromAgent = agents.get(edge.from)
@@ -129,15 +132,53 @@ export function drawEdges(
     ctx.save()
 
     // Tapered beam: wider at source, thin at destination
-    drawTaperedBezier(ctx, fromX, fromY, cp1x, cp1y, cp2x, cp2y, toX, toY,
+    if (lightweight) {
+      ctx.beginPath()
+      ctx.moveTo(fromX, fromY)
+      ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, toX, toY)
+      ctx.strokeStyle = beamColor + alphaHex(baseAlpha * pulsing)
+      ctx.lineWidth = 1
+      ctx.stroke()
+    } else drawTaperedBezier(ctx, fromX, fromY, cp1x, cp1y, cp2x, cp2y, toX, toY,
       bw.startW, bw.endW, beamColor, baseAlpha * pulsing)
 
     // Active glow beam (wider, dimmer)
-    if (hasActiveParticles) {
+    if (hasActiveParticles && !lightweight) {
       drawTaperedBezier(ctx, fromX, fromY, cp1x, cp1y, cp2x, cp2y, toX, toY,
         bw.startW + BEAM.glowExtra.startW, bw.endW + BEAM.glowExtra.endW, beamColor, BEAM.glowExtra.alpha)
     }
 
+    // Keep delegation visible throughout the child's work, after the short
+    // dispatch particle has arrived. Canvas state is isolated by save/restore.
+    const child = edge.type === 'parent-child' ? agents.get(edge.to) : undefined
+    const returning = child?.state === 'complete' && hasActiveParticles && child.returnStartedAt !== undefined
+    if (effectsEnabled && child && (returning || child.state === 'thinking' || child.state === 'tool_calling')) {
+      ctx.beginPath()
+      ctx.moveTo(fromX, fromY)
+      ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, toX, toY)
+      ctx.strokeStyle = returning ? COLORS.return : COLORS.tool
+      ctx.lineWidth = 1.5
+      ctx.globalAlpha = 0.75 * Math.min(fromAgent.opacity, child.opacity, edge.opacity)
+      ctx.setLineDash([6, 9])
+      ctx.lineDashOffset = (returning ? 1 : -1) * time * 30
+      ctx.shadowColor = returning ? COLORS.return : COLORS.tool
+      ctx.shadowBlur = lightweight ? 0 : 5
+      ctx.stroke()
+    }
+
     ctx.restore()
+    if (!compact && edge.flowLabel && edge.type === 'parent-child') {
+      const x = bezierPoint(0.5, fromX, cp1x, cp2x, toX)
+      const y = bezierPoint(0.5, fromY, cp1y, cp2y, toY)
+      ctx.save()
+      ctx.font = '10px monospace'
+      ctx.textAlign = 'center'
+      const width = ctx.measureText(edge.flowLabel).width + 12
+      ctx.fillStyle = COLORS.void
+      ctx.fillRect(x - width / 2, y - 10, width, 16)
+      ctx.fillStyle = COLORS.textPrimary
+      ctx.fillText(edge.flowLabel, x, y + 2)
+      ctx.restore()
+    }
   }
 }

@@ -38,6 +38,151 @@ function runFixture() {
 }
 
 describe('CodexRolloutParser', () => {
+  it('distinguishes progress from a child final answer and does not start a turn for send_message', () => {
+    const events: AgentEvent[] = []
+    const parser = new CodexRolloutParser({ emit: e => events.push(e), elapsed: () => 0 })
+    const state = createCodexRolloutState()
+    state.agents.add('/root/reviewer')
+    const record = (payload: unknown) => parser.processLine(JSON.stringify({ type: 'response_item', payload }), state)
+    record({ type: 'agent_message', author: '/root/reviewer', content: [{ type: 'text', text: 'Message Type: MESSAGE\nTask name: /root\nSender: /root/reviewer\nPayload:\nStill checking' }] })
+    assert.equal(events.at(-1)?.type, 'agent_thinking')
+    assert.ok(events.some(e => e.payload.content === 'Still checking'))
+    assert.ok(!events.some(e => e.type === 'subagent_return'))
+    record({ type: 'agent_message', author: '/root/reviewer', content: [{ type: 'text', text: 'Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/reviewer\nPayload:\nReview done' }] })
+    assert.equal(events.at(-1)?.type, 'agent_complete')
+    assert.equal(events.find(e => e.type === 'subagent_return')?.payload.received, true)
+    events.length = 0
+    record({ type: 'function_call', name: 'send_message', call_id: 'notify', arguments: JSON.stringify({ target: 'reviewer', message: 'Thanks' }) })
+    record({ type: 'function_call_output', call_id: 'notify', output: '' })
+    assert.ok(events.some(e => e.type === 'subagent_dispatch'))
+    assert.ok(!events.some(e => e.type === 'agent_thinking' || (e.type === 'agent_spawn' && e.payload.name === '/root/reviewer')))
+  })
+
+  it('uses an explicit exit code instead of classifying passing test output as a failure', () => {
+    const events: AgentEvent[] = []
+    const parser = new CodexRolloutParser({ emit: e => events.push(e), elapsed: () => 0 })
+    const state = createCodexRolloutState()
+    for (const payload of [
+      { type: 'function_call', name: 'exec_command', call_id: 'tests', arguments: '{"cmd":"npm test"}' },
+      { type: 'function_call_output', call_id: 'tests', output: JSON.stringify({ output: 'Tests: 57 passed, 0 failed', exit_code: 0 }) },
+    ]) parser.processLine(JSON.stringify({ type: 'response_item', payload }), state)
+    assert.equal(events.find(e => e.type === 'tool_call_end')?.payload.isError, undefined)
+  })
+
+  it('reactivates canonical child agents when followup_task uses short names and an empty success output', () => {
+    const events: AgentEvent[] = []
+    const parser = new CodexRolloutParser({ emit: e => events.push(e), elapsed: () => 0 })
+    const state = createCodexRolloutState()
+    state.agents.add('/root/remaining_reads_round2')
+    for (const payload of [
+      { type: 'function_call', name: 'collaboration.followup_task', call_id: 'resume-child', arguments: JSON.stringify({ target: 'remaining_reads_round2', message: 'Continue reviewing' }) },
+      { type: 'function_call_output', call_id: 'resume-child', output: '' },
+    ]) parser.processLine(JSON.stringify({ type: 'response_item', payload }), state)
+    assert.ok(events.some(e => e.type === 'agent_spawn' && e.payload.name === '/root/remaining_reads_round2'))
+    assert.ok(events.some(e => e.type === 'subagent_dispatch' && e.payload.child === '/root/remaining_reads_round2'))
+    assert.ok(events.some(e => e.type === 'agent_thinking' && e.payload.name === '/root/remaining_reads_round2'))
+    assert.equal(state.agents.size, 1)
+  })
+
+  it('surfaces native inner commands and changed files while avoiding direct-call mirrors', () => {
+    const events: AgentEvent[] = []
+    const parser = new CodexRolloutParser({ emit: e => events.push(e), elapsed: () => 0 })
+    const state = createCodexRolloutState()
+    const record = (type: string, payload: unknown) => parser.processLine(JSON.stringify({ type, payload }), state)
+    const command = { type: 'item_completed', item: { type: 'CommandExecution', id: 'inner-cmd', command: 'npm test', aggregated_output: 'Pattern not found', status: 'completed', exit_code: 0 } }
+    record('event_msg', command)
+    record('event_msg', command)
+    assert.equal(events.filter(e => e.type === 'tool_call_start').length, 1)
+    assert.equal(events.find(e => e.type === 'tool_call_end')?.payload.isError, undefined)
+    record('event_msg', { type: 'item_completed', item: { type: 'FileChange', id: 'inner-patch', status: 'completed', changes: {
+      'first.ts': { type: 'update', unified_diff: '-old\n+new' }, 'second.ts': { type: 'update', unified_diff: '+line' },
+    } } })
+    const patch = events.find(e => e.type === 'tool_call_start' && e.payload.tool === 'apply_patch')!
+    assert.deepEqual((patch.payload.inputData as Record<string, unknown>).file_paths, ['first.ts', 'second.ts'])
+    record('response_item', { type: 'function_call', name: 'exec_command', call_id: 'direct', arguments: '{"cmd":"pwd"}' })
+    record('event_msg', { type: 'item_completed', item: { type: 'CommandExecution', id: 'mirror', command: 'pwd', status: 'completed' } })
+    assert.equal(events.filter(e => e.type === 'tool_call_start').length, 3)
+  })
+
+  it('signals thinking at turn start and shows a status for encrypted-only reasoning', () => {
+    const events: AgentEvent[] = []
+    const parser = new CodexRolloutParser({ emit: e => events.push(e), elapsed: () => 0 })
+    const state = createCodexRolloutState()
+    const record = (type: string, payload: unknown) => parser.processLine(JSON.stringify({ type, payload }), state)
+    record('event_msg', { type: 'task_started' })
+    assert.equal(events.at(-1)?.type, 'agent_thinking')
+    record('response_item', { type: 'reasoning', summary: [], content: [], encrypted_content: 'not-plaintext' })
+    record('event_msg', { type: 'item_completed', item: { type: 'Reasoning', summary_text: [], raw_content: [] } })
+    const status = events.filter(e => e.type === 'message' && e.payload.role === 'thinking')
+    assert.equal(status.length, 1)
+    assert.equal(status[0].payload.content, 'Thinking...')
+    assert.equal(status[0].payload.isStatus, true)
+    assert.equal(state.contextBreakdown.reasoning, 0)
+    record('event_msg', { type: 'task_complete' })
+    assert.equal(events.at(-1)?.type, 'agent_idle')
+    assert.equal(events.at(-1)?.payload.state, 'idle')
+  })
+
+  it('reads plaintext Reasoning item summaries without duplicating their mirrored message', () => {
+    const events: AgentEvent[] = []
+    const parser = new CodexRolloutParser({ emit: e => events.push(e), elapsed: () => 0 })
+    const state = createCodexRolloutState()
+    for (const payload of [
+      { type: 'item_completed', item: { type: 'Reasoning', summary_text: ['Check session lifecycle'], raw_content: [] } },
+      { type: 'agent_reasoning', text: 'Check session lifecycle' },
+    ]) parser.processLine(JSON.stringify({ type: 'event_msg', payload }), state)
+    assert.equal(events.filter(e => e.payload.content === 'Check session lifecycle').length, 1)
+    assert.ok(state.contextBreakdown.reasoning > 0)
+  })
+
+  it('keeps repeated follow-ups in different turns and distinct long messages', () => {
+    const events: AgentEvent[] = []
+    const parser = new CodexRolloutParser({ emit: e => events.push(e), elapsed: () => 0 })
+    const state = createCodexRolloutState()
+    const record = (type: string, payload: unknown) => parser.processLine(JSON.stringify({ type, payload }), state)
+    for (let i = 0; i < 2; i++) {
+      record('event_msg', { type: 'task_started' })
+      record('response_item', { type: 'message', role: 'user', content: 'continue' })
+      record('response_item', { type: 'message', role: 'user', content: 'continue' })
+    }
+    assert.equal(events.filter(e => e.payload.content === 'continue').length, 2)
+    for (const suffix of ['first', 'second']) {
+      record('response_item', { type: 'message', role: 'user', content: 'x'.repeat(300) + suffix })
+    }
+    assert.equal(events.filter(e => String(e.payload.content).startsWith('xxx')).length, 2)
+  })
+
+  it('preserves historical event times and displays custom JavaScript execution input', () => {
+    const events: AgentEvent[] = []
+    const parser = new CodexRolloutParser({ emit: e => events.push(e), elapsed: () => 999 })
+    const state = createCodexRolloutState()
+    parser.processLine(JSON.stringify({ timestamp: '2020-01-01T00:00:00Z', type: 'session_meta', payload: {} }), state)
+    parser.processLine(JSON.stringify({ timestamp: '2020-01-01T00:00:12Z', type: 'response_item', payload: {
+      type: 'custom_tool_call', name: 'functions.exec', call_id: 'code-1', input: 'const result = await tools.exec_command({cmd: "ls"});\ntext(result);',
+    } }), state)
+    const start = events.find(e => e.type === 'tool_call_start')!
+    assert.equal(start.time, 12)
+    assert.equal(start.payload.callId, 'code-1')
+    assert.ok(String((start.payload.inputData as Record<string, unknown>).code).includes('exec_command'))
+  })
+
+  it('creates a Codex child from a successful spawn result and routes its messages', () => {
+    const events: AgentEvent[] = []
+    const parser = new CodexRolloutParser({ emit: e => events.push(e), elapsed: () => 0 })
+    const state = createCodexRolloutState()
+    const record = (payload: unknown) => parser.processLine(JSON.stringify({ type: 'response_item', payload }), state)
+    record({ type: 'function_call', name: 'collaboration.spawn_agent', call_id: 'spawn-1',
+      arguments: JSON.stringify({ message: 'Review the fix', model: 'test-model' }) })
+    record({ type: 'function_call_output', call_id: 'spawn-1', output: JSON.stringify({ task_name: '/root/review' }) })
+    record({ type: 'agent_message', author: '/root/review', recipient: '/root', content: [{ type: 'text', text: 'Review complete' }] })
+    const child = events.find(e => e.type === 'agent_spawn' && e.payload.name === '/root/review')!
+    assert.equal(child.payload.parent, 'orchestrator')
+    assert.equal(child.payload.model, 'test-model')
+    assert.equal(child.payload.runtime, 'codex')
+    assert.ok(events.some(e => e.type === 'message' && e.payload.agent === '/root/review' && e.payload.content === 'Review complete'))
+    assert.ok(events.some(e => e.type === 'subagent_return' && e.payload.child === '/root/review'))
+  })
+
   it('emits agent_spawn exactly once on the first record', () => {
     const { events } = runFixture()
     const spawns = events.filter(e => e.type === 'agent_spawn')
@@ -130,7 +275,10 @@ describe('CodexRolloutParser', () => {
 
   it('uses last_token_usage from token_count as authoritative context fill', () => {
     const { events, state } = runFixture()
-    assert.equal(state.lastReportedTokens, 12000)
+    // The fixture subsequently compacts: its former authoritative total must
+    // not override the smaller replacement context.
+    assert.equal(state.lastReportedTokens, null)
+    assert.ok(events.some(e => e.type === 'context_update' && e.payload.isAuthoritative && e.payload.tokens === 12000))
     assert.equal(state.reportedContextWindow, 258400)
     // Every context_update after the token_count carries the authoritative
     // tokensMax from model_context_window.

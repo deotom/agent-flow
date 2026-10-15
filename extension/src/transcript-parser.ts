@@ -445,7 +445,7 @@ export class TranscriptParser {
     this.delegate.emit({
       time: this.delegate.elapsed(sessionId),
       type: 'subagent_return',
-      payload: { child: childName, parent, summary: summary.slice(0, ARGS_MAX) },
+      payload: { child: childName, parent, summary: summary.slice(0, ARGS_MAX), received: true },
     }, sessionId)
     this.delegate.emit({
       time: this.delegate.elapsed(sessionId),

@@ -46,7 +46,7 @@ export function SessionTabs({
             key={session.id}
             ref={(el) => setButtonRef(session.id, el)}
             onClick={() => onSelectSession(session.id)}
-            className="group px-1.5 py-0.5 rounded transition-all flex items-center gap-1"
+            className="group px-2 py-1 rounded transition-all flex items-center gap-1"
             style={{
               flexShrink: 0,
               whiteSpace: 'nowrap',
@@ -63,7 +63,7 @@ export function SessionTabs({
                 animation: hasActivity && !isSelected ? 'pulse 1.5s infinite' : 'none',
               }}
             />
-            {session.label}
+            <span className="truncate max-w-[240px]" title={session.label}>{session.label}</span>
             <span
               className="ml-0.5 opacity-0 group-hover:opacity-60 transition-opacity cursor-pointer"
               style={{ color: COLORS.tabClose, fontSize: 8, lineHeight: '10px' }}

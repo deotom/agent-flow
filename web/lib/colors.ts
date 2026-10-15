@@ -10,8 +10,8 @@ import type { AgentState, ContextBreakdown } from './agent-types'
 // Holographic Color Palette
 export const COLORS = {
   // Background
-  void: '#050510',
-  hexGrid: '#0d0d1f',
+  void: '#080d18',
+  hexGrid: '#142035',
 
   // Primary Hologram
   holoBase: '#66ccff',
@@ -19,18 +19,18 @@ export const COLORS = {
   holoHot: '#ffffff',
 
   // Agent States
-  idle: '#66ccff',
-  thinking: '#66ccff',
-  tool_calling: '#ffbb44',
-  complete: '#66ffaa',
-  error: '#ff5566',
+  idle: '#95a7bd',
+  thinking: '#7bc9ff',
+  tool_calling: '#7bc9ff',
+  complete: '#6cdea7',
+  error: '#ff7585',
   paused: '#888899',
   waiting_permission: '#ffaa33',
 
   // Edge/Particle Colors
-  dispatch: '#cc88ff',
-  return: '#66ffaa',
-  tool: '#ffbb44',
+  dispatch: '#f6bd64',
+  return: '#6cdea7',
+  tool: '#f6bd64',
   message: '#66ccff',
 
   // Context breakdown colors
@@ -42,9 +42,9 @@ export const COLORS = {
 
   // UI Chrome
   nodeInterior: 'rgba(10, 15, 40, 0.5)',
-  textPrimary: '#aaeeff',
-  textDim: '#66ccff90',
-  textMuted: '#66ccff50',
+  textPrimary: '#e3edf8',
+  textDim: '#b7c8da',
+  textMuted: '#8b9bb0',
 
   // Glass card
   glassBg: 'rgba(10, 15, 30, 0.7)',
@@ -61,7 +61,7 @@ export const COLORS = {
   holoBorder12: 'rgba(100, 200, 255, 0.12)',
 
   // Panel chrome
-  panelBg: 'rgba(8, 12, 24, 0.85)',
+  panelBg: 'rgba(13, 21, 35, 0.97)',
   panelSeparator: 'rgba(100, 200, 255, 0.04)',
 
   // Toggle button states

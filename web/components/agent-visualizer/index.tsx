@@ -17,19 +17,29 @@ import { AgentChatPanel } from "./chat-panel"
 import { SessionTranscriptPanel } from "./session-transcript-panel"
 import { OpenFileProvider } from "./tool-content-renderer"
 import { stopPropagationHandlers } from "./shared-ui"
-import { TimelineEvent, TIMING } from "@/lib/agent-types"
+import { TIMING } from "@/lib/agent-types"
 import { COLORS } from "@/lib/colors"
 
 import { MOCK_DURATION } from "@/lib/mock-scenario"
 import { MessageFeedPanel } from "./message-feed-panel"
 import { TopBar } from "./top-bar"
+import { buildTimelineEvents } from '@/hooks/simulation/timeline-events'
+import { formatAgentName } from '@/lib/utils'
+import { agentCost } from './canvas/draw-cost'
+import { FlowControls } from './flow-controls'
+import { WorkPanel } from './work-panel'
+import { FlowIcon } from './flow-icon'
+import { SessionPicker } from './session-picker'
 import { useAudioEffects } from "@/hooks/use-audio-effects"
 
 export function AgentVisualizer() {
   const bridge = useVSCodeBridge()
+  const [toolbarBottom, setToolbarBottom] = useState(112)
+  const [currentRoundOnly, setCurrentRoundOnly] = useState(true)
 
   const {
     frameRef,
+    round, delegations,
     agents,
     toolCalls,
     particles,
@@ -48,9 +58,11 @@ export function AgentVisualizer() {
     setSpeed,
     seekToTime,
     updateAgentPosition,
-    saveSnapshot,
-    restoreSnapshot,
   } = useAgentSimulation({
+    restoring: bridge.restoring,
+    visible: bridge.viewVisible,
+    animationMode: bridge.animationMode,
+    animationSpeed: bridge.animationSpeed,
     useMockData: bridge.useMockData,
     externalEvents: bridge.pendingEvents,
     onExternalEventsConsumed: bridge.consumeEvents,
@@ -79,7 +91,9 @@ export function AgentVisualizer() {
   const [zoomToFitTrigger, setZoomToFitTrigger] = useState(0)
 
   const [isReviewing, setIsReviewing] = useState(false)
-  const { isMuted, seekingRef, handleToggleMute } = useAudioEffects(agents, toolCalls, isReviewing)
+  useEffect(() => bridge.setReviewing(isReviewing), [isReviewing, bridge.setReviewing])
+  const displayAgents = useMemo(() => !currentRoundOnly || isReviewing ? agents : new Map([...agents].filter(([, agent]) => agent.isMain || (agent.round ?? 0) === round)), [agents, currentRoundOnly, isReviewing, round])
+  const { isMuted, seekingRef, handleToggleMute } = useAudioEffects(agents, toolCalls, isReviewing || bridge.compact)
 
   // Auto-play on mount
   useEffect(() => {
@@ -87,76 +101,18 @@ export function AgentVisualizer() {
     return () => clearTimeout(timer)
   }, [play])
 
-  // Per-session state cache: save/restore simulation state on tab switch
-  // so sessions stay up to date and switching is instant.
+  // Rebuild selected history from disk without retaining per-session snapshots.
   // useLayoutEffect ensures restart happens synchronously before any animation
   // frame can consume and discard events from pendingEventsRef.
-  const sessionCacheRef = useRef<Map<string, { snapshot: ReturnType<typeof saveSnapshot>; eventCount: number }>>(new Map())
   const prevSelectedRef = useRef<string | null>(null)
   useLayoutEffect(() => {
-    if (bridge.selectedSessionId === null && prevSelectedRef.current !== null) {
-      // Bridge reset (panel reopened / relay restarted): cached snapshots are stale
-      sessionCacheRef.current.clear()
-      prevSelectedRef.current = null
-      return
-    }
-    if (bridge.selectedSessionId && bridge.selectedSessionId !== prevSelectedRef.current) {
-      // Review/scrub state is per-component, not per-session: the incoming tab is restored live
-      setIsReviewing(false)
-      // Save outgoing session state (if any)
-      if (prevSelectedRef.current !== null) {
-        sessionCacheRef.current.set(prevSelectedRef.current, {
-          snapshot: saveSnapshot(),
-          eventCount: bridge.getSessionEventCount(prevSelectedRef.current),
-        })
-      }
+    setIsReviewing(false)
+    restart()
+    if (bridge.selectedSessionId) bridge.flushSessionEvents(bridge.selectedSessionId)
+    prevSelectedRef.current = bridge.selectedSessionId
+  }, [bridge.selectedSessionId, bridge.historyRevision, restart, bridge.flushSessionEvents])
 
-      // Restore or cold-start the incoming session, then flush events.
-      // Flushing happens HERE (after state swap) to prevent the animation
-      // frame from processing events in the wrong simulation context.
-      const cached = sessionCacheRef.current.get(bridge.selectedSessionId)
-      if (cached) {
-        restoreSnapshot(cached.snapshot)
-        bridge.flushSessionEvents(bridge.selectedSessionId, cached.eventCount)
-      } else {
-        restart()
-        bridge.flushSessionEvents(bridge.selectedSessionId)
-      }
-
-      prevSelectedRef.current = bridge.selectedSessionId
-    }
-  }, [bridge.selectedSessionId, restart, bridge.flushSessionEvents, saveSnapshot, restoreSnapshot, bridge.getSessionEventCount])
-
-  // Timeline events — incremental: only processes new conversation messages
-  const timelineCacheRef = useRef<{
-    counts: Map<string, number>
-    events: TimelineEvent[]
-    idCounter: number
-  }>({ counts: new Map(), events: [], idCounter: 0 })
-
-  const timelineEvents = useMemo((): TimelineEvent[] => {
-    const cache = timelineCacheRef.current
-    let appended = false
-    for (const [agentId, msgs] of conversations) {
-      const prevLen = cache.counts.get(agentId) ?? 0
-      if (msgs.length > prevLen) {
-        for (let i = prevLen; i < msgs.length; i++) {
-          const msg = msgs[i]
-          cache.events.push({
-            id: `event-${cache.idCounter++}`,
-            type: msg.type === 'tool_call' ? 'tool_call' : msg.type === 'tool_result' ? 'tool_result' : 'message',
-            label: msg.content.slice(0, 20),
-            timestamp: msg.timestamp,
-            nodeId: agentId,
-          })
-        }
-        cache.counts.set(agentId, msgs.length)
-        appended = true
-      }
-    }
-    if (appended) cache.events.sort((a, b) => a.timestamp - b.timestamp)
-    return cache.events
-  }, [conversations])
+  const timelineEvents = useMemo(() => buildTimelineEvents(conversations), [conversations])
 
   // Review mode: when in live mode and user pauses to scrub through history
 
@@ -175,9 +131,9 @@ export function AgentVisualizer() {
   }, [pause])
 
   const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const handleResumeLive = useCallback(() => {
+  const handleResumeLive = useCallback(async () => {
     setIsReviewing(false)
-    seekToTime(maxTimeReached)
+    await seekToTime(Number.POSITIVE_INFINITY, true)
     setZoomToFitTrigger(n => n + 1)
     if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current)
     resumeTimerRef.current = setTimeout(() => { resumeTimerRef.current = null; play() }, TIMING.resumeLiveDelayMs)
@@ -211,12 +167,13 @@ export function AgentVisualizer() {
 
   const totalTokens = useMemo(() => {
     let sum = 0
-    for (const a of agents.values()) sum += a.tokensUsed
+    for (const a of displayAgents.values()) sum += a.tokensUsed
     return sum
-  }, [agents])
+  }, [displayAgents])
+  const estimatedContextCost = useMemo(() => Array.from(displayAgents.values()).reduce((sum, agent) => sum + agentCost(agent.tokensUsed, agent.model), 0), [displayAgents])
 
-  const selectedAgent = selection.selectedAgentId ? agents.get(selection.selectedAgentId) : null
-  const selectedConversation = selection.selectedAgentId ? (conversations.get(selection.selectedAgentId) || []) : []
+  const selectedAgent = selection.selectedAgentId ? displayAgents.get(selection.selectedAgentId) : null
+  const selectedConversation = selection.selectedAgentId ? (conversations.get(selection.selectedAgentId) || []).filter(message => !currentRoundOnly || (message.round ?? 0) === round) : []
 
   // Session runtime — drives the assistant label (CLAUDE vs CODEX) in transcript panels
   const sessionRuntime = useMemo(() => {
@@ -230,9 +187,13 @@ export function AgentVisualizer() {
   // Only compute when the transcript panel is visible to avoid O(n log n) sort every frame
   const sessionConversation = useMemo(() => {
     if (!showTranscript) return []
-    const all = Array.from(conversations.values()).flat()
+    const all = Array.from(conversations).flatMap(([id, messages]) => messages.filter(message => !currentRoundOnly || (message.round ?? 0) === round).map(message => ({
+      ...message, agentName: agents.get(id)?.name ?? timelineEntries.get(id)?.agentName ?? formatAgentName(id),
+    })))
     return all.sort((a, b) => a.timestamp - b.timestamp)
-  }, [conversations, showTranscript])
+  }, [conversations, showTranscript, agents, timelineEntries, currentRoundOnly, round])
+
+  const roundConversations = useMemo(() => !currentRoundOnly ? conversations : new Map([...conversations].map(([id, messages]) => [id, messages.filter(message => (message.round ?? 0) === round)])), [conversations, currentRoundOnly, round])
 
   // Context menu items
   const contextMenuItems = selection.contextMenu ? (
@@ -249,12 +210,11 @@ export function AgentVisualizer() {
 
   const handleCloseSession = useCallback((id: string) => {
     bridge.removeSession(id)
-    sessionCacheRef.current.delete(id)
     if (bridge.selectedSessionId === id) {
       const remaining = bridge.sessions.filter(s => s.id !== id)
       if (remaining.length > 0) {
         bridge.selectSession(remaining[remaining.length - 1].id)
-      }
+      } else bridge.selectSession(null)
     }
   }, [bridge])
 
@@ -262,23 +222,33 @@ export function AgentVisualizer() {
     bridge.bridgeOpenFile(filePath, line)
   }, [bridge])
 
-  const isEmpty = agents.size === 0 && !bridge.useMockData
+  const isEmpty = agents.size === 0 && !bridge.useMockData && !bridge.restoring
 
   return (
     <OpenFileProvider value={bridge.isVSCode ? openFile : null}>
-    <div className="h-screen w-screen relative overflow-hidden" style={{ background: COLORS.void }}>
+    <div className="agent-flow-ui h-screen w-screen relative overflow-hidden" style={{ background: COLORS.void }}>
       {/* Empty state when no demo and no live data */}
       {isEmpty && (
         <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
           <div className="text-center" style={{ fontFamily: "'SF Mono', 'Fira Code', monospace" }}>
-            <div className="text-sm" style={{ color: '#66ccff80' }}>WAITING FOR AGENT SESSION</div>
-            <div className="mt-2 text-xs" style={{ color: '#66ccff40' }}>Start a Claude Code session to see activity</div>
+            <div className={bridge.compact ? 'text-[10px]' : 'text-sm'} style={{ color: '#66ccff80' }}>WAITING FOR AGENT SESSION</div>
+            {!bridge.compact && <div className="mt-2 text-xs" style={{ color: '#66ccff40' }}>Start a Claude Code or Codex session to see activity</div>}
           </div>
         </div>
       )}
 
+      {bridge.restoring && <div role="status" className="absolute left-0 right-0 bottom-0 flex items-center justify-center" style={{ top: bridge.compact ? 36 : toolbarBottom, zIndex: 85, background: COLORS.void, color: COLORS.textMuted }}>
+        <span className="text-xs">Restoring latest session state…</span>
+      </div>}
       {/* Canvas fills everything */}
       <AgentCanvas
+        topInset={toolbarBottom + 28}
+        visible={bridge.viewVisible && !bridge.restoring}
+        restoring={bridge.restoring}
+        currentRoundOnly={currentRoundOnly && !isReviewing}
+        animationMode={bridge.animationMode}
+        animationSpeed={bridge.animationSpeed}
+        compact={bridge.compact}
         simulationRef={frameRef}
         selectedAgentId={selection.selectedAgentId}
         hoveredAgentId={selection.hoveredAgentId}
@@ -297,10 +267,28 @@ export function AgentVisualizer() {
         showCostOverlay={showCostOverlay}
       />
 
+      <WorkPanel topInset={toolbarBottom} sessionId={bridge.selectedSessionId} key={bridge.selectedSessionId ?? 'demo'} compact={bridge.compact} round={round} tasks={delegations} conversations={conversations} currentOnly={currentRoundOnly} onCurrentOnly={setCurrentRoundOnly} />
+
+      {bridge.compact && (
+        <>
+          <div className="absolute top-0 left-0 right-0 z-50 flex items-center gap-0.5 px-1 py-1" style={{ background: COLORS.panelBg, borderBottom: `1px solid ${COLORS.glassBorder}` }}>
+            <SessionPicker compact sessions={bridge.sessions} selectedSessionId={bridge.selectedSessionId} onSelectSession={bridge.selectSession} onCloseSession={handleCloseSession} />
+            <button title="Fit graph" aria-label="Fit graph" className="flow-icon-button" style={{ color: COLORS.textPrimary }} onClick={() => setZoomToFitTrigger(n => n + 1)}><FlowIcon name="fit" /></button>
+            <button title="Open full graph" aria-label="Open full graph" className="flow-icon-button" style={{ color: COLORS.textPrimary }} onClick={bridge.openGraph}><FlowIcon name="expand" /></button>
+            <FlowControls bridge={bridge} />
+          </div>
+          <div className="absolute bottom-0 left-0 right-0 px-2 py-1 text-[10px] truncate pointer-events-none" style={{ color: COLORS.textPrimary, background: COLORS.void }}>
+            {selectedAgent ? `${selectedAgent.name} · ${selectedAgent.model ?? 'Model unknown'} · ${selectedAgent.state}` : `${Array.from(displayAgents.values()).filter(agent => agent.isMain || agent.state !== 'complete').length} agents · ${bridge.connectionStatus}`}
+          </div>
+        </>
+      )}
+
+      {!bridge.compact && <>
       {/* Message feed panel (top-left) */}
       <MessageFeedPanel
-        conversations={conversations}
-        agents={agents}
+        topInset={toolbarBottom}
+        conversations={roundConversations}
+        agents={displayAgents}
         onAgentClick={selection.handleAgentClick}
         selectedAgentId={selection.selectedAgentId}
       />
@@ -319,6 +307,7 @@ export function AgentVisualizer() {
       {selection.selectedToolData && selection.selectedToolScreenPos && (
         <div {...stopPropagationHandlers}>
           <ToolDetailPopup
+            sessionId={bridge.selectedSessionId}
             tool={selection.selectedToolData}
             position={selection.selectedToolScreenPos}
             onClose={selection.clearTool}
@@ -339,6 +328,9 @@ export function AgentVisualizer() {
 
       {/* Chat panel (bottom-right, shown when agent selected) */}
       <AgentChatPanel
+        sessionId={bridge.selectedSessionId}
+        agentId={selection.selectedAgentId}
+        round={currentRoundOnly ? round : undefined}
         visible={!!selectedAgent}
         agentName={selectedAgent?.name ?? ''}
         agentState={selectedAgent?.state ?? 'idle'}
@@ -393,6 +385,9 @@ export function AgentVisualizer() {
 
       {/* Session transcript panel (slide-in from right) */}
       <SessionTranscriptPanel
+        topInset={toolbarBottom + 40}
+        sessionId={bridge.selectedSessionId}
+        round={currentRoundOnly ? round : undefined}
         visible={showTranscript}
         conversation={sessionConversation}
         runtime={sessionRuntime}
@@ -409,6 +404,8 @@ export function AgentVisualizer() {
 
       {/* Top bar: session tabs + info/controls */}
       <TopBar
+        onHeightChange={setToolbarBottom}
+        viewerControls={<FlowControls bridge={bridge} />}
         sessions={bridge.sessions}
         selectedSessionId={bridge.selectedSessionId}
         sessionsWithActivity={bridge.sessionsWithActivity}
@@ -416,8 +413,9 @@ export function AgentVisualizer() {
         onCloseSession={handleCloseSession}
         isVSCode={bridge.isVSCode}
         connectionStatus={bridge.connectionStatus}
-        agentCount={agents.size}
+        agentCount={displayAgents.size}
         totalTokens={totalTokens}
+        estimatedContextCost={estimatedContextCost}
         showFileAttention={showFileAttention}
         showTranscript={showTranscript}
         showCostOverlay={showCostOverlay}
@@ -427,6 +425,10 @@ export function AgentVisualizer() {
         onToggleTimeline={() => setShowTimeline(prev => !prev)}
         onToggleMute={handleToggleMute}
       />
+      </>}
+      {bridge.historyProgress.loaded < bridge.historyProgress.total && <div role="status" className="absolute inset-0 z-40 flex items-center justify-center" style={{ background: COLORS.void }}>
+        <div className="text-center text-xs font-mono" style={{ color: COLORS.textPrimary }}>Loading history…<br />{bridge.historyProgress.loaded.toLocaleString()} / {bridge.historyProgress.total.toLocaleString()} events</div>
+      </div>}
     </div>
     </OpenFileProvider>
   )

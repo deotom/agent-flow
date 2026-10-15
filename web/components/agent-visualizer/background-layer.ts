@@ -2,7 +2,7 @@ import { DepthParticle } from '@/lib/agent-types'
 import { COLORS } from '@/lib/colors'
 import { alphaHex } from '@/lib/utils'
 
-const NUM_PARTICLES = 80
+const NUM_PARTICLES = 48
 const HEX_GRID_SIZE = 60
 
 export function createDepthParticles(width: number, height: number): DepthParticle[] {
@@ -12,7 +12,7 @@ export function createDepthParticles(width: number, height: number): DepthPartic
       x: Math.random() * width * 2 - width * 0.5,
       y: Math.random() * height * 2 - height * 0.5,
       size: Math.random() * 1.5 + 0.5,
-      brightness: Math.random() * 0.3 + 0.05,
+      brightness: Math.random() * 0.18 + 0.035,
       speed: Math.random() * 0.15 + 0.05,
       depth: Math.random(),
     })
@@ -50,12 +50,31 @@ export function drawBackground(
   ctx.fillStyle = COLORS.void
   ctx.fillRect(0, 0, width, height)
 
+  // Quiet cyan instrument frame: decoration stays outside the working area.
+  const halo = ctx.createRadialGradient(width * 0.5, height * 0.45, 0, width * 0.5, height * 0.45, Math.max(width, height) * 0.7)
+  halo.addColorStop(0, '#16365024')
+  halo.addColorStop(1, '#02050d00')
+  ctx.fillStyle = halo
+  ctx.fillRect(0, 0, width, height)
+  ctx.save()
+  ctx.strokeStyle = '#76c8ff38'
+  ctx.lineWidth = 1
+  const inset = 6, length = 20
+  for (const [x, y, dx, dy] of [[inset, inset, 1, 1], [width - inset, inset, -1, 1], [inset, height - inset, 1, -1], [width - inset, height - inset, -1, -1]]) {
+    ctx.beginPath()
+    ctx.moveTo(x, y + dy * length)
+    ctx.lineTo(x, y)
+    ctx.lineTo(x + dx * length, y)
+    ctx.stroke()
+  }
+  ctx.restore()
+
   // Ambient spotlight following active agent
   if (activeAgentPos) {
     const screenX = activeAgentPos.x * transform.scale + transform.x
     const screenY = activeAgentPos.y * transform.scale + transform.y
     const gradient = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, 300)
-    gradient.addColorStop(0, activeAgentPos.color + '08')
+    gradient.addColorStop(0, activeAgentPos.color + '04')
     gradient.addColorStop(1, 'transparent')
     ctx.fillStyle = gradient
     ctx.fillRect(0, 0, width, height)
@@ -67,7 +86,7 @@ export function drawBackground(
     const px = p.x + transform.x * parallaxFactor * 0.1
     const py = p.y + transform.y * parallaxFactor * 0.1
     const size = p.size * (0.5 + p.depth * 0.5)
-    const alpha = p.brightness * (0.5 + p.depth * 0.5)
+    const alpha = p.brightness * (0.5 + p.depth * 0.5) * (0.75 + 0.25 * Math.sin(time * 1.6 + p.depth * 12))
 
     ctx.beginPath()
     ctx.fillStyle = COLORS.holoBase + alphaHex(alpha)

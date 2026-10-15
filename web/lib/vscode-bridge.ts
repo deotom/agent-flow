@@ -12,19 +12,23 @@ import type { AgentEvent, SessionInfo, ConnectionStatus } from './bridge-types'
 type InitCallback = () => void
 type EventCallback = (event: AgentEvent) => void
 type StatusCallback = (status: ConnectionStatus, source: string) => void
-type ConfigCallback = (config: Partial<{ mode: string; autoPlay: boolean; showMockData: boolean; disable1MContext: boolean }>) => void
+export type ViewerConfig = Partial<{ visible: boolean; mode: string; autoPlay: boolean; showMockData: boolean; disable1MContext: boolean; compact: boolean; selectedSessionId: string;
+  animationMode: 'full' | 'low' | 'off'; animationSpeed: number; patchVersion: string; extensionVersion: string }>
+type ConfigCallback = (config: ViewerConfig) => void
 type SessionCallback = (type: 'list' | 'started' | 'ended' | 'updated' | 'reset', data: SessionInfo[] | SessionInfo | string | { sessionId: string; label: string }) => void
 
 class VSCodeBridge {
   private _isVSCode = false
   private _status: ConnectionStatus = 'disconnected'
   private _source = ''
+  private uiReady = false
 
   private initListeners: InitCallback[] = []
   private eventListeners: EventCallback[] = []
   private statusListeners: StatusCallback[] = []
   private configListeners: ConfigCallback[] = []
   private sessionListeners: SessionCallback[] = []
+  private historyListeners: ((progress: { loaded: number; total: number }) => void)[] = []
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -37,9 +41,12 @@ class VSCodeBridge {
     if (!data || typeof data.type !== 'string') { return }
 
     switch (data.type) {
+      case 'history-progress':
+        for (const cb of this.historyListeners) cb({ loaded: data.loaded, total: data.total })
+        break
       case '__vscode-bridge-init':
         this._isVSCode = true
-        this.postToExtension({ type: 'ready' })
+        if (this.uiReady) this.postToExtension({ type: 'ready' })
         for (const cb of this.initListeners) cb()
         this.initListeners = [] // one-shot: no need to keep listeners after init
         break
@@ -143,10 +150,22 @@ class VSCodeBridge {
     return this.subscribe(this.sessionListeners, callback)
   }
 
+  onHistory(callback: (progress: { loaded: number; total: number }) => void): () => void { return this.subscribe(this.historyListeners, callback) }
+  reloadView(): void { this.postToExtension({ type: 'reload-view' }) }
+  requestStatus(): void { this.postToExtension({ type: 'request-status' }) }
+  setAnimation(mode: 'full' | 'low' | 'off', speed: number): void { this.postToExtension({ type: 'set-animation', mode, speed }) }
+
   // ─── Send commands to extension ──────────────────────────────────────────
 
   openFile(filePath: string, line?: number): void {
     this.postToExtension({ type: 'open-file', filePath, line })
+  }
+
+  openGraph(sessionId?: string): void { this.postToExtension({ type: 'open-graph', sessionId }) }
+
+  ready(): void {
+    this.uiReady = true
+    if (this._isVSCode) this.postToExtension({ type: 'ready' })
   }
 
   private postToExtension(message: Record<string, unknown>): void {
@@ -175,6 +194,7 @@ class VSCodeBridge {
     this.statusListeners = []
     this.configListeners = []
     this.sessionListeners = []
+    this.historyListeners = []
   }
 }
 

@@ -1,11 +1,11 @@
 "use client"
 
-import { memo } from "react"
+import { memo, useEffect, useRef, type ReactNode } from "react"
 import { Z } from "@/lib/agent-types"
 import { COLORS } from "@/lib/colors"
 import { formatTokens } from "@/lib/utils"
-import { agentCost } from "./canvas/draw-cost"
-import { SessionTabs } from "./session-tabs"
+import { SessionPicker } from "./session-picker"
+import { FlowIcon } from './flow-icon'
 import type { SessionInfo, ConnectionStatus } from "@/lib/bridge-types"
 
 // ─── Mute/Unmute SVG Icons ───────────────────────────────────────────────────
@@ -42,7 +42,7 @@ function ToggleButton({ active, onClick, children, style, activeColor }: {
   return (
     <button
       onClick={onClick}
-      className="px-1.5 py-0.5 rounded transition-all"
+      className="px-2 py-1.5 rounded-md transition-all inline-flex items-center gap-1.5"
       style={{
         background: active ? (activeColor?.bg ?? COLORS.toggleActive) : COLORS.toggleInactive,
         border: `1px solid ${COLORS.toggleBorder}`,
@@ -77,6 +77,8 @@ function ConnectionIndicator({ status }: { status: ConnectionStatus }) {
 // ─── Top Bar ────────────────────────────────────────────────────────────────
 
 export interface TopBarProps {
+  viewerControls?: ReactNode
+  onHeightChange?: (height: number) => void
   // Session tabs
   sessions: SessionInfo[]
   selectedSessionId: string | null
@@ -89,6 +91,7 @@ export interface TopBarProps {
   // Stats
   agentCount: number
   totalTokens: number
+  estimatedContextCost: number
   // Panel toggles
   showFileAttention: boolean
   showTranscript: boolean
@@ -101,39 +104,43 @@ export interface TopBarProps {
 }
 
 export const TopBar = memo(function TopBar({
+  viewerControls, onHeightChange,
   sessions, selectedSessionId, sessionsWithActivity,
   onSelectSession, onCloseSession,
   isVSCode, connectionStatus,
-  agentCount, totalTokens,
+  agentCount, totalTokens, estimatedContextCost,
   showFileAttention, showTranscript, showCostOverlay, showTimeline, isMuted,
   onTogglePanel, onToggleTimeline, onToggleMute,
 }: TopBarProps) {
+  const header = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!header.current || !onHeightChange) return
+    const observer = new ResizeObserver(entries => onHeightChange(entries[0].contentRect.height + 42))
+    observer.observe(header.current)
+    return () => observer.disconnect()
+  }, [onHeightChange])
   return (
-    <div className="absolute top-3 left-3 right-3 flex items-center gap-4 font-mono text-[10px]" style={{ zIndex: Z.info }}>
+    <div ref={header} className="absolute top-3 left-3 right-3 flow-hud-panel flex flex-col items-stretch gap-2 text-[12px] p-2 rounded-lg" style={{ zIndex: 80, background: COLORS.panelBg, border: `1px solid ${COLORS.glassBorder}` }}>
       {/* Session tabs — scrollable, takes available space */}
-      {sessions.length > 1 && (
-        <div className="min-w-0 flex-shrink overflow-x-auto scrollbar-hide">
-          <SessionTabs
+      {sessions.length > 0 && (
+        <div className="min-w-0">
+          <SessionPicker
             sessions={sessions}
             selectedSessionId={selectedSessionId}
-            sessionsWithActivity={sessionsWithActivity}
             onSelectSession={onSelectSession}
             onCloseSession={onCloseSession}
           />
         </div>
       )}
 
-      {/* Spacer pushes info to the right */}
-      <div className="flex-1" />
-
       {/* Right-side info/controls */}
-      <div className="flex items-center gap-4 flex-shrink-0" style={{ color: COLORS.textMuted }}>
+      <div className="flex flex-wrap items-center justify-end gap-3" style={{ color: COLORS.textMuted }}>
         {isVSCode && <ConnectionIndicator status={connectionStatus} />}
         <span>{agentCount} agents</span>
         <span>
           {formatTokens(totalTokens)} tokens
           <span style={{ color: COLORS.complete + '65', marginLeft: 4 }}>
-            ~${agentCost(totalTokens).toFixed(2)}
+            <span title="Context cost estimate for visible agents, using configured model rates. Not billed usage.">~${estimatedContextCost.toFixed(2)}</span>
           </span>
         </span>
 
@@ -142,23 +149,24 @@ export const TopBar = memo(function TopBar({
           background: COLORS.holoBg03,
           border: `1px solid ${COLORS.holoBorder06}`,
         }}>
-          <ToggleButton active={showFileAttention} onClick={() => onTogglePanel('files')} style={{ background: showFileAttention ? undefined : 'transparent', border: 'none' }}>Files</ToggleButton>
-          <ToggleButton active={showTranscript} onClick={() => onTogglePanel('transcript')} style={{ background: showTranscript ? undefined : 'transparent', border: 'none' }}>Chat</ToggleButton>
+          <ToggleButton active={showFileAttention} onClick={() => onTogglePanel('files')} style={{ background: showFileAttention ? undefined : 'transparent', border: 'none' }}><FlowIcon name="files" size={14} />Files</ToggleButton>
+          <ToggleButton active={showTranscript} onClick={() => onTogglePanel('transcript')} style={{ background: showTranscript ? undefined : 'transparent', border: 'none' }}><FlowIcon name="chat" size={14} />Chat</ToggleButton>
           <ToggleButton
             active={showCostOverlay}
             onClick={() => onTogglePanel('cost')}
             activeColor={{ bg: COLORS.costActiveBg, text: COLORS.complete }}
             style={{ background: showCostOverlay ? undefined : 'transparent', border: 'none' }}
           >
-            $Cost
+            <FlowIcon name="cost" size={14} />Cost
           </ToggleButton>
         </div>
 
         {/* Independent toggles */}
-        <ToggleButton active={showTimeline} onClick={onToggleTimeline}>Timeline</ToggleButton>
+        <ToggleButton active={showTimeline} onClick={onToggleTimeline}><FlowIcon name="timeline" size={14} />Timeline</ToggleButton>
         <ToggleButton active={!isMuted} onClick={onToggleMute} style={{ border: `1px solid ${COLORS.toggleBorder}` }}>
           {isMuted ? <MutedIcon /> : <UnmutedIcon />}
         </ToggleButton>
+        {viewerControls}
       </div>
     </div>
   )

@@ -101,4 +101,17 @@ describe('readNewFileLines', () => {
   it('returns null when the file does not exist', () => {
     assert.equal(readNewFileLines(path.join(dir, 'missing.jsonl'), 0), null)
   })
+
+  it('preserves Thai and emoji when a writer stops inside any UTF-8 character', () => {
+    const line = JSON.stringify({ text: 'กำลังคิด 🧠 ทำต่อ' })
+    const bytes = Buffer.from(line + '\n')
+    for (let split = 1; split < bytes.length; split++) {
+      fs.writeFileSync(file, bytes.subarray(0, split))
+      const first = readNewFileLines(file, 0)!
+      fs.appendFileSync(file, bytes.subarray(split))
+      const second = readNewFileLines(file, first.newSize, first.tail)!
+      assert.deepEqual([...first.lines, ...second.lines], [line], `split byte ${split}`)
+      assert.equal(second.tail, '')
+    }
+  })
 })

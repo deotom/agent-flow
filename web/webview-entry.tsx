@@ -5,13 +5,11 @@ import './app/globals.css'
 
 // Production webview: use VS Code API for messaging
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void }
-const vscodeApi = acquireVsCodeApi()
+const vscodeApi = (window as unknown as { __agentFlowApi?: ReturnType<typeof acquireVsCodeApi> }).__agentFlowApi ?? acquireVsCodeApi()
 
 // Configure bridge to use VS Code API instead of window.parent.postMessage
 if (vscodeBridge) {
   vscodeBridge.configureWebviewApi((msg) => vscodeApi.postMessage(msg))
-  // Signal readiness to extension host
-  vscodeApi.postMessage({ type: 'ready' })
 }
 
 // Mount the React app

@@ -9,18 +9,23 @@ import {
   type TimelineEntry,
 } from '@/lib/agent-types'
 import { MOCK_SCENARIO } from '@/lib/mock-scenario'
-import { TOOL_CARD_W, TOOL_CARD_H, FORCE, TOOL_SLOT, BUBBLE_VISIBLE_S, MODEL_FAMILY_CONTEXT, DEFAULT_CONTEXT_SIZE, FALLBACK_CONTEXT_SIZE, ANIM_SPEED } from '@/lib/canvas-constants'
-import { forceSimulation, forceLink, forceManyBody, forceCenter, forceCollide, type Simulation } from 'd3-force'
+import { TOOL_CARD_W, TOOL_CARD_H, TOOL_SLOT, BUBBLE_VISIBLE_S, MODEL_FAMILY_CONTEXT, DEFAULT_CONTEXT_SIZE, FALLBACK_CONTEXT_SIZE, ANIM_SPEED } from '@/lib/canvas-constants'
+import { useVisibleFrameLoop } from './use-visible-frame-loop'
+import { hasActiveAgents } from '@/lib/render-budget'
+import { animationFrameInterval } from '@/lib/viewer-preferences'
+import { historyArchive, type MessageRow } from '@/lib/history-archive'
+import { compactHistory } from './simulation/compact-history'
+import { stableAgentLayout } from './simulation/stable-layout'
 
-import type { SimulationState, ForceNode, ForceLink, UseAgentSimulationOptions } from './simulation/types'
-import { createEmptyState, MAX_EVENT_LOG } from './simulation/types'
+import type { SimulationState, UseAgentSimulationOptions } from './simulation/types'
+import { createEmptyState } from './simulation/types'
 import { processEvent, type ProcessEventContext } from './simulation/process-event'
 import { computeNextFrame } from './simulation/animate'
 import { snapVisualState } from './simulation/snap-visual-state'
 import { shouldCommitFrame } from './simulation/ui-throttle'
 
 export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
-  const { useMockData = true, externalEvents, onExternalEventsConsumed, sessionFilter, sessionFilterRef: externalFilterRef, disable1MContext = false } = options
+  const { restoring = false, useMockData = true, externalEvents, onExternalEventsConsumed, sessionFilter, sessionFilterRef: externalFilterRef, disable1MContext = false, animationMode = 'full', animationSpeed = 1, visible = true } = options
   const internalFilterRef = useRef(sessionFilter)
   internalFilterRef.current = sessionFilter
   const sessionFilterRef = externalFilterRef ?? internalFilterRef
@@ -39,75 +44,28 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
     setState(next)
   }, [])
 
-  const animationRef = useRef<number>(0)
   const lastTimeRef = useRef<number>(0)
-  const forceSimRef = useRef<Simulation<ForceNode, ForceLink> | null>(null)
+  const establishedNodesRef = useRef(new Set<string>())
+  const seekGenerationRef = useRef(0)
+  const reviewCursorRef = useRef<{ session: string; cursor?: IDBValidKey[]; loading: boolean; done: boolean } | null>(null)
+  const savedTasksRef = useRef(new Map<string, string>())
   const blockIdCounter = useRef(0)
   const skipForceSyncRef = useRef(false)
   const animateRef = useRef<(timestamp: number) => void>(() => {})
   /** Throttle React UI updates to ~4/sec — canvas stays smooth via frameRef */
   const lastUIUpdateRef = useRef(0)
   const lastUITimeRef = useRef(0)
+  const historyUIChangedRef = useRef(false)
 
-  // ─── d3-force simulation ─────────────────────────────────────────────────
-  useEffect(() => {
-    const sim = forceSimulation<ForceNode, ForceLink>([])
-      .force('charge', forceManyBody().strength(FORCE.chargeStrength))
-      .force('center', forceCenter(0, 0).strength(FORCE.centerStrength))
-      .force('collide', forceCollide(FORCE.collideRadius))
-      .force('link', forceLink<ForceNode, ForceLink>([]).id(d => d.id).distance(FORCE.linkDistance).strength(FORCE.linkStrength))
-      .alphaDecay(FORCE.alphaDecay)
-      .velocityDecay(FORCE.velocityDecay)
-      .on('tick', () => {
-        // Force tick only updates positions — write to frameRef, no React render
-        const prev = frameRef.current
-        const newAgents = new Map(prev.agents)
-        let changed = false
-        for (const node of sim.nodes()) {
-          const agent = newAgents.get(node.id)
-          if (agent && !agent.pinned && node.x !== undefined && node.y !== undefined) {
-            if (Math.abs(agent.x - node.x) > 0.1 || Math.abs(agent.y - node.y) > 0.1) {
-              newAgents.set(node.id, { ...agent, x: node.x, y: node.y })
-              changed = true
-            }
-          }
-        }
-        if (changed) {
-          frameRef.current = { ...prev, agents: newAgents }
-        }
-      })
-
-    sim.stop()
-    forceSimRef.current = sim
-    return () => { sim.stop(); forceSimRef.current = null }
+  // ─── Stable incremental layout ─────────────────────────────────────────────────
+  // Place only new agents; existing positions and manual drags remain anchored.
+  const syncForceSimulation = useCallback((_agents: Map<string, Agent>, _edges: Edge[]) => {
+    const current = frameRef.current
+    const agents = stableAgentLayout(current.agents, establishedNodesRef.current)
+    establishedNodesRef.current = new Set(agents.keys())
+    frameRef.current = { ...current, agents }
   }, [])
 
-  // ─── Force simulation sync ───────────────────────────────────────────────
-  const syncForceSimulation = useCallback((agents: Map<string, Agent>, edges: Edge[]) => {
-    const sim = forceSimRef.current
-    if (!sim) return
-
-    const nodes: ForceNode[] = Array.from(agents.values()).map(a => ({
-      id: a.id,
-      x: a.x, y: a.y,
-      vx: a.vx, vy: a.vy,
-      fx: a.pinned ? a.x : undefined,
-      fy: a.pinned ? a.y : undefined,
-    }))
-
-    const links: ForceLink[] = edges
-      .filter(e => e.type === 'parent-child')
-      .map(e => ({ id: e.id, source: e.from, target: e.to }))
-
-    sim.nodes(nodes)
-    const linkForce = sim.force('link') as ReturnType<typeof forceLink> | undefined
-    if (linkForce) linkForce.links(links)
-    sim.alpha(0.3).restart()
-    for (let i = 0; i < 15; i++) sim.tick()
-    sim.stop()
-  }, [])
-
-  // ─── Tool slot placement ─────────────────────────────────────────────────
   const findToolSlot = useCallback((
     agent: Agent, agents: Map<string, Agent>,
     toolCalls: Map<string, ToolCallNode>, currentTime: number,
@@ -164,7 +122,7 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
       findToolSlot,
       getContextWindowSize,
       blockIdCounter,
-      skipForceSync: skipForceSyncRef.current,
+      skipForceSync: skipForceSyncRef.current || !!event.historical,
     }
     return processEvent(event, prev, ctx)
   }, [syncForceSimulation, findToolSlot, getContextWindowSize])
@@ -173,29 +131,20 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
   // Reads/writes frameRef directly. Only calls commitState when new events
   // are processed, so React only re-renders UI on structural data changes.
   const animate = useCallback((timestamp: number) => {
-    // Cap at 60fps to reduce CPU/GPU load
-    const elapsed = timestamp - lastTimeRef.current
-    if (lastTimeRef.current && elapsed < ANIM_SPEED.minFrameInterval) {
-      animationRef.current = requestAnimationFrame(animateRef.current)
-      return
-    }
-
     if (!lastTimeRef.current) lastTimeRef.current = timestamp
     const deltaTime = Math.min((timestamp - lastTimeRef.current) / 1000, ANIM_SPEED.maxDeltaTime)
     lastTimeRef.current = timestamp
 
+    const prev = frameRef.current
+    if (!prev.isPlaying) {
+      return
+    }
+
     // Snapshot and consume external events OUTSIDE the main processing
     // to avoid React strict mode double-invocation clearing them
     let capturedEvents: SimulationEvent[] | null = null
-    if (externalEvents && externalEvents.length > 0 && !useMockData) {
-      capturedEvents = externalEvents.slice()
-      onExternalEventsConsumed?.()
-    }
-
-    const prev = frameRef.current
-    if (!prev.isPlaying) {
-      animationRef.current = requestAnimationFrame(animateRef.current)
-      return
+    if (externalEvents && externalEvents.length > 0 && !useMockData && !reviewCursorRef.current) {
+      capturedEvents = externalEvents.slice(0, 64)
     }
 
     let newTime = prev.currentTime + deltaTime * prev.speed
@@ -216,7 +165,7 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
     } else {
       while (newEventIndex < currentState.eventLog.length && currentState.eventLog[newEventIndex].time <= newTime) {
         const evt = currentState.eventLog[newEventIndex]
-        currentState = processEventWithContext(evt, currentState)
+        currentState = processEventWithContext({ ...evt, historical: false }, currentState)
         newEventIndex++
       }
     }
@@ -235,17 +184,23 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
         }
         newTime = Math.max(newTime, currentState.currentTime)
       }
+      const processingStarted = performance.now()
+      let consumed = 0
       for (const event of capturedEvents) {
+        if (consumed && performance.now() - processingStarted >= 8) break
+        consumed++
+        if (event.sequence && event.sequence <= prev.receivedEventCount) continue
         const activeFilter = sessionFilterRef.current
         if (activeFilter && event.sessionId && event.sessionId !== activeFilter) {
           continue
         }
-        const eventTime = Math.max(event.time || newTime, newTime)
+        const eventTime = event.historical ? event.time : Math.max(event.time ?? newTime, newTime)
         const timedEvent = { ...event, time: eventTime }
         currentState = { ...currentState, currentTime: eventTime }
         currentState = processEventWithContext(timedEvent, currentState)
         newEvents.push(timedEvent)
       }
+      onExternalEventsConsumed?.(consumed)
       // Sync simulation clock to latest event so active state renders correctly
       newTime = Math.max(newTime, currentState.currentTime)
       maxT = Math.max(maxT, newTime)
@@ -254,9 +209,6 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
     // Append new events to log
     if (newEvents.length > 0) {
       let newLog = currentState.eventLog.concat(newEvents)
-      if (newLog.length > MAX_EVENT_LOG) {
-        newLog = newLog.slice(newLog.length - MAX_EVENT_LOG)
-      }
       // In mock mode, eventIndex tracks position in MOCK_SCENARIO (not the log).
       // In live mode, eventIndex tracks position in the event log.
       if (!useMockData) {
@@ -267,47 +219,84 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
 
     currentState = { ...currentState, eventIndex: newEventIndex }
 
-    const result = computeNextFrame(prev, deltaTime, newTime, maxT, currentState, {
+    let result = computeNextFrame(prev, deltaTime, newTime, maxT, currentState, {
       useMockData,
       mockScenarioLength: MOCK_SCENARIO.length,
       mockScenarioEndTime: MOCK_SCENARIO.length > 0 ? MOCK_SCENARIO[MOCK_SCENARIO.length - 1].time : 0,
+      animationMode, animationSpeed,
     })
 
+    const archiveSession = sessionFilterRef.current
+    if (!useMockData && archiveSession && newEvents.length && !reviewCursorRef.current) {
+      const sequenceSet = new Set(newEvents.map(event => event.sequence))
+      const messages: MessageRow[] = [...result.conversations].flatMap(([agentId, messages]) => messages.filter(message => sequenceSet.has(message.sourceSequence)).map(message => ({ ...message, agentId,
+        agentName: result.agents.get(agentId)?.name ?? result.timelineEntries.get(agentId)?.agentName ?? agentId })))
+      const tasks = [...result.delegations.values()].filter(task => {
+        const signature = `${task.stage}:${task.endTime}:${task.model}`
+        const changed = !task.archived || savedTasksRef.current.get(task.id) !== signature
+        savedTasksRef.current.set(task.id, signature)
+        return changed
+      })
+      for (const id of savedTasksRef.current.keys()) if (!result.delegations.has(id)) savedTasksRef.current.delete(id)
+      const tools = [...result.toolCalls.values()].filter(tool => !tool.archived)
+      const archiveGeneration = seekGenerationRef.current
+      const through = result.receivedEventCount
+      void Promise.all([...messages.map(message => historyArchive.saveMessage(archiveSession, message)),
+        ...tasks.map(task => historyArchive.saveTask(archiveSession, task)), ...tools.map(tool => historyArchive.saveTool(archiveSession, tool)), historyArchive.settle()]).then(() => {
+        if (archiveGeneration !== seekGenerationRef.current || historyArchive.error || sessionFilterRef.current !== archiveSession || reviewCursorRef.current || !frameRef.current.isPlaying) return
+        const compacted = compactHistory(frameRef.current, result, through)
+        frameRef.current = compacted
+        historyUIChangedRef.current = true
+      }).catch(error => { historyArchive.error = String(error) })
+    }
+    const review = reviewCursorRef.current
+    if (review && result.eventIndex > 500) result = compactHistory(result, result, result.receivedEventCount)
+    if (review && !review.loading && !review.done && result.eventLog.length - result.eventIndex < 250) {
+      review.loading = true
+      void historyArchive.page<SimulationEvent>('events', review.session, { cursor: review.cursor, forward: true, limit: 500 }).then(page => {
+        if (reviewCursorRef.current !== review) return
+        review.cursor = page.cursor; review.done = !page.more; review.loading = false
+        frameRef.current = { ...frameRef.current, eventLog: frameRef.current.eventLog.concat(page.items) }
+      }).catch(error => { review.loading = false; review.done = true; historyArchive.error = String(error) })
+    }
+
+    // Place new nodes once per batch, including quiet historical restoration.
+    if (newEvents.length) {
+      const agents = stableAgentLayout(result.agents, establishedNodesRef.current)
+      establishedNodesRef.current = new Set(agents.keys())
+      result = { ...result, agents }
+    }
     // Write to frameRef (canvas reads this every frame)
     frameRef.current = result
 
-    // Force tick — updates agent positions in frameRef
-    if (forceSimRef.current) forceSimRef.current.tick()
+    // Node positions are updated only when new agents arrive or the user drags.
+
 
     // Throttle React re-renders — UI updates at most ~4/sec, canvas stays smooth via frameRef
     if (shouldCommitFrame({
       now: timestamp,
       lastCommitAt: lastUIUpdateRef.current,
-      processedEvents: newEvents.length > 0,
+      processedEvents: newEvents.length > 0 || historyUIChangedRef.current,
       currentTime: result.currentTime,
       lastCommittedTime: lastUITimeRef.current,
     })) {
       setState(frameRef.current)
+      historyUIChangedRef.current = false
       lastUIUpdateRef.current = timestamp
       lastUITimeRef.current = result.currentTime
     }
 
-    animationRef.current = requestAnimationFrame(animateRef.current)
   // eslint-disable-next-line react-hooks/exhaustive-deps -- sessionFilter intentionally omitted; we read sessionFilterRef.current
-  }, [processEventWithContext, useMockData, externalEvents, onExternalEventsConsumed])
+  }, [processEventWithContext, useMockData, externalEvents, onExternalEventsConsumed, animationMode, animationSpeed])
 
   animateRef.current = animate
 
-  useEffect(() => {
-    const loop = (timestamp: number) => animateRef.current(timestamp)
-    if (state.isPlaying) {
-      lastTimeRef.current = 0
-      animationRef.current = requestAnimationFrame(loop)
-    } else if (animationRef.current) {
-      cancelAnimationFrame(animationRef.current)
-    }
-    return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current) }
-  }, [state.isPlaying])
+  useVisibleFrameLoop(animateRef, state.isPlaying && visible, () => {
+    const current = frameRef.current
+    if (restoring) return 0
+    const quiet = !useMockData && !externalEvents?.length && !reviewCursorRef.current && !current.particles.length && !current.discoveries.length && !current.toolCalls.size && !hasActiveAgents(current.agents.values())
+    return quiet ? 250 : animationFrameInterval(animationMode)
+  }, () => { lastTimeRef.current = 0 })
 
   // ─── Playback controls ───────────────────────────────────────────────────
   const play = useCallback(() => {
@@ -327,7 +316,9 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
 
   const restart = useCallback((keepActive = false) => {
     blockIdCounter.current = 0
+    seekGenerationRef.current++; reviewCursorRef.current = null; savedTasksRef.current.clear()
     if (!keepActive) {
+      establishedNodesRef.current.clear()
       commitState(createEmptyState({ isPlaying: true, speed: frameRef.current.speed }))
       return
     }
@@ -375,40 +366,47 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
     if (agent) newAgents.set(agentId, { ...agent, x, y, pinned: true })
     frameRef.current = { ...prev, agents: newAgents }
 
-    if (forceSimRef.current) {
-      const node = forceSimRef.current.nodes().find(n => n.id === agentId)
-      if (node) { node.fx = x; node.fy = y }
-    }
+
   }, [])
 
   /** Seek to a specific time — replays events from scratch up to targetTime */
-  const seekToTime = useCallback((targetTime: number) => {
+  const seekToTime = useCallback(async (targetTime: number, live = false) => {
     const prev = frameRef.current
-    const events = useMockData ? MOCK_SCENARIO : prev.eventLog
-
-    let replayState = createEmptyState({
-      speed: prev.speed,
-      eventLog: prev.eventLog,
-      maxTimeReached: prev.maxTimeReached,
-    })
-
+    const generation = ++seekGenerationRef.current
+    reviewCursorRef.current = null
+    const session = sessionFilterRef.current
+    let replayState = createEmptyState({ receivedEventCount: prev.receivedEventCount, speed: prev.speed, maxTimeReached: prev.maxTimeReached })
     skipForceSyncRef.current = true
     blockIdCounter.current = 0
-    let newEventIndex = 0
-    for (const event of events) {
-      if (event.time > targetTime) break
-      replayState.currentTime = event.time
-      replayState = { ...processEventWithContext(event, replayState), currentTime: event.time }
-      newEventIndex++
-    }
-    skipForceSyncRef.current = false
-
-    replayState = snapVisualState(replayState, targetTime)
-    replayState.currentTime = targetTime
-    replayState.eventIndex = newEventIndex
-
-    commitState(replayState)
-    setTimeout(() => syncForceSimulation(replayState.agents, replayState.edges), 0)
+    try {
+      if (useMockData || !session) {
+        for (const event of MOCK_SCENARIO) { if (event.time > targetTime) break; replayState = processEventWithContext(event, { ...replayState, currentTime: event.time }) }
+      } else {
+        await historyArchive.settle()
+        let cursor: IDBValidKey[] | undefined
+        while (generation === seekGenerationRef.current) {
+          const page = await historyArchive.page<SimulationEvent>('events', session, { cursor, forward: true, limit: 500 })
+          if (generation !== seekGenerationRef.current) return
+          const future: SimulationEvent[] = []
+          for (const event of page.items) {
+            if (event.time > targetTime) future.push(event)
+            else replayState = processEventWithContext({ ...event, historical: true }, { ...replayState, currentTime: event.time })
+          }
+          cursor = page.cursor
+          // Bound the temporary seek state as well. Full messages remain in the disk archive.
+          replayState = compactHistory(replayState, replayState, replayState.receivedEventCount)
+          if (future.length || !page.more) {
+            if (!live) { replayState.eventLog = future; replayState.eventIndex = 0; reviewCursorRef.current = { session, cursor, loading: false, done: !page.more } }
+            break
+          }
+        }
+      }
+      if (generation !== seekGenerationRef.current) return
+      const effectiveTime = Number.isFinite(targetTime) ? targetTime : Math.max(prev.maxTimeReached, replayState.currentTime)
+      replayState = snapVisualState(replayState, effectiveTime)
+      commitState({ ...replayState, currentTime: effectiveTime, maxTimeReached: Math.max(prev.maxTimeReached, effectiveTime), isPlaying: live })
+      syncForceSimulation(replayState.agents, replayState.edges)
+    } catch (error) { historyArchive.error = String(error) } finally { if (generation === seekGenerationRef.current) skipForceSyncRef.current = false }
   }, [processEventWithContext, useMockData, syncForceSimulation, commitState])
 
   // ─── Session state save/restore ──────────────────────────────────────────
@@ -440,6 +438,7 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
     // Canvas reads frameRef directly for 60fps rendering
     frameRef,
     // UI components use React state (updated only on events/user actions)
+    round: state.round, roundStart: state.roundStart, delegations: state.delegations,
     agents: state.agents, toolCalls: state.toolCalls,
     particles: state.particles, edges: state.edges,
     discoveries: state.discoveries,

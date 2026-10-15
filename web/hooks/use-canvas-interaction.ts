@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, type MutableRefObject } from 'react'
-import { Agent, ToolCallNode, Discovery, ANIM } from '@/lib/agent-types'
+import { Agent, ToolCallNode, Discovery, ANIM, NODE } from '@/lib/agent-types'
 import { CAMERA } from '@/lib/canvas-constants'
 import {
   findAgentAt as findAgentAtPure,
@@ -23,6 +23,7 @@ interface InteractionOptions {
     agents: Map<string, Agent>
     toolCalls: Map<string, ToolCallNode>
     discoveries: Discovery[]
+    compact?: boolean
   } & InteractionCallbacks>
   transformRef: MutableRefObject<Transform>
   userHasNavigatedRef: MutableRefObject<boolean>
@@ -81,7 +82,7 @@ export function useCanvasInteraction({
     if (e.button === 0) {
       panVelocityRef.current = { vx: 0, vy: 0, active: false }
       setIsDragging(true)
-      if (agentId) {
+      if (agentId && !drawPropsRef.current.compact) {
         dragTargetRef.current = { type: 'agent', id: agentId, startX: e.clientX, startY: e.clientY }
       } else {
         dragTargetRef.current = { type: 'canvas', startX: e.clientX, startY: e.clientY }
@@ -93,6 +94,17 @@ export function useCanvasInteraction({
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const pos = screenToCanvas(e.clientX, e.clientY)
     const hoveredId = findAgentAt(pos.x, pos.y)
+    const compact = !!drawPropsRef.current.compact
+    const unit = Math.min(compact ? 2 : 1.25, 1 / Math.max(0.1, transformRef.current.scale))
+    let contextAgent: Agent | undefined
+    for (const agent of drawPropsRef.current.agents.values()) {
+      const r = (agent.isMain ? NODE.radiusMain : NODE.radiusSub) * agent.scale
+      const labelY = agent.y + r + 12 + (compact ? 48 : 57) * unit
+      if (agent.opacity > 0.5 && agent.tokensUsed > 0 && Math.abs(pos.x - agent.x) < 65 * unit && pos.y >= labelY - 5 && pos.y <= labelY + 16 * unit) { contextAgent = agent; break }
+    }
+    if (mainCanvasRef.current) mainCanvasRef.current.title = contextAgent
+      ? `${contextAgent.name}: ${contextAgent.tokensUsed.toLocaleString()} / ${contextAgent.tokensMax.toLocaleString()} tokens (${Math.round(contextAgent.tokensUsed / Math.max(1, contextAgent.tokensMax) * 100)}%)`
+      : ''
     if (hoveredId !== lastHoveredIdRef.current) {
       lastHoveredIdRef.current = hoveredId
       drawPropsRef.current.onAgentHover(hoveredId)
@@ -217,6 +229,7 @@ export function useCanvasInteraction({
     setIsDragging(false)
     dragTargetRef.current = null
     dragLerpRef.current = null
+    if (mainCanvasRef.current) mainCanvasRef.current.title = ''
     if (lastHoveredIdRef.current !== null) {
       lastHoveredIdRef.current = null
       drawPropsRef.current.onAgentHover(null)

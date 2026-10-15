@@ -71,15 +71,14 @@ export function wireWatcherToPanel(
   const subs: TypedDisposable[] = []
 
   subs.push(watcher.onEvent((event) => {
-    const panel = VisualizerPanel.getCurrent()
-    if (!panel || !panel.isReady) return
     const transformed = options.transformEvent ? options.transformEvent(event) : event
-    if (transformed) panel.sendEvent(transformed)
+    if (transformed) for (const panel of VisualizerPanel.getEventTargets()) {
+      if (panel.isReady) panel.sendEvent(transformed)
+    }
   }))
 
   subs.push(watcher.onSessionDetected((sessionId) => {
-    const panel = VisualizerPanel.getCurrent()
-    if (panel) {
+    for (const panel of VisualizerPanel.getEventTargets()) {
       const sessionCount = watcher.getActiveSessions().length
       panel.setConnectionStatus('watching', sessionCount > 1
         ? `${sessionCount} ${options.sessionLabelPrefix} sessions`
@@ -92,23 +91,23 @@ export function wireWatcherToPanel(
   }))
 
   subs.push(watcher.onSessionLifecycle((lifecycle) => {
-    const panel = VisualizerPanel.getCurrent()
-    if (!panel) return
-    if (lifecycle.type === 'started') {
-      panel.postMessage({
-        type: 'session-started',
-        session: {
-          id: lifecycle.sessionId,
-          label: lifecycle.label,
-          status: 'active',
-          startTime: Date.now(),
-          lastActivityTime: Date.now(),
-        },
-      })
-    } else if (lifecycle.type === 'updated') {
-      panel.postMessage({ type: 'session-updated', sessionId: lifecycle.sessionId, label: lifecycle.label })
-    } else {
-      panel.postMessage({ type: 'session-ended', sessionId: lifecycle.sessionId })
+    for (const panel of VisualizerPanel.getEventTargets()) {
+      if (lifecycle.type === 'started') {
+        panel.postMessage({
+          type: 'session-started',
+          session: {
+            id: lifecycle.sessionId,
+            label: lifecycle.label,
+            status: 'active',
+            startTime: Date.now(),
+            lastActivityTime: Date.now(),
+          },
+        })
+      } else if (lifecycle.type === 'updated') {
+        panel.postMessage({ type: 'session-updated', sessionId: lifecycle.sessionId, label: lifecycle.label })
+      } else {
+        panel.postMessage({ type: 'session-ended', sessionId: lifecycle.sessionId })
+      }
     }
   }))
 

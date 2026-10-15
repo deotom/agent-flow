@@ -23,13 +23,21 @@ function getNonce(): string {
 export class VisualizerPanel implements vscode.Disposable {
   public static readonly viewType = 'agentVisualizer'
   private static instance: VisualizerPanel | undefined
+  private static sidebar: VisualizerPanel | undefined
+  private static replayTarget: VisualizerPanel | undefined
 
-  private readonly panel: vscode.WebviewPanel
+  private readonly panel: vscode.WebviewPanel | vscode.WebviewView
   private readonly extensionUri: vscode.Uri
   private readonly disposables: vscode.Disposable[] = []
   private readonly _onCommand = new vscode.EventEmitter<WebviewToExtensionMessage>()
   private _wired = false
   private _ready = false
+  selectedSessionId: string | undefined
+  private eventQueue: AgentEvent[] = []
+  private restoringHistory = false
+  private historyTotal = 0
+  private historyLoaded = 0
+  private eventFlushTimer: NodeJS.Timeout | null = null
 
   readonly onCommand = this._onCommand.event
 
@@ -40,13 +48,32 @@ export class VisualizerPanel implements vscode.Disposable {
   /** Whether the webview has signaled 'ready' and replay is complete.
    *  Live events should be gated on this to prevent duplication with replay. */
   get isReady(): boolean { return this._ready }
+  get isVisible(): boolean { return this.panel.visible }
   markReady(): void { this._ready = true }
 
-  private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
+  selectSession(sessionId?: string): void {
+    if (!sessionId) return
+    this.selectedSessionId = sessionId
+    if (this.isReady) this.postMessage({ type: 'config', config: { selectedSessionId: sessionId } })
+  }
+
+  reload(): void {
+    this._ready = false
+    if (this.eventFlushTimer) clearTimeout(this.eventFlushTimer)
+    this.eventFlushTimer = null
+    this.eventQueue = []
+    this.panel.webview.html = this.getHtml()
+  }
+
+  private constructor(panel: vscode.WebviewPanel | vscode.WebviewView, extensionUri: vscode.Uri, readonly compact = false) {
     this.panel = panel
     this.extensionUri = extensionUri
 
+    this.panel.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(extensionUri, 'dist'), vscode.Uri.joinPath(extensionUri, 'media')] }
     this.panel.webview.html = this.getHtml()
+    const onVisibility = () => this.postMessage({ type: 'config', config: { visible: this.panel.visible } })
+    if ('onDidChangeViewState' in this.panel) this.disposables.push(this.panel.onDidChangeViewState(onVisibility))
+    else if ('onDidChangeVisibility' in this.panel) this.disposables.push(this.panel.onDidChangeVisibility(onVisibility))
 
     // Listen for messages from the webview
     this.panel.webview.onDidReceiveMessage(
@@ -60,7 +87,6 @@ export class VisualizerPanel implements vscode.Disposable {
     // Cleanup on dispose
     this.panel.onDidDispose(
       () => {
-        VisualizerPanel.instance = undefined
         this.dispose()
       },
       undefined,
@@ -70,7 +96,8 @@ export class VisualizerPanel implements vscode.Disposable {
 
   static create(extensionUri: vscode.Uri, column: vscode.ViewColumn): VisualizerPanel {
     if (VisualizerPanel.instance) {
-      VisualizerPanel.instance.panel.reveal(column)
+      const existing = VisualizerPanel.instance.panel
+      if ('reveal' in existing) existing.reveal(column)
       return VisualizerPanel.instance
     }
 
@@ -103,7 +130,18 @@ export class VisualizerPanel implements vscode.Disposable {
   }
 
   static getCurrent(): VisualizerPanel | undefined {
-    return VisualizerPanel.instance
+    return VisualizerPanel.instance ?? VisualizerPanel.sidebar
+  }
+
+  static getEventTargets(): VisualizerPanel[] {
+    if (this.replayTarget) return [this.replayTarget]
+    return [this.instance, this.sidebar].filter((panel): panel is VisualizerPanel => !!panel)
+  }
+
+  static resolveSidebar(view: vscode.WebviewView, extensionUri: vscode.Uri): VisualizerPanel {
+    this.sidebar?.dispose()
+    this.sidebar = new VisualizerPanel(view, extensionUri, true)
+    return this.sidebar
   }
 
   /** Send a typed message to the webview (fails silently if panel is disposed) */
@@ -117,7 +155,37 @@ export class VisualizerPanel implements vscode.Disposable {
 
   /** Send an agent event to the webview */
   sendEvent(event: AgentEvent): void {
-    this.postMessage({ type: 'agent-event', event })
+    this.eventQueue.push(this.restoringHistory ? { ...event, historical: true } : event)
+    if (this.restoringHistory) this.historyTotal++
+    this.scheduleEventFlush()
+  }
+
+  private scheduleEventFlush(): void {
+    if (this.eventFlushTimer) return
+    this.eventFlushTimer = setTimeout(() => {
+      this.eventFlushTimer = null
+      const events = this.eventQueue.splice(0, 500)
+      if (events.length) this.postMessage({ type: 'agent-event-batch', events })
+      if (this.historyLoaded < this.historyTotal) {
+        this.historyLoaded = Math.min(this.historyTotal, this.historyLoaded + events.filter(event => event.historical).length)
+        this.postMessage({ type: 'history-progress', loaded: this.historyLoaded, total: this.historyTotal })
+      }
+      if (this.eventQueue.length) this.scheduleEventFlush()
+    }, 16)
+  }
+
+  /** Restore state without presenting archived events as new activity. */
+  restoreHistory(replay: () => void): void {
+    const previousTarget = VisualizerPanel.replayTarget
+    this.historyLoaded = 0
+    this.historyTotal = 0
+    VisualizerPanel.replayTarget = this
+    this.restoringHistory = true
+    try { replay() } finally {
+      this.restoringHistory = false
+      VisualizerPanel.replayTarget = previousTarget
+      this.postMessage({ type: 'history-progress', loaded: 0, total: this.historyTotal })
+    }
   }
 
   /** Update connection status display */
@@ -265,13 +333,30 @@ export class VisualizerPanel implements vscode.Disposable {
 </head>
 <body>
   <div id="root"></div>
+  <div id="recovery" hidden style="position:absolute;inset:0;padding:24px;background:#080d18;color:#d6f1ff;font:14px system-ui;z-index:999">
+    <p>Agent Flow could not finish loading in this window.</p>
+    <p>Reload this graph. If it still fails, run Developer: Reload Window.</p>
+    <button id="reload-graph">Reload graph</button>
+  </div>
+  <script nonce="${nonce}">
+    window.__agentFlowApi = acquireVsCodeApi();
+    const recover = () => { document.getElementById('recovery').hidden = false; };
+    document.getElementById('reload-graph').addEventListener('click', () => window.__agentFlowApi.postMessage({type:'reload-view'}));
+    window.addEventListener('error', recover, true);
+    window.addEventListener('unhandledrejection', recover);
+    setTimeout(() => { if (!document.getElementById('root').children.length) recover(); }, 10000);
+  </script>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`
   }
 
   dispose(): void {
-    VisualizerPanel.instance = undefined
+    if (this.eventFlushTimer) clearTimeout(this.eventFlushTimer)
+    this.eventFlushTimer = null
+    this.eventQueue = []
+    if (VisualizerPanel.instance === this) VisualizerPanel.instance = undefined
+    if (VisualizerPanel.sidebar === this) VisualizerPanel.sidebar = undefined
     for (const d of this.disposables) {
       d.dispose()
     }

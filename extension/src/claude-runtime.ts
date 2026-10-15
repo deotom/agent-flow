@@ -87,35 +87,36 @@ export async function startClaudeRuntime(
   // Route hook events → panel, but filter out events the watcher already owns
   if (hookPort !== HOOK_SERVER_NOT_STARTED) {
     hookServer.onEvent((event) => {
-      const panel = VisualizerPanel.getCurrent()
-      if (!panel || !panel.isReady) return
+      VisualizerPanel.getEventTargets().forEach(panel => {
+        if (!panel.isReady) return
 
-      const eventSessionId = event.sessionId
-      const watcherHandlesThis = eventSessionId
-        ? watcher.isSessionActive(eventSessionId)
-        : watcher.isActive()
+        const eventSessionId = event.sessionId
+        const watcherHandlesThis = eventSessionId
+          ? watcher.isSessionActive(eventSessionId)
+          : watcher.isActive()
 
-      if (watcherHandlesThis) {
-        const agentName = event.payload?.agent ?? event.payload?.name
-        const isOrchestrator = agentName === ORCHESTRATOR_NAME || !agentName
+        if (watcherHandlesThis) {
+          const agentName = event.payload?.agent ?? event.payload?.name
+          const isOrchestrator = agentName === ORCHESTRATOR_NAME || !agentName
 
-        if (isOrchestrator) {
-          const filtered = filterOrchestratorCompletion(event)
-          if (filtered) panel.sendEvent(filtered)
+          if (isOrchestrator) {
+            const filtered = filterOrchestratorCompletion(event)
+            if (filtered) panel.sendEvent(filtered)
+            return
+          }
+
+          // Subagent lifecycle events — let the watcher handle these (it has
+          // the correct display name from transcript/meta files)
+          if (SUBAGENT_LIFECYCLE_EVENTS.has(event.type)) return
+
+          // Subagent tool/message events — pass through
+          panel.sendEvent(event)
           return
         }
 
-        // Subagent lifecycle events — let the watcher handle these (it has
-        // the correct display name from transcript/meta files)
-        if (SUBAGENT_LIFECYCLE_EVENTS.has(event.type)) return
-
-        // Subagent tool/message events — pass through
         panel.sendEvent(event)
-        return
-      }
-
-      panel.sendEvent(event)
-      panel.setConnectionStatus('watching', `Claude Code hooks (:${hookPort})`)
+        panel.setConnectionStatus('watching', `Claude Code hooks (:${hookPort})`)
+        })
     })
   }
 

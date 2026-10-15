@@ -7,6 +7,7 @@
  */
 
 export interface AgentEvent {
+  historical?: boolean
   time: number
   type: string
   payload: Record<string, unknown>

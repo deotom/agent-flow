@@ -21,13 +21,24 @@ export function ToolContentRenderer({ toolName, inputData, args, compact = false
     return <span className="opacity-60">{args || toolName}</span>
   }
 
-  switch (toolName) {
+  if (typeof inputData.code === 'string') {
+    return <CodeContent text={inputData.code} compact={compact} />
+  }
+
+  switch (toolName.split('.').pop()) {
     case 'Edit':
       return <EditContent data={inputData} compact={compact} />
     case 'TodoWrite':
       return <TodoContent data={inputData} />
+    case 'update_plan': {
+      const plan = Array.isArray(inputData.plan) ? inputData.plan : []
+      return <TodoContent data={{ todos: plan.map(item => ({ content: item.step, status: item.status })) }} />
+    }
     case 'Bash':
+    case 'exec_command':
       return <BashContent data={inputData} compact={compact} />
+    case 'apply_patch':
+      return <CodeContent text={String(inputData.patch || '')} compact={compact} diff />
     case 'Write':
       return <WriteContent data={inputData} compact={compact} />
     case 'Read':
@@ -45,6 +56,19 @@ export function ToolContentRenderer({ toolName, inputData, args, compact = false
     default:
       return <span className="opacity-60">{args || toolName}</span>
   }
+}
+
+function CodeContent({ text, compact, diff = false }: { text: string; compact: boolean; diff?: boolean }) {
+  const lines = text.split('\n')
+  const limit = compact ? 5 : 16
+  return (
+    <div className="rounded px-1.5 py-1 text-[9px] font-mono overflow-auto" style={{ background: COLORS.codeBlockBg }}>
+      {lines.slice(0, limit).map((line, i) => (
+        <div key={i} className="whitespace-pre" style={{ color: diff && line.startsWith('+') ? COLORS.diffAdded : diff && line.startsWith('-') ? COLORS.diffRemoved : COLORS.contentDim }}>{line || ' '}</div>
+      ))}
+      {lines.length > limit && <div className="opacity-50">… {lines.length - limit} more lines</div>}
+    </div>
+  )
 }
 
 function FilePath({ path: filePath }: { path: string }) {

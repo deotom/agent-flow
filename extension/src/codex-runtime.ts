@@ -16,8 +16,9 @@ import type { AgentRuntime } from './session-runtime'
 const log = createLogger('CodexRuntime')
 
 export function startCodexRuntime(context: vscode.ExtensionContext): AgentRuntime {
-  const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? null
-  const watcher = new CodexSessionWatcher(workspace)
+  const workspace = vscode.workspace.workspaceFolders?.map(folder => folder.uri.fsPath) ?? null
+  const historyLimit = vscode.workspace.getConfiguration('agentVisualizer').get<number>('codexHistoryLimit', 5)
+  const watcher = new CodexSessionWatcher(workspace, historyLimit)
   context.subscriptions.push(watcher)
 
   const wiring = wireWatcherToPanel(watcher, {

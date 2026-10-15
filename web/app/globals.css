@@ -3,6 +3,15 @@
 
 @custom-variant dark (&:is(.dark *));
 
+.agent-flow-ui { font-family: "Segoe UI", system-ui, sans-serif; }
+.agent-flow-ui button { transition: background-color 150ms, color 150ms, border-color 150ms; }
+.agent-flow-ui button:hover { background-color: rgba(123, 201, 255, 0.1); }
+.agent-flow-ui :is(button, select, input):focus-visible { outline: 2px solid #7bc9ff; outline-offset: 2px; }
+.flow-icon-button { width: 26px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; flex-shrink: 0; }
+.flow-icon-button[aria-expanded="true"], .flow-icon-button[aria-pressed="true"] { background: rgba(123, 201, 255, 0.12); }
+.agent-flow-ui select { border: 1px solid rgba(123, 201, 255, 0.14); border-radius: 6px; }
+.flow-hud-panel { box-shadow: inset 0 1px 0 rgba(123, 201, 255, 0.13), 0 0 24px rgba(26, 110, 155, 0.08); border-top-color: rgba(123, 201, 255, 0.35) !important; }
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

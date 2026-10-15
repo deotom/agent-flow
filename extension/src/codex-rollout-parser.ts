@@ -19,21 +19,21 @@
  *                   content (sometimes imperfect for user messages) and are
  *                   skipped. System-injected user content (IDE context,
  *                   subagent notifications) is filtered.
- *   Reasoning    — emitted from event_msg.agent_reasoning only. response_item's
- *                   reasoning payload carries encrypted_content + summary[] and
- *                   isn't useful for display.
+ *   Reasoning    — plaintext from event_msg.agent_reasoning or response_item
+ *                   summaries/content, deduplicated within the current turn.
+ *                   Encrypted content is never displayed.
  *   Tool results — emitted from function_call_output / custom_tool_call_output
  *                   only. event_msg.exec_command_end / patch_apply_end are
  *                   parallel signals and are skipped.
  *
- * Subagents: Codex does not currently expose subagent spawning in rollouts.
- * The parser emits a single orchestrator; if Codex adds spawn_agent / wait_agent
- * in future, add mapping here.
+ * Subagents are discovered from successful spawn_agent outputs and their
+ * response_item.agent_message records, without executing any recorded code.
  */
 
 import { AgentEvent } from './protocol'
+import { createHash } from 'node:crypto'
 import {
-  ORCHESTRATOR_NAME, HASH_PREFIX_MAX, MESSAGE_MAX, PREVIEW_MAX, RESULT_MAX,
+  ORCHESTRATOR_NAME, MESSAGE_MAX, PREVIEW_MAX, RESULT_MAX,
   SYSTEM_PROMPT_BASE_TOKENS, SYSTEM_CONTENT_PREFIXES,
 } from './constants'
 import {
@@ -60,6 +60,8 @@ export interface PendingCodexToolCall {
   args: string
   startTime: number
   filePath?: string
+  spawn?: { task: string; model?: string }
+  dispatch?: { target: string; task: string; activate: boolean }
 }
 
 export interface CodexRolloutState {
@@ -83,6 +85,9 @@ export interface CodexRolloutState {
   lastReportedTokens: number | null
   /** Authoritative model_context_window from event_msg.token_count, if any. */
   reportedContextWindow: number | null
+  agents: Set<string>
+  seenToolCalls: Set<string>
+  turnActive: boolean
 }
 
 export function createCodexRolloutState(): CodexRolloutState {
@@ -103,6 +108,9 @@ export function createCodexRolloutState(): CodexRolloutState {
     lastEmittedModel: null,
     lastReportedTokens: null,
     reportedContextWindow: null,
+    agents: new Set(),
+    seenToolCalls: new Set(),
+    turnActive: false,
   }
 }
 
@@ -121,6 +129,7 @@ export interface CodexParserDelegate {
 
 interface RolloutRecord {
   type?: string
+  timestamp?: string
   payload?: unknown
 }
 
@@ -157,6 +166,7 @@ interface CustomToolCallOutputPayload {
 }
 
 interface WebSearchCallPayload {
+  id?: string
   status?: string
   action?: { type?: string; query?: string }
 }
@@ -182,7 +192,7 @@ interface CompactedPayload {
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 function isRecord(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === 'object'
+  return v !== null && typeof v === 'object' && !Array.isArray(v)
 }
 
 /** Flatten message content into a single trimmed string. */
@@ -194,10 +204,12 @@ function flattenContent(content: MessageContent[] | string | undefined): string 
 
 /** Markers identifying Codex-injected user messages that contain no real user prompt. */
 const CODEX_PURE_INJECTION_PREFIXES = [
-  '# AGENTS.md instructions for', // project-level instructions
+  '# AGENTS.md instructions', // project-level instructions
   '<environment_context>',         // per-turn environment metadata
   '<turn_aborted>',                // interruption marker
   '<subagent_notification>',       // reserved for future subagent support
+  '<external_codex_apps_open_page>',
+  '<send_user_message_question_reply>',
 ]
 
 /** Marker the Codex IDE wrapper places before the actual user prompt. */
@@ -238,17 +250,31 @@ function parseArgsJson(raw: string | undefined): Record<string, unknown> | undef
 
 /** Extract an output string from a function_call_output payload.
  *  Codex sometimes encodes output as a JSON object with nested .output. */
-function extractOutputString(raw: FunctionCallOutputPayload['output']): string {
+function extractOutputString(raw: unknown): string {
   if (typeof raw === 'string') {
     // May itself be a JSON envelope: try to unwrap .output
     try {
       const parsed = JSON.parse(raw)
-      if (isRecord(parsed) && typeof parsed.output === 'string') return parsed.output
+      if (isRecord(parsed) || Array.isArray(parsed)) return extractOutputString(parsed)
     } catch { /* raw string, return as-is */ }
     return raw
   }
   if (isRecord(raw) && typeof raw.output === 'string') return raw.output
+  if (Array.isArray(raw)) return raw.map(value => typeof value === 'string' ? value : isRecord(value) && typeof value.text === 'string' ? value.text : '').filter(Boolean).join('\n')
+  if (isRecord(raw) && Array.isArray(raw.content)) return extractOutputString(raw.content)
+  if (isRecord(raw)) return JSON.stringify(raw)
   return ''
+}
+
+function codexOutputFailed(raw: unknown, text: string): boolean {
+  const envelope = typeof raw === 'string' ? parseArgsJson(raw) : isRecord(raw) ? raw : undefined
+  if (typeof envelope?.isError === 'boolean') return envelope.isError
+  const metadata = isRecord(envelope?.metadata) ? envelope.metadata : undefined
+  const exitCode = envelope?.exit_code ?? metadata?.exit_code
+  if (typeof exitCode === 'number') return exitCode !== 0
+  const exits = Array.from(text.matchAll(/Process exited with code\s+(-?\d+)/gi), match => Number(match[1]))
+  if (exits.length) return exits.some(code => code !== 0)
+  return detectError(text)
 }
 
 /** Pull the first "*** Update File: /path" line out of an apply_patch body. */
@@ -260,7 +286,11 @@ function extractPatchFilePath(patch: string): string | undefined {
 // ─── Parser ────────────────────────────────────────────────────────────────
 
 export class CodexRolloutParser {
+  private firstTimestamp: number | null = null
+  private recordElapsed: number | null = null
   constructor(private delegate: CodexParserDelegate) {}
+
+  private elapsed(): number { return this.recordElapsed ?? this.delegate.elapsed() }
 
   /** Parse a single JSONL line. Silently skips unparseable/unknown lines. */
   processLine(line: string, state: CodexRolloutState): void {
@@ -270,6 +300,14 @@ export class CodexRolloutParser {
     let record: RolloutRecord
     try { record = JSON.parse(trimmed) as RolloutRecord }
     catch { return /* partial line at file tail; resume on next read */ }
+
+    const timestamp = typeof record.timestamp === 'string' ? Date.parse(record.timestamp) : NaN
+    if (Number.isFinite(timestamp)) {
+      this.firstTimestamp ??= timestamp
+      this.recordElapsed = Math.max(0, (timestamp - this.firstTimestamp) / 1000)
+    } else {
+      this.recordElapsed = null
+    }
 
     this.ensureSpawned(state)
 
@@ -294,7 +332,7 @@ export class CodexRolloutParser {
     if (state.spawnEmitted) return
     state.spawnEmitted = true
     this.delegate.emit({
-      time: this.delegate.elapsed(),
+      time: this.elapsed(),
       type: 'agent_spawn',
       payload: { name: ORCHESTRATOR_NAME, isMain: true, task: 'Codex session', runtime: 'codex' },
     })
@@ -325,7 +363,7 @@ export class CodexRolloutParser {
       state.model = payload.model
       state.lastEmittedModel = payload.model
       this.delegate.emit({
-        time: this.delegate.elapsed(),
+        time: this.elapsed(),
         type: 'model_detected',
         payload: { agent: ORCHESTRATOR_NAME, model: payload.model },
       })
@@ -340,6 +378,13 @@ export class CodexRolloutParser {
     switch (itemType) {
       case 'message':
         return this.handleMessage(payload as MessagePayload, state)
+      case 'agent_message':
+        return this.handleSubagentMessage(payload, state)
+      case 'reasoning': {
+        const summary = flattenContent(payload.summary as MessageContent[] | undefined)
+        const content = flattenContent(payload.content as MessageContent[] | undefined)
+        return this.handleReasoningStatus(summary || content, state)
+      }
       case 'function_call':
         return this.handleFunctionCall(payload as FunctionCallPayload, state)
       case 'function_call_output':
@@ -349,9 +394,7 @@ export class CodexRolloutParser {
       case 'custom_tool_call_output':
         return this.handleCustomToolCallOutput(payload as CustomToolCallOutputPayload, state)
       case 'web_search_call':
-        return this.handleWebSearchCall(payload as WebSearchCallPayload)
-      // `reasoning` items carry encrypted_content + a short summary; we emit
-      // plaintext reasoning from event_msg.agent_reasoning instead.
+        return this.handleWebSearchCall(payload as WebSearchCallPayload, state)
     }
   }
 
@@ -367,7 +410,7 @@ export class CodexRolloutParser {
     const text = role === 'user' ? extractCodexUserText(rawText) : rawText
     if (!text) return
 
-    const hash = `${role}:${text.slice(0, HASH_PREFIX_MAX)}`
+    const hash = `${role}:${createHash('sha256').update(text).digest('hex')}`
     if (state.seenMessageHashes.has(hash)) return
     state.seenMessageHashes.add(hash)
 
@@ -380,7 +423,7 @@ export class CodexRolloutParser {
     }
 
     this.delegate.emit({
-      time: this.delegate.elapsed(),
+      time: this.elapsed(),
       type: 'message',
       payload: {
         agent: ORCHESTRATOR_NAME,
@@ -394,7 +437,8 @@ export class CodexRolloutParser {
   private handleFunctionCall(payload: FunctionCallPayload, state: CodexRolloutState): void {
     const name = payload.name || 'unknown'
     const callId = payload.call_id
-    if (!callId) return
+    if (!callId || state.seenToolCalls.has(callId)) return
+    state.seenToolCalls.add(callId)
 
     const args = parseArgsJson(payload.arguments)
     const argsSummary = summarizeInput(name, args)
@@ -402,14 +446,22 @@ export class CodexRolloutParser {
 
     state.pendingToolCalls.set(callId, {
       name, args: argsSummary, startTime: Date.now(), filePath,
+      ...(name.split('.').pop() === 'spawn_agent' && args ? {
+        spawn: { task: String(args.message || args.prompt || '').slice(0, MESSAGE_MAX),
+          model: typeof args.model === 'string' ? args.model : undefined },
+      } : {}),
+      ...(['followup_task', 'send_message'].includes(name.split('.').pop() || '') && typeof args?.target === 'string' ? {
+        dispatch: { target: args.target, task: String(args.message || '').slice(0, MESSAGE_MAX), activate: name.split('.').pop() === 'followup_task' },
+      } : {}),
     })
 
     this.delegate.emit({
-      time: this.delegate.elapsed(),
+      time: this.elapsed(),
       type: 'tool_call_start',
       payload: {
         agent: ORCHESTRATOR_NAME,
         tool: name,
+        callId,
         args: argsSummary,
         preview: `${name}: ${argsSummary}`.slice(0, PREVIEW_MAX),
         inputData: extractInputData(name, args ?? {}),
@@ -425,19 +477,36 @@ export class CodexRolloutParser {
     state.pendingToolCalls.delete(callId)
 
     const output = extractOutputString(payload.output)
+    if (pending.dispatch && !codexOutputFailed(payload.output, output)) {
+      this.dispatchToExistingAgent(pending.dispatch.target, pending.dispatch.task, pending.dispatch.activate, state)
+    }
+    if (pending.spawn) {
+      const result = parseArgsJson(output)
+      const child = result?.task_name || result?.agent_id || result?.id
+      if (typeof child === 'string' && !state.agents.has(child)) {
+        state.agents.add(child)
+        this.delegate.emit({ time: this.elapsed(), type: 'subagent_dispatch',
+          payload: { parent: ORCHESTRATOR_NAME, child, task: pending.spawn.task } })
+        this.delegate.emit({ time: this.elapsed(), type: 'agent_spawn',
+          payload: { name: child, parent: ORCHESTRATOR_NAME, task: pending.spawn.task,
+            model: pending.spawn.model, runtime: 'codex' } })
+        this.delegate.emit({ time: this.elapsed(), type: 'agent_thinking', payload: { name: child } })
+      }
+    }
     const resultSummary = summarizeResult(output).slice(0, RESULT_MAX)
     const tokenCost = estimateTokenCost(pending.name, output)
     state.contextBreakdown.toolResults += tokenCost
 
-    const isError = detectError(output)
-    const discovery = buildDiscovery(pending.name, pending.filePath, output)
+    const isError = codexOutputFailed(payload.output, output)
+    const discovery = buildDiscovery(pending.name.split('.').pop() === 'apply_patch' ? 'Edit' : pending.name, pending.filePath, output)
 
     this.delegate.emit({
-      time: this.delegate.elapsed(),
+      time: this.elapsed(),
       type: 'tool_call_end',
       payload: {
         agent: ORCHESTRATOR_NAME,
         tool: pending.name,
+        callId,
         result: resultSummary,
         tokenCost,
         ...(isError ? { isError: true, errorMessage: resultSummary } : {}),
@@ -450,11 +519,13 @@ export class CodexRolloutParser {
   private handleCustomToolCall(payload: CustomToolCallPayload, state: CodexRolloutState): void {
     const name = payload.name || 'unknown'
     const callId = payload.call_id
-    if (!callId) return
+    if (!callId || state.seenToolCalls.has(callId)) return
+    state.seenToolCalls.add(callId)
 
     // Custom tool input is a raw string (e.g. the full apply_patch body), not JSON.
     const rawInput = typeof payload.input === 'string' ? payload.input : ''
-    const argsSummary = summarizeInput(name, { patch: rawInput })
+    const isPatch = name.split('.').pop() === 'apply_patch'
+    const argsSummary = isPatch ? summarizeInput('apply_patch', { patch: rawInput }) : rawInput.slice(0, PREVIEW_MAX)
     const filePath = extractPatchFilePath(rawInput)
 
     state.pendingToolCalls.set(callId, {
@@ -462,14 +533,18 @@ export class CodexRolloutParser {
     })
 
     this.delegate.emit({
-      time: this.delegate.elapsed(),
+      time: this.elapsed(),
       type: 'tool_call_start',
       payload: {
         agent: ORCHESTRATOR_NAME,
         tool: name,
+        callId,
         args: argsSummary,
         preview: `${name}: ${argsSummary}`.slice(0, PREVIEW_MAX),
-        inputData: extractInputData(name, { patch: rawInput }),
+        inputData: isPatch ? {
+          ...extractInputData('apply_patch', { patch: rawInput }),
+          file_paths: Array.from(rawInput.matchAll(/^\*\*\* (?:Update File|Add File|Delete File):\s*(.+)$/gm), match => match[1].trim()),
+        } : { code: rawInput.slice(0, MESSAGE_MAX) },
       },
     })
   }
@@ -479,27 +554,31 @@ export class CodexRolloutParser {
     this.handleFunctionCallOutput(payload, state)
   }
 
-  private handleWebSearchCall(payload: WebSearchCallPayload): void {
+  private handleWebSearchCall(payload: WebSearchCallPayload, state: CodexRolloutState): void {
     const query = String(payload.action?.query || '')
     if (!query) return
+    if (payload.id && state.seenToolCalls.has(payload.id)) return
+    if (payload.id) state.seenToolCalls.add(payload.id)
     // Web search is self-contained — emit start + end together.
     this.delegate.emit({
-      time: this.delegate.elapsed(),
+      time: this.elapsed(),
       type: 'tool_call_start',
       payload: {
         agent: ORCHESTRATOR_NAME,
         tool: 'WebSearch',
+        callId: payload.id,
         args: query,
         preview: `WebSearch: ${query}`.slice(0, PREVIEW_MAX),
         inputData: { query },
       },
     })
     this.delegate.emit({
-      time: this.delegate.elapsed(),
+      time: this.elapsed(),
       type: 'tool_call_end',
       payload: {
         agent: ORCHESTRATOR_NAME,
         tool: 'WebSearch',
+        callId: payload.id,
         result: payload.status || 'completed',
         tokenCost: 0,
       },
@@ -508,17 +587,72 @@ export class CodexRolloutParser {
 
   // ─── event_msg ───────────────────────────────────────────────────────────
 
+  private dispatchToExistingAgent(target: string, task: string, activate: boolean, state: CodexRolloutState): void {
+    const child = state.agents.has(target) ? target
+      : Array.from(state.agents).find(name => name.endsWith(`/${target}`)) || target
+    state.agents.add(child)
+    // Re-spawn is an activation signal in the renderer: it preserves stats
+    // while bringing back a child faded out after the previous turn/session.
+    if (activate) this.delegate.emit({ time: this.elapsed(), type: 'agent_spawn',
+      payload: { name: child, parent: ORCHESTRATOR_NAME, task, runtime: 'codex' } })
+    this.delegate.emit({ time: this.elapsed(), type: 'subagent_dispatch',
+      payload: { parent: ORCHESTRATOR_NAME, child, task, notification: !activate } })
+    if (activate) this.delegate.emit({ time: this.elapsed(), type: 'agent_thinking', payload: { name: child } })
+  }
+
+  private handleSubagentMessage(payload: Record<string, unknown>, state: CodexRolloutState): void {
+    const author = typeof payload.author === 'string' ? payload.author : ''
+    // Only attribute messages from known spawned agents. Other records can
+    // carry internal routing metadata and are not user-facing conversations.
+    if (!state.agents.has(author)) return
+    const text = flattenContent(payload.content as MessageContent[] | string | undefined)
+    if (!text) return
+    const isProgress = /^Message Type: MESSAGE\r?\n/.test(text)
+    const isFinal = /^Message Type: FINAL_ANSWER\r?\n/.test(text)
+    const marker = text.indexOf('Payload:')
+    const content = (isProgress || isFinal) && marker >= 0 ? text.slice(marker + 'Payload:'.length).trim() : text
+    this.delegate.emit({ time: this.elapsed(), type: 'message',
+      payload: { agent: author, role: 'assistant', content: content.slice(0, MESSAGE_MAX) } })
+    if (isProgress) {
+      this.delegate.emit({ time: this.elapsed(), type: 'agent_thinking', payload: { name: author } })
+      return
+    }
+    this.delegate.emit({ time: this.elapsed(), type: 'subagent_return',
+      payload: { child: author, parent: ORCHESTRATOR_NAME, summary: content.slice(0, PREVIEW_MAX), received: true } })
+    this.delegate.emit({ time: this.elapsed(), type: isFinal ? 'agent_complete' : 'agent_idle', payload: { name: author, state: 'idle' } })
+  }
+
   private handleEventMsg(payload: unknown, state: CodexRolloutState): void {
     if (!isRecord(payload)) return
     switch (payload.type) {
+      case 'task_started':
+        state.turnActive = true
+        state.seenMessageHashes.clear()
+        this.delegate.emit({ time: this.elapsed(), type: 'agent_spawn',
+          payload: { name: ORCHESTRATOR_NAME, isMain: true, runtime: 'codex' } })
+        this.delegate.emit({ time: this.elapsed(), type: 'agent_thinking', payload: { name: ORCHESTRATOR_NAME } })
+        return
+      case 'task_complete':
+      case 'turn_aborted':
+        state.turnActive = false
+        this.delegate.emit({ time: this.elapsed(), type: 'agent_idle', payload: { name: ORCHESTRATOR_NAME, state: 'idle', aborted: payload.type === 'turn_aborted' } })
+        return
+      case 'item_completed': {
+        const item = payload.item
+        if (!isRecord(item)) return
+        if (item.type !== 'Reasoning') return this.handleCompletedToolItem(item, state)
+        const text = [item.summary_text, item.raw_content].map(parts =>
+          Array.isArray(parts) ? parts.filter(p => typeof p === 'string').join('\n') : '',
+        ).find(Boolean) || ''
+        return this.handleReasoningStatus(text, state)
+      }
       case 'agent_reasoning':
-        return this.handleAgentReasoning(payload, state)
+        return this.handleReasoningStatus(typeof payload.text === 'string' ? payload.text : '', state)
       case 'token_count':
         return this.handleTokenCount(payload, state)
       // Other event_msg types are either mirrors of response_item content
       // (agent_message, user_message, exec_command_end, patch_apply_end) or
-      // metadata we don't currently surface (task_started, task_complete,
-      // turn_aborted, context_compacted — the latter paired with the
+      // metadata we don't currently surface (context_compacted, paired with the
       // top-level `compacted` record which we handle authoritatively).
     }
   }
@@ -563,21 +697,90 @@ export class CodexRolloutParser {
     const text = typeof payload.text === 'string' ? payload.text.trim() : ''
     if (!text) return
 
-    const hash = `thinking:${text.slice(0, HASH_PREFIX_MAX)}`
+    const hash = `thinking:${createHash('sha256').update(text).digest('hex')}`
     if (state.seenMessageHashes.has(hash)) return
     state.seenMessageHashes.add(hash)
 
-    state.contextBreakdown.reasoning += estimateTokensFromText(text)
+    if (!payload.isStatus) state.contextBreakdown.reasoning += estimateTokensFromText(text)
     this.delegate.emit({
-      time: this.delegate.elapsed(),
+      time: this.elapsed(),
       type: 'message',
       payload: {
         agent: ORCHESTRATOR_NAME,
         role: 'thinking',
         content: text.slice(0, MESSAGE_MAX),
+        ...(payload.isStatus ? { isStatus: true } : {}),
       },
     })
     this.emitContextUpdate(state)
+  }
+
+  private handleReasoningStatus(text: string, state: CodexRolloutState): void {
+    this.delegate.emit({ time: this.elapsed(), type: 'agent_thinking', payload: { name: ORCHESTRATOR_NAME } })
+    // Match Claude's redacted-thinking placeholder. This is an activity label,
+    // not inferred reasoning, and must not contribute estimated tokens.
+    this.handleAgentReasoning({ text: text.trim() || 'Thinking...', isStatus: !text.trim() }, state)
+  }
+
+  /** Code-mode tools emit structured inner-tool records in addition to the
+   * outer JavaScript call. Surface those details without executing the code or
+   * charging their mirrored output to the model context a second time. */
+  private handleCompletedToolItem(item: Record<string, unknown>, state: CodexRolloutState): void {
+    const callId = typeof item.id === 'string' ? item.id : ''
+    if (!callId || state.seenToolCalls.has(callId)) return
+    let tool: string
+    let inputData: Record<string, unknown>
+    let args: string
+    let output: string
+    switch (item.type) {
+      case 'CommandExecution':
+        tool = 'exec_command'
+        inputData = { command: String(item.command || ''), workdir: item.cwd }
+        args = String(item.command || '').slice(0, PREVIEW_MAX)
+        output = String(item.aggregated_output || '')
+        break
+      case 'FileChange': {
+        if (!isRecord(item.changes)) return
+        const paths = Object.keys(item.changes)
+        tool = 'apply_patch'
+        inputData = { file_paths: paths, patch: paths.map(file => {
+          const change = item.changes as Record<string, unknown>
+          const details = isRecord(change[file]) ? change[file] : {}
+          const kind = String(details.type || '').toLowerCase()
+          const operation = kind === 'add' ? 'Add File' : kind === 'delete' ? 'Delete File' : 'Update File'
+          return `*** ${operation}: ${file}\n${String(details.unified_diff || '')}`
+        }).join('\n').slice(0, MESSAGE_MAX) }
+        args = paths.join(', ').slice(0, PREVIEW_MAX)
+        output = typeof item.stdout === 'string' && item.stdout ? item.stdout : `Changed ${paths.length} file(s)`
+        break
+      }
+      case 'WebSearch':
+        tool = 'WebSearch'
+        args = String(item.query || '').slice(0, PREVIEW_MAX)
+        inputData = { query: args }
+        output = 'Search completed'
+        break
+      case 'McpToolCall':
+        tool = `${String(item.server || 'mcp')}.${String(item.tool || 'tool')}`
+        inputData = isRecord(item.arguments) ? item.arguments : parseArgsJson(String(item.arguments || '')) || {}
+        args = JSON.stringify(inputData).slice(0, PREVIEW_MAX)
+        output = extractOutputString(item.result)
+        break
+      default: return
+    }
+    // Legacy direct calls already have a richer start/end pair. These native
+    // records are useful for inner tools otherwise hidden inside exec.
+    if (Array.from(state.pendingToolCalls.values()).some(p => p.name.split('.').pop() === tool)) return
+    state.seenToolCalls.add(callId)
+    const isError = item.status === 'failed' || (typeof item.exit_code === 'number' && item.exit_code !== 0)
+      || (isRecord(item.result) && item.result.isError === true)
+    this.delegate.emit({ time: this.elapsed(), type: 'tool_call_start', payload: {
+      agent: ORCHESTRATOR_NAME, tool, callId, args, inputData,
+    } })
+    this.delegate.emit({ time: this.elapsed(), type: 'tool_call_end', payload: {
+      agent: ORCHESTRATOR_NAME, tool, callId, result: output.slice(0, RESULT_MAX),
+      ...(isError ? { isError: true, errorMessage: output.slice(0, RESULT_MAX) } : {}),
+    } })
   }
 
   // ─── compacted ───────────────────────────────────────────────────────────
@@ -600,6 +803,7 @@ export class CodexRolloutParser {
     state.contextBreakdown.toolResults = toolResultTokens
     state.contextBreakdown.reasoning = 0
     state.contextBreakdown.subagentResults = 0
+    state.lastReportedTokens = null
     // systemPrompt stays — it's the base instructions, still counted.
     this.emitContextUpdate(state)
     log.info('Context compacted — token breakdown reset from replacement_history')
@@ -620,7 +824,7 @@ export class CodexRolloutParser {
     // updates still ride on lastReportedTokens once it's been set, but the
     // breakdown itself is our estimate until the next token_count arrives.
     this.delegate.emit({
-      time: this.delegate.elapsed(),
+      time: this.elapsed(),
       type: 'context_update',
       payload: {
         agent: ORCHESTRATOR_NAME,

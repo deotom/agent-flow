@@ -15,6 +15,15 @@ export function truncatePath(path: string, segments = 3): string {
   return path.split('/').slice(-segments).join('/')
 }
 
+/** Keep routing IDs intact; turn Codex task paths into readable display names. */
+export function formatAgentName(name: string): string {
+  if (!name.startsWith('/root/')) return name
+  return name.split('/').filter(Boolean).pop()!
+    .replace(/[_-]+/g, ' ')
+    .replace(/\bround(\d+)\b/gi, 'round $1')
+    .replace(/\b\w/g, letter => letter.toUpperCase())
+}
+
 const PROVIDER_PREFIX = /^[a-z]+\.anthropic\./i
 const VERSION_SUFFIX = /-v\d+:\d+$/i
 const DATE_STAMP = /-\d{8}(?=$|-)/

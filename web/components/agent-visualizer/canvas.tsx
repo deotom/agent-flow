@@ -22,8 +22,21 @@ import {
 } from './canvas/index'
 import { useCanvasCamera } from '@/hooks/use-canvas-camera'
 import { useCanvasInteraction } from '@/hooks/use-canvas-interaction'
+import { type AnimationMode } from '@/lib/viewer-preferences'
+import { visibleRoundGraph } from '@/hooks/simulation/work-rounds'
+import { compactGraphPresentation, createGraphProjector } from '@/lib/graph-presentation'
+import { renderBudget, hasActiveAgents, limitVisualParticles } from '@/lib/render-budget'
+import { useVisibleFrameLoop } from '@/hooks/use-visible-frame-loop'
+
 
 interface CanvasProps {
+  topInset?: number
+  restoring?: boolean
+  visible?: boolean
+  currentRoundOnly?: boolean
+  animationMode?: AnimationMode
+  animationSpeed?: number
+  compact?: boolean
   /** Ref to simulation state — read every frame without React re-renders */
   simulationRef: React.RefObject<SimulationState>
   selectedAgentId: string | null
@@ -44,6 +57,9 @@ interface CanvasProps {
 }
 
 export function AgentCanvas({
+  topInset = 132, visible = true, restoring = false, currentRoundOnly = true,
+  animationMode = 'full', animationSpeed = 1,
+  compact = false,
   simulationRef,
   selectedAgentId, hoveredAgentId, showStats, showHexGrid, zoomToFitTrigger, pauseAutoFit,
   onAgentClick, onAgentHover, onAgentDrag, onContextMenu, onToolCallClick, selectedToolCallId, onDiscoveryClick, selectedDiscoveryId, showCostOverlay,
@@ -51,7 +67,6 @@ export function AgentCanvas({
   const containerRef = useRef<HTMLDivElement>(null)
   const mainCanvasRef = useRef<HTMLCanvasElement>(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
-  const animationRef = useRef<number>(0)
   const timeRef = useRef(0)
   const simTimeRef = useRef(0)
   const bloomRef = useRef<BloomRenderer | null>(null)
@@ -88,8 +103,11 @@ export function AgentCanvas({
   // ─── Stable refs for animation loop & event handlers ────────────────────
   // Simulation data (agents, particles, etc.) is synced from simulationRef
   // at the top of each draw frame, so it's always fresh even without re-renders.
-  const sim = simulationRef.current
+  const scoped = visibleRoundGraph(simulationRef.current, currentRoundOnly)
+  const sim = compact ? compactGraphPresentation(scoped) : scoped
   const makeDrawProps = (prev?: { isDragging: boolean }) => ({
+    animationMode, animationSpeed, currentRoundOnly, topInset,
+    compact,
     agents: sim.agents, toolCalls: sim.toolCalls,
     particles: sim.particles, edges: sim.edges, discoveries: sim.discoveries,
     selectedAgentId, hoveredAgentId, showStats, showHexGrid,
@@ -100,7 +118,9 @@ export function AgentCanvas({
     isDragging: prev?.isDragging ?? false,
   })
   const drawPropsRef = useRef(makeDrawProps())
-  drawPropsRef.current = makeDrawProps(drawPropsRef.current)
+  const compactRef = useRef(compact)
+  compactRef.current = compact
+  drawPropsRef.current = { ...makeDrawProps(drawPropsRef.current), compact }
 
   // ─── Camera ─────────────────────────────────────────────────────────────
   const {
@@ -125,7 +145,6 @@ export function AgentCanvas({
   // ─── Setup ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
-    bloomRef.current = new BloomRenderer(0.5)
     depthParticlesRef.current = createDepthParticles(dimensions.width, dimensions.height)
     return () => { bloomRef.current = null }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- particles created once, resized by draw loop
@@ -141,7 +160,6 @@ export function AgentCanvas({
         const w = entry.contentRect.width
         const h = entry.contentRect.height
         setDimensions({ width: w, height: h })
-        bloomRef.current?.resize(w * dpr, h * dpr)
       }
     })
     observer.observe(container)
@@ -166,9 +184,11 @@ export function AgentCanvas({
   // Stable ref so the rAF loop always calls the latest draw without
   // re-subscribing when the callback identity changes.
   const drawRef = useRef<(timestamp: number) => void>(() => {})
+  const projectGraphRef = useRef<ReturnType<typeof createGraphProjector> | null>(null)
+  if (!projectGraphRef.current) projectGraphRef.current = createGraphProjector()
 
   const draw = useCallback((timestamp: number) => {
-    animationRef.current = requestAnimationFrame((ts) => drawRef.current(ts))
+    const mode = drawPropsRef.current.animationMode
 
     const canvas = mainCanvasRef.current
     if (!canvas) return
@@ -178,14 +198,14 @@ export function AgentCanvas({
     try {
       // Sync simulation data from ref — always fresh, independent of React renders
       {
-        const s = simulationRef.current
+        const s = projectGraphRef.current!(simulationRef.current, drawPropsRef.current.currentRoundOnly, compactRef.current)
         const p = drawPropsRef.current
         p.agents = s.agents
         p.toolCalls = s.toolCalls
         p.particles = s.particles
         p.edges = s.edges
         p.discoveries = s.discoveries
-        p.simTime = s.currentTime
+        p.simTime = simulationRef.current.currentTime
       }
 
       const {
@@ -195,22 +215,30 @@ export function AgentCanvas({
         simTime, pauseAutoFit, dimensions, onAgentDrag,
         isDragging,
       } = drawPropsRef.current
+      const budget = renderBudget(mode, agents.size, hasActiveAgents(agents.values()), compactRef.current)
       const transform = transformRef.current
 
       const deltaTime = lastFrameTimeRef.current ? (timestamp - lastFrameTimeRef.current) / 1000 : ANIM_SPEED.defaultDeltaTime
       lastFrameTimeRef.current = timestamp
-      timeRef.current += deltaTime
+      if (mode !== 'off') timeRef.current += deltaTime * drawPropsRef.current.animationSpeed
       if (simTime != null) simTimeRef.current = simTime
 
-      const dpr = dprRef.current
+      const dpr = Math.min(dprRef.current, budget.pixelRatio)
       const w = dimensions.width
       const h = dimensions.height
 
-      if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
-        canvas.width = w * dpr
-        canvas.height = h * dpr
+      const pixelWidth = Math.max(1, Math.round(w * dpr))
+      const pixelHeight = Math.max(1, Math.round(h * dpr))
+      if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+        canvas.width = pixelWidth
+        canvas.height = pixelHeight
         ctx.scale(dpr, dpr)
+        bloomRef.current?.resize(pixelWidth, pixelHeight)
       }
+      if (budget.bloom && !bloomRef.current) {
+        bloomRef.current = new BloomRenderer(0.24)
+        bloomRef.current.resize(pixelWidth, pixelHeight)
+      } else if (!budget.bloom) bloomRef.current = null
 
       // Camera physics (inertia + auto-fit)
       updateCamera(isDragging, pauseAutoFit)
@@ -219,7 +247,8 @@ export function AgentCanvas({
       updateDragLerp(agents, onAgentDrag)
 
       // Detect state changes → visual effects
-      detectStateChanges()
+      if (mode !== 'off') detectStateChanges()
+      if (effectsRef.current.length > budget.effects) effectsRef.current = effectsRef.current.slice(-budget.effects)
 
       // Update effects (mutate in place to avoid GC pressure)
       {
@@ -236,7 +265,8 @@ export function AgentCanvas({
       }
 
       ctx.clearRect(0, 0, w, h)
-      updateDepthParticles(depthParticlesRef.current, deltaTime, w, h)
+      const backgroundParticles = depthParticlesRef.current.slice(0, budget.stars)
+      if (mode !== 'off') updateDepthParticles(backgroundParticles, deltaTime, w, h)
 
       let activeAgentPos: { x: number; y: number; color: string } | undefined
       for (const [, agent] of agents) {
@@ -246,7 +276,7 @@ export function AgentCanvas({
         }
       }
 
-      drawBackground(ctx, w, h, depthParticlesRef.current, transform, showHexGrid, timeRef.current, activeAgentPos)
+      drawBackground(ctx, w, h, backgroundParticles, transform, !compactRef.current && budget.detailed && showHexGrid, timeRef.current, activeAgentPos)
 
       ctx.save()
       ctx.translate(transform.x, transform.y)
@@ -266,24 +296,26 @@ export function AgentCanvas({
       }
 
       drawDiscoveryConnections(ctx, discoveries, agents)
-      drawEdges(ctx, edges, agents, toolCalls, activeEdgeIds, timeRef.current)
+      drawEdges(ctx, edges, agents, toolCalls, activeEdgeIds, timeRef.current, mode !== 'off', compactRef.current, !budget.detailed)
       drawToolCalls(ctx, toolCalls, timeRef.current, selectedToolCallId)
       drawDiscoveries(ctx, discoveries, agents, selectedDiscoveryId)
-      drawAgents(ctx, agents, selectedAgentId, hoveredAgentId, showStats, timeRef.current)
-      drawMessageBubblesWorld(ctx, agents, simTimeRef.current)
+      drawAgents(ctx, agents, selectedAgentId, hoveredAgentId, showStats, timeRef.current, mode !== 'off', compactRef.current, transform.scale, budget.detailed)
+      if (!compactRef.current) drawMessageBubblesWorld(ctx, agents, simTimeRef.current)
       if (showCostOverlay) drawCostLabels(ctx, agents, toolCalls)
-      drawParticles(ctx, particles, edgeMap, agents, toolCalls, timeRef.current)
-      drawEffects(ctx, effectsRef.current)
+      if (mode !== 'off') {
+        drawParticles(ctx, limitVisualParticles(particles, budget.particles), edgeMap, agents, toolCalls, timeRef.current)
+        drawEffects(ctx, effectsRef.current)
+      }
 
       if (selectedAgentId) {
         const agent = agents.get(selectedAgentId)
-        if (agent) drawTetherLine(ctx, agent, transform, h)
+        if (agent && !compactRef.current) drawTetherLine(ctx, agent, transform, h)
       }
 
       ctx.restore()
 
       if (showCostOverlay) drawCostSummaryPanel(ctx, agents, toolCalls)
-      if (bloomRef.current) bloomRef.current.apply(canvas, ctx)
+      if (budget.bloom && bloomRef.current) bloomRef.current.apply(canvas, ctx)
 
       // ─── Performance overlay (enabled via ?perf or ?stress) ──────────
       if (PERF_OVERLAY_ENABLED) {
@@ -332,15 +364,21 @@ export function AgentCanvas({
 
   drawRef.current = draw
 
-  useEffect(() => {
-    const loop = (timestamp: number) => drawRef.current(timestamp)
-    animationRef.current = requestAnimationFrame(loop)
-    return () => { if (animationRef.current) cancelAnimationFrame(animationRef.current) }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- drawRef is stable; rAF loop set up once
-  }, [])
+  useVisibleFrameLoop(drawRef, visible, () => {
+    const current = simulationRef.current
+    const budget = renderBudget(drawPropsRef.current.animationMode, current.agents.size, hasActiveAgents(current.agents.values()), compactRef.current)
+    return 1000 / budget.fps
+  }, () => {
+    lastFrameTimeRef.current = 0
+    // Restored agents are a baseline, not new spawns/completions to animate.
+    const current = simulationRef.current
+    prevAgentStatesRef.current = new Map([...current.agents].map(([id, agent]) => [id, agent.state]))
+    prevToolStatesRef.current = new Map([...current.toolCalls].map(([id, tool]) => [id, tool.state]))
+    effectsRef.current = []
+  })
 
   return (
-    <div ref={containerRef} className="relative w-full h-full overflow-hidden" style={{ cursor: isDragging ? 'grabbing' : 'grab' }}>
+    <div ref={containerRef} className="relative w-full h-full overflow-hidden" style={{ visibility: restoring ? 'hidden' : undefined, cursor: isDragging ? 'grabbing' : 'grab' }}>
       <canvas
         ref={mainCanvasRef}
         style={{ width: dimensions.width, height: dimensions.height }}

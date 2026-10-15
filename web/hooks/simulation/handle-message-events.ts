@@ -77,7 +77,7 @@ export function handleContextUpdate(
       tokensUsed: tokens,
       tokensMax: tokensMaxOverride ?? agent.tokensMax,
       contextBreakdown: breakdown || agent.contextBreakdown,
-      state: agent.state === 'complete' ? 'complete' : 'thinking'
+      state: agent.runtime === 'codex' ? agent.state : agent.state === 'complete' ? 'complete' : 'thinking'
     })
   }
 }

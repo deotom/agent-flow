@@ -11,6 +11,7 @@ export type AgentEventType =
   | 'agent_spawn'
   | 'agent_complete'
   | 'agent_idle'
+  | 'agent_thinking'
   | 'message'
   | 'context_update'
   | 'model_detected'
@@ -22,6 +23,7 @@ export type AgentEventType =
   | 'error'
 
 export interface AgentEvent {
+  historical?: boolean
   time: number
   type: AgentEventType
   payload: Record<string, unknown>
@@ -39,6 +41,7 @@ export interface SessionInfo {
 // ─── Extension → Webview Messages ────────────────────────────────────────────
 
 export type ExtensionToWebviewMessage =
+  | { type: 'history-progress'; loaded: number; total: number }
   | { type: 'connection-status'; status: 'connected' | 'disconnected' | 'watching'; source: string }
   | { type: 'agent-event'; event: AgentEvent }
   | { type: 'agent-event-batch'; events: AgentEvent[] }
@@ -50,6 +53,13 @@ export type ExtensionToWebviewMessage =
   | { type: 'session-updated'; sessionId: string; label: string }
 
 export interface VisualizerConfig {
+  visible: boolean
+  patchVersion: string
+  extensionVersion: string
+  animationMode: 'full' | 'low' | 'off'
+  animationSpeed: number
+  selectedSessionId: string
+  compact: boolean
   mode: 'live' | 'replay'
   autoPlay: boolean
   showMockData: boolean
@@ -59,6 +69,10 @@ export interface VisualizerConfig {
 // ─── Webview → Extension Messages ────────────────────────────────────────────
 
 export type WebviewToExtensionMessage =
+  | { type: 'reload-view' }
+  | { type: 'request-status' }
+  | { type: 'set-animation'; mode: 'full' | 'low' | 'off'; speed: number }
+  | { type: 'open-graph'; sessionId?: string }
   | { type: 'ready' }
   | { type: 'request-connect' }
   | { type: 'request-disconnect' }

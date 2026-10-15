@@ -1,11 +1,14 @@
 'use client'
 
+import { useEffect, useState } from 'react'
+import { historyArchive } from '@/lib/history-archive'
 import { POPUP } from '@/lib/agent-types'
 import { COLORS } from '@/lib/colors'
 import { ToolContentRenderer } from './tool-content-renderer'
 import { PanelHeader, DetailPopup } from './shared-ui'
 
 interface ToolDetailPopupProps {
+  sessionId?: string | null
   tool: {
     id: string
     toolName: string
@@ -19,7 +22,17 @@ interface ToolDetailPopupProps {
   onClose: () => void
 }
 
-export function ToolDetailPopup({ tool, position, onClose }: ToolDetailPopupProps) {
+export function ToolDetailPopup({ tool: recentTool, position, onClose, sessionId }: ToolDetailPopupProps) {
+  const [fullTool, setFullTool] = useState<ToolDetailPopupProps['tool'] | null>(null)
+  useEffect(() => {
+    if (!sessionId) return
+    let cancelled = false
+    const load = () => { void historyArchive.getTool(sessionId, recentTool.id).then(value => { if (!cancelled && value) setFullTool(value) }).catch(() => {}) }
+    load()
+    const unsubscribe = historyArchive.subscribe(load)
+    return () => { cancelled = true; unsubscribe(); setFullTool(null) }
+  }, [sessionId, recentTool.id])
+  const tool = fullTool ? { ...recentTool, args: fullTool.args, inputData: fullTool.inputData, result: fullTool.state === recentTool.state ? fullTool.result : recentTool.result } : recentTool
   const stateColor = tool.state === 'running' ? COLORS.tool_calling : COLORS.complete
 
   return (

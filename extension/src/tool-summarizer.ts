@@ -1,13 +1,9 @@
 /**
- * Shared tool summarization utilities for Claude Code tools.
+ * Shared tool summarization utilities for Claude Code and Codex tools.
  * Extracts duplicated logic from session-watcher.ts and hook-server.ts.
  *
- * Claude-only by convention: Codex tool summaries are produced inline in
- * codex-rollout-parser.ts because Codex's function_call shape and tool names
- * (exec_command, apply_patch, update_plan, write_stdin, web_search_call, …)
- * don't overlap with Claude's. If a future refactor unifies them, this
- * module would become the natural home — but until then, don't add Codex
- * cases here without a plan for dispatching by runtime.
+ * Codex can qualify tool names with a namespace (functions.exec_command).
+ * Normalize that prefix for display while preserving original event names.
  */
 
 import {
@@ -20,12 +16,13 @@ import {
 
 /** Truncate a file path to the last N segments (e.g. '/a/b/c/d.ts' → 'c/d.ts') */
 function tailPath(filePath: string, segments = 2): string {
-  return String(filePath).split('/').slice(-segments).join('/')
+  return String(filePath).split(/[\\/]/).slice(-segments).join('/')
 }
 
 /** Summarize tool input into a short human-readable string */
 export function summarizeInput(toolName: string, input?: Record<string, unknown>): string {
   if (!input) { return '' }
+  toolName = toolName.split('.').pop() || toolName
   switch (toolName) {
     case 'Bash':
       return String(input.command || '').slice(0, ARGS_MAX)
@@ -73,7 +70,7 @@ export function summarizeInput(toolName: string, input?: Record<string, unknown>
     case 'exec_command':
       return String(input.cmd || input.command || '').slice(0, ARGS_MAX)
     case 'write_stdin':
-      return String(input.input || input.stdin || '').slice(0, ARGS_MAX)
+      return String(input.chars || input.input || input.stdin || `poll session ${input.session_id ?? ''}`).slice(0, ARGS_MAX)
     case 'update_plan': {
       const items = input.plan as Array<{ step?: string; status?: string }> | undefined
       if (Array.isArray(items) && items.length > 0) {
@@ -118,6 +115,7 @@ export function summarizeResult(content: unknown): string {
 /** Extract structured input data for rich display in the transcript */
 export function extractInputData(toolName: string, input: Record<string, unknown>): Record<string, unknown> | undefined {
   if (!input) { return undefined }
+  toolName = toolName.split('.').pop() || toolName
   try {
     switch (toolName) {
       case 'Edit':
