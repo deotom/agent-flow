@@ -4,7 +4,7 @@ import { processEvent, type ProcessEventContext } from '../hooks/simulation/proc
 import { createEmptyState, appendConversation } from '../hooks/simulation/types'
 import { computeNextFrame } from '../hooks/simulation/animate'
 import { buildTimelineEvents } from '../hooks/simulation/timeline-events'
-import { drawContextComposition, drawContextHud, agentStatusLabel, drawActivityOutline } from '../components/agent-visualizer/canvas/draw-agents'
+import { drawContextComposition, drawContextHud, advanceInstrumentPhase, agentStatusLabel, drawActivityOutline } from '../components/agent-visualizer/canvas/draw-agents'
 import { COLORS } from '../lib/colors'
 
 const ctx: ProcessEventContext = { syncForceSimulation() {}, findToolSlot: () => ({ x: 0, y: 0 }),
@@ -123,4 +123,18 @@ it('keeps older transcript messages searchable in long sessions', () => {
   for (let index = 0; index < 300; index++) appendConversation(conversations, 'root', { type: 'assistant', content: `message ${index}`, timestamp: index })
   assert.equal(conversations.get('root').length, 300)
   assert.equal(conversations.get('root')[0].content, 'message 0')
+})
+
+
+it('keeps the JARVIS angle continuous across work/Ready and Animation Off transitions', () => {
+  const previous = { time: 100, angle: 1 }
+  const idle = advanceInstrumentPhase(previous, 100.02, true, true)
+  const working = advanceInstrumentPhase(idle, 100.04, true, false)
+  assert.ok(idle.angle > 1 && idle.angle < 1.01)
+  assert.ok(working.angle > idle.angle && working.angle - idle.angle < 0.02)
+  const stopped = advanceInstrumentPhase(working, 200, false, false)
+  assert.equal(stopped.angle, working.angle)
+  const resumed = advanceInstrumentPhase(stopped, 200.02, true, true)
+  assert.ok(resumed.angle - stopped.angle < 0.01)
+  assert.ok(advanceInstrumentPhase({ time: 0, angle: Math.PI * 2 - 0.001 }, 0.1, true, false).angle > Math.PI * 2)
 })

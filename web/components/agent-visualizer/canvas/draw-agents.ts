@@ -242,9 +242,21 @@ function drawOrbitingParticles(ctx: CanvasRenderingContext2D, agent: Agent, r: n
   }
 }
 
+type InstrumentPhase = { time: number; angle: number }
+const instrumentPhases = new WeakMap<CanvasRenderingContext2D, Map<string, InstrumentPhase>>()
+export function advanceInstrumentPhase(previous: InstrumentPhase | undefined, time: number, moving: boolean, idle: boolean): InstrumentPhase {
+  const delta = previous ? Math.max(0, Math.min(0.25, time - previous.time)) : 0
+  return { time, angle: (previous?.angle ?? 0) + (moving ? delta * (idle ? 0.12 : 0.65) : 0) }
+}
+
 function drawMainInstrument(ctx: CanvasRenderingContext2D, agent: Agent, r: number, time: number, moving: boolean, detailed: boolean) {
   ctx.save()
-  const rotation = moving ? time * (agent.state === 'idle' ? 0.12 : 0.65) : 0
+  let phases = instrumentPhases.get(ctx)
+  if (!phases) { phases = new Map(); instrumentPhases.set(ctx, phases) }
+  if (phases.size > 8) phases.clear()
+  const phase = advanceInstrumentPhase(phases.get(agent.id), time, moving, agent.state === 'idle')
+  phases.set(agent.id, phase)
+  const rotation = phase.angle
   ctx.strokeStyle = '#76c8ff90'
   ctx.lineWidth = 0.8
   for (let i = 0; i < 6; i++) {

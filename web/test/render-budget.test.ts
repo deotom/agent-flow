@@ -14,7 +14,9 @@ it('caps graphics and resolution, preserves active effects, and reduces detail f
   assert.equal(dense.stars, 0)
   assert.equal(dense.detailed, false)
   assert.equal(renderBudget('full', 2, false, false).bloom, false)
-  assert.ok(renderBudget('full', 2, false, false).fps <= 10)
+  assert.equal(renderBudget('full', 2, false, false).fps, 30)
+  assert.equal(renderBudget('full', 2, false, false).detailed, false)
+  assert.equal(renderBudget('off', 2, false, false).fps, 8)
   assert.equal(hasActiveAgents([{ state: 'complete' }, { state: 'idle' }]), false)
   assert.equal(hasActiveAgents([{ state: 'waiting_permission' }]), true)
   const particles = [{ type: 'return' }, ...Array.from({ length: 100 }, () => ({ type: 'tool_call' }))]
@@ -83,5 +85,22 @@ it('keeps result/error animations at the working cadence until the last transien
   assert.equal(hasVisualMotion(agents, [], 0, 0, 1), true)
   assert.equal(hasVisualMotion(agents, [{ opacity: 0, historical: false }], 0, 0), false)
   assert.equal(hasVisualMotion(agents, [{ opacity: 1, historical: true }], 0, 0), false)
-  assert.equal(renderBudget('full', 1, hasVisualMotion(agents, [], 0, 0), false).fps, 8)
+  assert.equal(renderBudget('full', 1, hasVisualMotion(agents, [], 0, 0), false).fps, 30)
+})
+
+
+it('paces Full standby motion evenly at 30 FPS on a 60 Hz display without enabling expensive idle effects', () => {
+  let pending: ((time: number) => void) | undefined
+  const calls: number[] = []
+  const budget = renderBudget('full', 1, false, false)
+  const loop = createFrameLoop({ request: fn => { pending = fn; return 1 }, cancel() { pending = undefined }, delay: () => 0, clear() {}, now: () => 0 },
+    time => calls.push(time), () => 1000 / budget.fps)
+  loop.setVisible(true)
+  for (let frame = 0; frame <= 60; frame++) { const fn = pending!; pending = undefined; fn(frame * 1000 / 60) }
+  assert.equal(calls.length, 31)
+  assert.ok(calls.slice(1).every((time, index) => Math.abs(time - calls[index] - 1000 / 30) < 0.01))
+  assert.equal(budget.bloom, false)
+  assert.equal(budget.detailed, false)
+  assert.ok(budget.stars < renderBudget('full', 1, true, false).stars)
+  loop.dispose()
 })
