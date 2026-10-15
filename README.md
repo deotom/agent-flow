@@ -246,3 +246,6 @@ Local patch `local-2026.10.15.15` adds a small stationary cyan standby light abo
 
 
 Local patch `local-2026.10.15.16` sets Full effects as the default, as requested. It selects Full once on first activation; later manual animation preferences remain respected. Rendering limits for crowded graphs, hidden-view suspension, frame pacing and history/UI throttling remain in place. Low GPU and Off remain available in Animation settings.
+
+
+Local patch `local-2026.10.15.17` keeps the working render cadence during error/result particle travel, visible tool-card fades and transient effects, then returns to idle limits. Error cards use a steady red treatment without a changing shadow-blur kernel; hidden/restored cards skip drawing, and canvas-only argument/error previews are bounded before text measurement (full details remain in the transcript/popup). Full-mode bloom buffers are reused across activity/error transitions instead of being repeatedly discarded and allocated; they are still released when changing mode or entering a crowded/compact view. Real workstation frame-time improvement remains to be verified.

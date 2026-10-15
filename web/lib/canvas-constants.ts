@@ -288,9 +288,6 @@ export const TOOL_DRAW = {
   /** Extra height for completed/error cards showing token cost */
   expandedHeight: 30,
   collapsedHeight: 24,
-  /** Error glow base blur + pulse amplitude */
-  errorGlowBase: 8,
-  errorGlowPulse: 4,
   /** Spinning ring extra radius beyond card half-size */
   spinRingPadding: 4,
   spinSpeed: 3,

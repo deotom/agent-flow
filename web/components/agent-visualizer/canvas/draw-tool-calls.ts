@@ -11,15 +11,16 @@ export function drawToolCalls(
   selectedToolCallId?: string | null,
 ) {
   for (const [id, tool] of toolCalls) {
+    if (tool.opacity <= 0 || tool.historical) continue
     const isRunning = tool.state === 'running'
     const isError = tool.state === 'error'
-    const pulse = isRunning ? Math.sin(time * 4) * 0.2 + 0.8 : isError ? Math.sin(time * 6) * 0.15 + 0.85 : 0.5
+    const pulse = isRunning ? Math.sin(time * 4) * 0.2 + 0.8 : isError ? 0.85 : 0.5
 
     ctx.save()
     ctx.globalAlpha = tool.opacity
 
     ctx.font = `${TOOL_DRAW.fontSize}px monospace`
-    const toolLabel = `${tool.toolName}: ${tool.args}`
+    const toolLabel = `${tool.toolName}: ${tool.args.slice(0, 512)}`
     const label = truncateText(ctx, toolLabel, TOOL_MAX_CARD_W - 12)
     const textWidth = Math.min(measureTextCached(ctx, label) + 12, TOOL_MAX_CARD_W)
     const cardW = Math.max(60, textWidth)
@@ -29,11 +30,8 @@ export function drawToolCalls(
 
     const isSelected = id === selectedToolCallId
 
-    // Error glow
-    if (isError) {
-      ctx.shadowColor = COLORS.error
-      ctx.shadowBlur = TOOL_DRAW.errorGlowBase + Math.sin(time * 6) * TOOL_DRAW.errorGlowPulse
-    }
+    // Keep errors conspicuous without an animated GPU blur kernel.
+    ctx.shadowBlur = 0
 
     ctx.beginPath()
     ctx.roundRect(cardX, cardY, cardW, cardH, TOOL_DRAW.borderRadius)
@@ -87,7 +85,7 @@ export function drawToolCalls(
       ctx.fillText(truncateText(ctx, `${tool.toolName}: FAILED`, cardW - 8), tool.x, tool.y - TOOL_DRAW.twoLineOffset)
       ctx.font = `${TOOL_DRAW.errorFontSize}px monospace`
       ctx.fillStyle = COLORS.error + 'aa'
-      ctx.fillText(truncateText(ctx, tool.errorMessage || tool.result || '', cardW - 8), tool.x, tool.y + TOOL_DRAW.twoLineOffset + 2)
+      ctx.fillText(truncateText(ctx, (tool.errorMessage || tool.result || '').slice(0, 512), cardW - 8), tool.x, tool.y + TOOL_DRAW.twoLineOffset + 2)
     } else {
       // Completed card: show action + file path (most useful info at a glance)
       ctx.fillStyle = COLORS.return

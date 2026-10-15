@@ -1,7 +1,7 @@
 import { it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createFrameLoop } from '../lib/frame-loop'
-import { renderBudget, hasActiveAgents, limitVisualParticles } from '../lib/render-budget'
+import { renderBudget, hasActiveAgents, hasVisualMotion, limitVisualParticles } from '../lib/render-budget'
 
 it('caps graphics and resolution, preserves active effects, and reduces detail for crowded graphs', () => {
   const low = renderBudget('low', 2, true, false)
@@ -72,4 +72,16 @@ it('keeps fractional frame deadlines aligned with refresh and does not burst aft
   assert.equal(frames.size, 1)
   loop.dispose()
   assert.equal(frames.size, 0)
+})
+
+
+it('keeps result/error animations at the working cadence until the last transient has faded', () => {
+  const agents = [{ state: 'error' as const, isMain: true, opacity: 1 }]
+  const failedCard = [{ opacity: 0.5, historical: false }]
+  assert.equal(renderBudget('full', 1, hasVisualMotion(agents, failedCard, 0, 0), false).fps, 60)
+  assert.equal(hasVisualMotion(agents, [], 1, 0), true)
+  assert.equal(hasVisualMotion(agents, [], 0, 0, 1), true)
+  assert.equal(hasVisualMotion(agents, [{ opacity: 0, historical: false }], 0, 0), false)
+  assert.equal(hasVisualMotion(agents, [{ opacity: 1, historical: true }], 0, 0), false)
+  assert.equal(renderBudget('full', 1, hasVisualMotion(agents, [], 0, 0), false).fps, 8)
 })

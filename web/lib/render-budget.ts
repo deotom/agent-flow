@@ -1,3 +1,4 @@
+import type { Agent, ToolCallNode } from './agent-types'
 import type { AnimationMode } from './viewer-preferences'
 
 export function renderBudget(mode: AnimationMode, count: number, active: boolean, compact: boolean) {
@@ -22,4 +23,13 @@ export function limitVisualParticles<T extends { type: string }>(particles: T[],
   const important = particles.filter(particle => ['return', 'dispatch', 'message'].includes(particle.type)).slice(-limit)
   const remaining = limit - important.length
   return important.concat(remaining > 0 ? particles.filter(particle => !['return', 'dispatch', 'message'].includes(particle.type)).slice(-remaining) : [])
+}
+
+
+/** Error/result travel and fading cards remain animated even after the agent stops working. */
+export function hasVisualMotion(agents: Iterable<Pick<Agent, 'state' | 'isMain' | 'opacity'>>, tools: Iterable<Pick<ToolCallNode, 'opacity' | 'historical'>>, particles: number, discoveries: number, effects = 0): boolean {
+  if (particles || discoveries || effects) return true
+  for (const agent of agents) if (['thinking', 'tool_calling', 'waiting_permission'].includes(agent.state) || (!agent.isMain && agent.state === 'complete' && agent.opacity > 0)) return true
+  for (const tool of tools) if (!tool.historical && tool.opacity > 0) return true
+  return false
 }

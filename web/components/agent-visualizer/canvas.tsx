@@ -25,7 +25,7 @@ import { useCanvasInteraction } from '@/hooks/use-canvas-interaction'
 import { type AnimationMode } from '@/lib/viewer-preferences'
 import { visibleRoundGraph } from '@/hooks/simulation/work-rounds'
 import { compactGraphPresentation, createGraphProjector } from '@/lib/graph-presentation'
-import { renderBudget, hasActiveAgents, limitVisualParticles } from '@/lib/render-budget'
+import { renderBudget, hasVisualMotion, limitVisualParticles } from '@/lib/render-budget'
 import { useVisibleFrameLoop } from '@/hooks/use-visible-frame-loop'
 
 
@@ -215,7 +215,7 @@ export function AgentCanvas({
         simTime, pauseAutoFit, dimensions, onAgentDrag,
         isDragging,
       } = drawPropsRef.current
-      const budget = renderBudget(mode, agents.size, hasActiveAgents(agents.values()), compactRef.current)
+      const budget = renderBudget(mode, agents.size, hasVisualMotion(agents.values(), toolCalls.values(), particles.length, discoveries.length, effectsRef.current.length), compactRef.current)
       const transform = transformRef.current
 
       const deltaTime = lastFrameTimeRef.current ? (timestamp - lastFrameTimeRef.current) / 1000 : ANIM_SPEED.defaultDeltaTime
@@ -238,7 +238,7 @@ export function AgentCanvas({
       if (budget.bloom && !bloomRef.current) {
         bloomRef.current = new BloomRenderer(0.24)
         bloomRef.current.resize(pixelWidth, pixelHeight)
-      } else if (!budget.bloom) bloomRef.current = null
+      } else if (mode !== 'full' || agents.size > 6 || compactRef.current) bloomRef.current = null
 
       // Camera physics (inertia + auto-fit)
       updateCamera(isDragging, pauseAutoFit)
@@ -366,7 +366,7 @@ export function AgentCanvas({
 
   useVisibleFrameLoop(drawRef, visible, () => {
     const current = simulationRef.current
-    const budget = renderBudget(drawPropsRef.current.animationMode, current.agents.size, hasActiveAgents(current.agents.values()), compactRef.current)
+    const budget = renderBudget(drawPropsRef.current.animationMode, current.agents.size, hasVisualMotion(current.agents.values(), current.toolCalls.values(), current.particles.length, current.discoveries.length, effectsRef.current.length), compactRef.current)
     return 1000 / budget.fps
   }, () => {
     lastFrameTimeRef.current = 0
