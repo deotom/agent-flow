@@ -258,3 +258,6 @@ Local patch `local-2026.10.16.1` gives the context HUD and standby indicator an 
 
 
 Local patch `local-2026.10.16.2` replaces the segmented context arc with individual round LED lamps. Previous occupied positions stay blue, the latest occupied lamp blinks blue, and all remaining positions are black with faint casings. At zero usage every lamp is off; usage above capacity clamps to the full lamp count. Numeric CTX remains exact and retains warning colors, while the lamps stay blue as requested. Full lamp positions and unit directions are precomputed; drawing uses batched solid fills without blur or extra timers. Animation Off keeps the latest lamp steadily lit.
+
+
+Local patch `local-2026.10.16.3` changes the context lamps to rectangular LED packages aligned tangentially around the ring. Each has a dark casing and a narrow illuminated core: previous LEDs stay blue, the latest blinks blue, and unused LEDs remain black. Geometry uses batched quadrilateral fills with precomputed directions, without rotated canvas layers, blur or added timers.

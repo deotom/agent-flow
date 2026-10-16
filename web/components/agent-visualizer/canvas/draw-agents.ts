@@ -82,11 +82,12 @@ export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radi
   const directions = hudLampDirections[agent.isMain ? 1 : 0]
   const lit = Math.ceil(usage * directions.length)
   const ringRadius = radius + 10
-  const lampRadius = agent.isMain ? 2.1 : 1.5
+  const halfLength = ringRadius * Math.PI / directions.length * 0.64
+  const halfThickness = agent.isMain ? 1.5 : 1.1
   ctx.save()
   const opacity = ctx.globalAlpha
   ctx.shadowBlur = 0
-  const lamps = (start: number, count: number, size: number, color: string, alpha: number) => {
+  const lamps = (start: number, count: number, inset: number, color: string, alpha: number, core = false) => {
     if (!count) return
     ctx.globalAlpha = opacity * alpha
     ctx.fillStyle = color
@@ -95,23 +96,30 @@ export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radi
       const direction = directions[index]
       const x = agent.x + direction.x * ringRadius
       const y = agent.y + direction.y * ringRadius
-      ctx.moveTo(x + size, y)
-      ctx.arc(x, y, size, 0, Math.PI * 2)
+      const length = core ? halfLength * 0.7 : halfLength + inset
+      const thickness = core ? halfThickness * 0.22 : halfThickness + inset
+      const tx = -direction.y * length, ty = direction.x * length
+      const nx = direction.x * thickness, ny = direction.y * thickness
+      ctx.moveTo(x - tx - nx, y - ty - ny)
+      ctx.lineTo(x + tx - nx, y + ty - ny)
+      ctx.lineTo(x + tx + nx, y + ty + ny)
+      ctx.lineTo(x - tx + nx, y - ty + ny)
+      ctx.closePath()
     }
     ctx.fill()
   }
   // Every position has a dark lamp and a faint casing, including unused capacity.
-  lamps(0, directions.length, lampRadius + 0.65, '#22313e', 0.65)
-  lamps(0, directions.length, lampRadius, '#010408', 1)
+  lamps(0, directions.length, 0.5, '#22313e', 0.65)
+  lamps(0, directions.length, 0, '#010408', 1)
   // Previous lamps stay blue. Only the latest occupied lamp fades on and off.
   if (lit > 1) {
-    lamps(0, lit - 1, lampRadius, COLORS.holoBase, 0.9)
-    lamps(0, lit - 1, lampRadius * 0.3, '#d9faff', 0.8)
+    lamps(0, lit - 1, 0, COLORS.holoBase, 0.9)
+    lamps(0, lit - 1, 0, '#d9faff', 0.8, true)
   }
   if (lit) {
     const brightness = effectsEnabled ? 0.06 + (1 - Math.cos(time * 2.2)) * 0.47 : 1
-    lamps(lit - 1, 1, lampRadius, COLORS.holoBase, brightness * 0.95)
-    lamps(lit - 1, 1, lampRadius * 0.3, '#d9faff', brightness * 0.9)
+    lamps(lit - 1, 1, 0, COLORS.holoBase, brightness * 0.95)
+    lamps(lit - 1, 1, 0, '#d9faff', brightness * 0.9, true)
   }
   ctx.restore()
 }

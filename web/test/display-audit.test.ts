@@ -64,10 +64,11 @@ it('rebuilds timeline markers for equal-length sessions and rolling conversation
 })
 
 function captureLampHud(agent: Parameters<typeof drawContextHud>[1], time: number, enabled: boolean) {
-  const fills: { color: string; alpha: number; circles: number[][] }[] = []
-  let circles: number[][] = []
-  const canvas = { globalAlpha: 1, fillStyle: '', save() {}, restore() {}, beginPath() { circles = [] }, moveTo() {},
-    arc: (...args: number[]) => circles.push(args), fill() { fills.push({ color: this.fillStyle, alpha: this.globalAlpha, circles: [...circles] }) } }
+  const fills: { color: string; alpha: number; rectangles: number[][][] }[] = []
+  let rectangles: number[][][] = [], points: number[][] = []
+  const canvas = { globalAlpha: 1, fillStyle: '', save() {}, restore() {}, beginPath() { rectangles = [] },
+    moveTo(x: number, y: number) { points = [[x, y]] }, lineTo(x: number, y: number) { points.push([x, y]) },
+    closePath() { rectangles.push(points) }, fill() { fills.push({ color: this.fillStyle, alpha: this.globalAlpha, rectangles: [...rectangles] }) } }
   drawContextHud(canvas as unknown as CanvasRenderingContext2D, agent, 48, time, enabled)
   return fills
 }
@@ -76,13 +77,19 @@ it('keeps unused LED lamps black and lights only occupied capacity, clamped to a
   const state = processEvent({ time: 0, type: 'agent_spawn', payload: { name: 'root', isMain: true } }, createEmptyState(), ctx)
   for (const [tokensUsed, lit] of [[14000, 6], [150000, 36], [0, 0]] as const) {
     const fills = captureLampHud({ ...state.agents.get('root')!, tokensUsed, tokensMax: 100000 }, 0, false)
-    assert.equal(fills[0].circles.length, 36)
+    assert.equal(fills[0].rectangles.length, 36)
     assert.equal(fills[1].color, '#010408')
-    assert.equal(fills[1].circles.length, 36)
+    assert.equal(fills[1].rectangles.length, 36)
     const blue = fills.filter(fill => fill.color === COLORS.holoBase)
-    assert.equal(blue.reduce((count, fill) => count + fill.circles.length, 0), lit)
-    assert.ok(blue.every(fill => fill.circles.every(circle => circle[2] === 2.1)))
-    if (lit) assert.equal(blue.at(-1)!.circles.length, 1)
+    assert.equal(blue.reduce((count, fill) => count + fill.rectangles.length, 0), lit)
+    for (const fill of blue) for (const rectangle of fill.rectangles) {
+      assert.equal(rectangle.length, 4)
+      const [a, b, c] = rectangle
+      const width = [b[0] - a[0], b[1] - a[1]], height = [c[0] - b[0], c[1] - b[1]]
+      assert.ok(Math.abs(width[0] * height[0] + width[1] * height[1]) < 0.0001)
+      assert.ok(Math.hypot(...width) > Math.hypot(...height) * 2)
+    }
+    if (lit) assert.equal(blue.at(-1)!.rectangles.length, 1)
     else assert.equal(fills.length, 2)
   }
 })
@@ -91,7 +98,7 @@ it('blinks only the latest blue LED while previous and unlit lamps stay steady, 
   const state = processEvent({ time: 0, type: 'agent_spawn', payload: { name: 'root', isMain: true } }, createEmptyState(), ctx)
   const agent = { ...state.agents.get('root')!, tokensUsed: 14000, tokensMax: 100000 }
   const dim = captureLampHud(agent, 0, true), bright = captureLampHud(agent, Math.PI / 2.2, true)
-  assert.deepEqual(dim.map(fill => fill.circles), bright.map(fill => fill.circles))
+  assert.deepEqual(dim.map(fill => fill.rectangles), bright.map(fill => fill.rectangles))
   assert.deepEqual(dim.slice(0, -2), bright.slice(0, -2))
   assert.ok(bright.at(-2)!.alpha > dim.at(-2)!.alpha)
   assert.deepEqual(captureLampHud(agent, 0, false), captureLampHud(agent, 10, false))
