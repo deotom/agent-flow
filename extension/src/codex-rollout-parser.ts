@@ -841,7 +841,7 @@ export class CodexRolloutParser {
     state.contextBreakdown.subagentResults = 0
     state.lastReportedTokens = null
     // systemPrompt stays — it's the base instructions, still counted.
-    this.emitContextUpdate(state)
+    this.emitContextUpdate(state, { compacted: true })
     log.info('Context compacted — token breakdown reset from replacement_history')
   }
 
@@ -849,7 +849,7 @@ export class CodexRolloutParser {
 
   private emitContextUpdate(
     state: CodexRolloutState,
-    opts: { authoritative?: boolean } = {},
+    opts: { authoritative?: boolean; compacted?: boolean } = {},
   ): void {
     const bd = state.contextBreakdown
     const estimated = bd.systemPrompt + bd.userMessages + bd.toolResults + bd.reasoning + bd.subagentResults
@@ -868,6 +868,7 @@ export class CodexRolloutParser {
         breakdown: { ...bd },
         ...(state.reportedContextWindow ? { tokensMax: state.reportedContextWindow } : {}),
         ...(opts.authoritative ? { isAuthoritative: true } : {}),
+        ...(opts.compacted ? { compacted: true } : {}),
       },
     })
   }

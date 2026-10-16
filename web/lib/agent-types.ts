@@ -43,6 +43,7 @@ export interface Agent {
   completeTime?: number
   activityFade?: number
   resultPulse?: number
+  contextRecharge?: { progress: number }
   returnStartedAt?: number
   opacity: number
   scale: number

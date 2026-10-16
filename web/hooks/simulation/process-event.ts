@@ -96,7 +96,7 @@ export function processEvent(event: SimulationEvent, prev: SimulationState, ctx:
         }
         for (const [id, agent] of state.agents) {
           if (agent !== prev.agents.get(id)) state.agents.set(id, {
-            ...agent, messageBubbles: [],
+            ...agent, messageBubbles: [], contextRecharge: undefined,
             opacity: agent.state === 'complete' && !agent.isMain ? 0 : 1, scale: 1,
           })
         }

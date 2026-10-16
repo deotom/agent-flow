@@ -12,8 +12,9 @@ export function contextGaugeColor(used: number, capacity: number): string {
   const usage = used / Math.max(1, capacity)
   return usage >= 0.9 ? COLORS.error : usage >= 0.8 ? COLORS.tool : COLORS.holoBase
 }
-export function agentStatusLabel(agent: Pick<Agent, 'state' | 'currentTool' | 'pendingInputs' | 'waitingForInput'>, time: number): string {
+export function agentStatusLabel(agent: Pick<Agent, 'state' | 'currentTool' | 'pendingInputs' | 'waitingForInput' | 'contextRecharge'>, time: number): string {
   if (agent.waitingForInput) return 'Input needed'
+  if (agent.contextRecharge) return 'Recharging context…'
   if (agent.pendingInputs?.length && agent.state === 'idle') return 'Ready · input requested'
   switch (agent.state) {
     case 'thinking': return `Thinking${'.'.repeat(1 + Math.floor(time * 2) % 3)}`
@@ -82,6 +83,7 @@ export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radi
   if (agent.state === 'complete' && !agent.isMain) return
   const usage = Math.min(1, Math.max(0, agent.tokensUsed / Math.max(1, agent.tokensMax)))
   const directions = hudLampDirections[agent.isMain ? 1 : 0]
+  const recharge = effectsEnabled ? agent.contextRecharge : undefined
   const lit = Math.ceil((1 - usage) * directions.length)
   const ringRadius = radius + 10
   const halfLength = ringRadius * Math.PI / directions.length * 0.64
@@ -113,6 +115,14 @@ export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radi
   // Used capacity is dark; remaining capacity stays blue.
   lamps(0, directions.length, 0.5, '#22313e', 0.65)
   lamps(0, directions.length, 0, '#010408', 1)
+  if (recharge) {
+    // Four soft amber flashes over 1.6 s; the real blue capacity returns afterward.
+    const brightness = 0.25 + (1 - Math.cos(recharge.progress * Math.PI * 8)) * 0.35
+    lamps(0, directions.length, 0, COLORS.tool, brightness)
+    lamps(0, directions.length, 0, '#fff1bd', brightness * 0.85, true)
+    ctx.restore()
+    return
+  }
   // Only the remaining boundary lamp blinks, without animated shadows.
   if (lit > 1) {
     lamps(0, lit - 1, 0, COLORS.holoBase, 0.9)

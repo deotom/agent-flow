@@ -303,7 +303,10 @@ describe('CodexRolloutParser', () => {
   })
 
   it('resets the breakdown on a compacted record', () => {
-    const { state } = runFixture()
+    const { state, events } = runFixture()
+    const recharges = events.filter(event => event.type === 'context_update' && event.payload.compacted === true)
+    assert.equal(recharges.length, 1)
+    assert.ok(typeof recharges[0].payload.tokens === 'number')
     // After compaction, reasoning + subagentResults should be zeroed.
     assert.equal(state.contextBreakdown.reasoning, 0)
     assert.equal(state.contextBreakdown.subagentResults, 0)

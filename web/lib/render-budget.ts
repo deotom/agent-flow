@@ -13,8 +13,8 @@ export function renderBudget(mode: AnimationMode, count: number, active: boolean
     pixelRatio: compact || dense ? 1 : mode === 'full' ? 2 : 1.25,
   }
 }
-export function hasActiveAgents(agents: Iterable<{ state: string }>): boolean {
-  for (const agent of agents) if (['thinking', 'tool_calling', 'waiting_permission'].includes(agent.state)) return true
+export function hasActiveAgents(agents: Iterable<{ state: string; contextRecharge?: Agent['contextRecharge'] }>): boolean {
+  for (const agent of agents) if (agent.contextRecharge || ['thinking', 'tool_calling', 'waiting_permission'].includes(agent.state)) return true
   return false
 }
 

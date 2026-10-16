@@ -19,6 +19,7 @@ it('caps graphics and resolution, preserves active effects, and reduces detail f
   assert.equal(renderBudget('off', 2, false, false).fps, 8)
   assert.equal(hasActiveAgents([{ state: 'complete' }, { state: 'idle' }]), false)
   assert.equal(hasActiveAgents([{ state: 'waiting_permission' }]), true)
+  assert.equal(hasActiveAgents([{ state: 'idle', contextRecharge: { progress: 0.5 } }]), true)
   const particles = [{ type: 'return' }, ...Array.from({ length: 100 }, () => ({ type: 'tool_call' }))]
   const limited = limitVisualParticles(particles, 4)
   assert.equal(limited.length, 4)
