@@ -73,6 +73,7 @@ export interface CodexRolloutState {
   label: string | null
   /** Pending tool calls, keyed by call_id. */
   pendingToolCalls: Map<string, PendingCodexToolCall>
+  pendingUserInputs: Map<string, { blocking: boolean; count: number; answered: Set<number> }>
   /** Content hashes of already-emitted messages (for dedup across replays). */
   seenMessageHashes: Set<string>
   /** Running token breakdown. */
@@ -96,6 +97,7 @@ export function createCodexRolloutState(): CodexRolloutState {
     cwd: null,
     label: null,
     pendingToolCalls: new Map(),
+    pendingUserInputs: new Map(),
     seenMessageHashes: new Set(),
     contextBreakdown: {
       systemPrompt: SYSTEM_PROMPT_BASE_TOKENS,
@@ -405,6 +407,24 @@ export class CodexRolloutParser {
     const rawText = flattenContent(payload.content)
     if (!rawText) return
 
+    if (role === 'user' && rawText.includes('<send_user_message_question_reply>')) {
+      const body = rawText.match(/<send_user_message_question_reply>\s*([\s\S]*?)\s*<\/send_user_message_question_reply>/)?.[1]
+      try {
+        const replies: unknown = JSON.parse(body || 'null')
+        if (Array.isArray(replies)) for (const reply of replies) {
+          if (typeof reply?.questionItemId !== 'string') continue
+          const route: unknown = JSON.parse(reply.questionItemId)
+          if (Array.isArray(route) && typeof route[1] === 'string' && Number.isInteger(route[2])) {
+            const pending = state.pendingUserInputs.get(route[1])
+            if (!pending || route[2] < 0 || route[2] >= pending.count) continue
+            pending.answered.add(route[2])
+            if (pending.answered.size >= pending.count) this.resolveUserInput(route[1], state)
+          }
+        }
+      } catch { /* Incomplete or malformed reply metadata is not a new prompt. */ }
+      return
+    }
+
     // Codex wraps real user prompts inside IDE-context blocks; extract the
     // actual prompt and skip pure injection messages entirely.
     const text = role === 'user' ? extractCodexUserText(rawText) : rawText
@@ -467,6 +487,17 @@ export class CodexRolloutParser {
         inputData: extractInputData(name, args ?? {}),
       },
     })
+    const tool = name.split('.').pop()
+    if (tool === 'request_user_input' || tool === 'request_user_input_async') {
+      const blocking = tool === 'request_user_input'
+      state.pendingUserInputs.set(callId, { blocking, count: Array.isArray(args?.questions) ? Math.max(1, args.questions.length) : 1, answered: new Set() })
+      this.delegate.emit({ time: this.elapsed(), type: 'input_requested', payload: { agent: ORCHESTRATOR_NAME, callId, blocking } })
+    }
+  }
+
+  private resolveUserInput(callId: string, state: CodexRolloutState): void {
+    if (!state.pendingUserInputs.delete(callId)) return
+    this.delegate.emit({ time: this.elapsed(), type: 'input_resolved', payload: { agent: ORCHESTRATOR_NAME, callId } })
   }
 
   private handleFunctionCallOutput(payload: FunctionCallOutputPayload, state: CodexRolloutState): void {
@@ -513,6 +544,10 @@ export class CodexRolloutParser {
         ...(discovery ? { discovery } : {}),
       },
     })
+    const inputRequest = state.pendingUserInputs.get(callId)
+    if (inputRequest && (inputRequest.blocking || isError || parseArgsJson(output)?.accepted !== true)) {
+      this.resolveUserInput(callId, state)
+    }
     this.emitContextUpdate(state)
   }
 
@@ -634,6 +669,7 @@ export class CodexRolloutParser {
         return
       case 'task_complete':
       case 'turn_aborted':
+        if (payload.type === 'turn_aborted') for (const callId of state.pendingUserInputs.keys()) this.resolveUserInput(callId, state)
         state.turnActive = false
         this.delegate.emit({ time: this.elapsed(), type: 'agent_idle', payload: { name: ORCHESTRATOR_NAME, state: 'idle', aborted: payload.type === 'turn_aborted' } })
         return

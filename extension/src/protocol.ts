@@ -20,6 +20,8 @@ export type AgentEventType =
   | 'subagent_dispatch'
   | 'subagent_return'
   | 'permission_requested'
+    | 'input_requested'
+    | 'input_resolved'
   | 'error'
 
 export interface AgentEvent {

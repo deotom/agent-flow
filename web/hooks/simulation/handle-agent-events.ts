@@ -181,6 +181,7 @@ export function handlePermissionRequested(
     state.agents.set(agentName, {
       ...agent,
       state: 'waiting_permission',
+      waitingForInput: false,
     })
 
     const entry = state.timelineEntries.get(agentName)
@@ -241,4 +242,23 @@ export function handleModelDetected(
       tokensMax: ctx.getContextWindowSize(model),
     })
   }
+}
+
+export function handleInputRequested(payload: Record<string, unknown>, state: MutableEventState): void {
+  const name = asString(payload.agent, 'Orchestrator')
+  const agent = state.agents.get(name)
+  const id = asString(payload.callId)
+  if (!agent || !id) return
+  const pendingInputs = [...(agent.pendingInputs ?? []).filter(input => input.id !== id), { id, blocking: payload.blocking === true }]
+  state.agents.set(name, { ...agent, pendingInputs, ...(payload.blocking === true ? { state: 'waiting_permission', waitingForInput: true } : {}) })
+}
+
+export function handleInputResolved(payload: Record<string, unknown>, state: MutableEventState): void {
+  const name = asString(payload.agent, 'Orchestrator')
+  const agent = state.agents.get(name)
+  if (!agent) return
+  const pendingInputs = (agent.pendingInputs ?? []).filter(input => input.id !== payload.callId)
+  const waitingForInput = pendingInputs.some(input => input.blocking)
+  state.agents.set(name, { ...agent, pendingInputs, waitingForInput,
+    ...(agent.waitingForInput && !waitingForInput && agent.state === 'waiting_permission' ? { state: 'thinking', currentTool: undefined } : {}) })
 }

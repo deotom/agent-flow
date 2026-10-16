@@ -51,6 +51,8 @@ export function ToolContentRenderer({ toolName, inputData, args, compact = false
       return <WebSearchContent data={inputData} />
     case 'WebFetch':
       return <WebFetchContent data={inputData} />
+    case 'request_user_input':
+    case 'request_user_input_async':
     case 'AskUserQuestion':
       return <AskUserContent data={inputData} />
     default:

@@ -13,6 +13,8 @@ export interface ContextBreakdown {
 }
 
 export interface Agent {
+  pendingInputs?: Array<{ id: string; blocking: boolean }>
+  waitingForInput?: boolean
   round?: number
   id: string
   name: string
@@ -176,6 +178,8 @@ export interface SimulationEvent {
     | 'subagent_dispatch'
     | 'subagent_return'
     | 'permission_requested'
+    | 'input_requested'
+    | 'input_resolved'
   payload: Record<string, unknown>
   sessionId?: string
 }

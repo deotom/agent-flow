@@ -73,9 +73,9 @@ function captureLampHud(agent: Parameters<typeof drawContextHud>[1], time: numbe
   return fills
 }
 
-it('keeps unused LED lamps black and lights only occupied capacity, clamped to a full ring', () => {
+it('keeps used LED lamps black and lights remaining capacity, clamped to a full ring', () => {
   const state = processEvent({ time: 0, type: 'agent_spawn', payload: { name: 'root', isMain: true } }, createEmptyState(), ctx)
-  for (const [tokensUsed, lit] of [[14000, 6], [150000, 36], [0, 0]] as const) {
+  for (const [tokensUsed, lit] of [[14000, 31], [150000, 0], [0, 36]] as const) {
     const fills = captureLampHud({ ...state.agents.get('root')!, tokensUsed, tokensMax: 100000 }, 0, false)
     assert.equal(fills[0].rectangles.length, 36)
     assert.equal(fills[1].color, '#010408')
@@ -112,7 +112,7 @@ it('shows numeric context usage with warning colors at 80 and 90 percent', () =>
   for (const [tokensUsed, color] of [[79000, COLORS.holoBase], [80000, COLORS.tool], [90000, COLORS.error]] as const) {
     drawContextComposition(canvas as unknown as CanvasRenderingContext2D, { ...state.agents.get('root')!, tokensUsed, tokensMax: 100000 }, 48)
     assert.equal(labels.at(-1)?.color, color)
-    assert.ok(labels.at(-1)?.text.startsWith(`CTX ${tokensUsed / 1000}%`))
+    assert.ok(labels.at(-1)?.text.startsWith(`CTX เหลือ ${100 - tokensUsed / 1000}%`))
   }
 })
 
@@ -147,4 +147,29 @@ it('keeps the JARVIS angle continuous across work/Ready and Animation Off transi
   const resumed = advanceInstrumentPhase(stopped, 200.02, true, true)
   assert.ok(resumed.angle - stopped.angle < 0.01)
   assert.ok(advanceInstrumentPhase({ time: 0, angle: Math.PI * 2 - 0.001 }, 0.1, true, false).angle > Math.PI * 2)
+})
+
+
+it('tracks async and blocking inputs separately from permission waits', () => {
+  let state = processEvent({ time: 0, type: 'agent_spawn', payload: { name: 'root', isMain: true } }, createEmptyState(), ctx)
+  const event = (type: 'input_requested' | 'input_resolved' | 'permission_requested', payload: Record<string, unknown>) => {
+    state = processEvent({ time: 1, type, payload: { agent: 'root', ...payload } }, state, ctx)
+    return state.agents.get('root')!
+  }
+  assert.equal(event('input_requested', { callId: 'async', blocking: false }).state, 'idle')
+  assert.match(agentStatusLabel(state.agents.get('root')!, 0), /input requested/)
+  assert.equal(event('input_requested', { callId: 'sync', blocking: true }).state, 'waiting_permission')
+  assert.equal(agentStatusLabel(state.agents.get('root')!, 0), 'Input needed')
+  assert.equal(event('input_resolved', { callId: 'async' }).waitingForInput, true)
+  assert.equal(event('input_resolved', { callId: 'sync' }).state, 'thinking')
+  event('input_requested', { callId: 'other', blocking: false })
+  event('permission_requested', {})
+  assert.equal(event('input_resolved', { callId: 'other' }).state, 'waiting_permission')
+  assert.equal(agentStatusLabel(state.agents.get('root')!, 0), 'Approval needed')
+})
+
+it('starts a fresh context ring fully lit and steady', () => {
+  const state = processEvent({ time: 0, type: 'agent_spawn', payload: { name: 'root', isMain: true } }, createEmptyState(), ctx)
+  const agent = state.agents.get('root')!
+  assert.deepEqual(captureLampHud(agent, 0, true), captureLampHud(agent, 10, true))
 })

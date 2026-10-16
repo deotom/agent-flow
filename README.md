@@ -261,3 +261,8 @@ Local patch `local-2026.10.16.2` replaces the segmented context arc with individ
 
 
 Local patch `local-2026.10.16.3` changes the context lamps to rectangular LED packages aligned tangentially around the ring. Each has a dark casing and a narrow illuminated core: previous LEDs stay blue, the latest blinks blue, and unused LEDs remain black. Geometry uses batched quadrilateral fills with precomputed directions, without rotated canvas layers, blur or added timers.
+
+
+Local patch `local-2026.10.16.4` changes the rectangular context LEDs to remaining capacity: a fresh context starts fully blue, consumed capacity goes dark, and only the remaining boundary lamp blinks. Numeric CTX labels and token hover details agree in both editor and Explorer graphs. The existing usage thresholds still color the numeric warning.
+
+Codex native `request_user_input` and `request_user_input_async` calls now show a question symbol. Blocking requests show **Input needed**; asynchronous requests keep the real working status and display a question badge. The parser correlates individual replies, waits for every question in a request, ignores duplicate replies, and clears rejected or aborted requests. Accepted async questions survive turn completion. Question text/options render in tool details. This uses recorded input events; it does not guess Codex approval prompts from slow commands or elevated-permission arguments.

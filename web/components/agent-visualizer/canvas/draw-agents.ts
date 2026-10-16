@@ -12,7 +12,9 @@ export function contextGaugeColor(used: number, capacity: number): string {
   const usage = used / Math.max(1, capacity)
   return usage >= 0.9 ? COLORS.error : usage >= 0.8 ? COLORS.tool : COLORS.holoBase
 }
-export function agentStatusLabel(agent: Pick<Agent, 'state' | 'currentTool'>, time: number): string {
+export function agentStatusLabel(agent: Pick<Agent, 'state' | 'currentTool' | 'pendingInputs' | 'waitingForInput'>, time: number): string {
+  if (agent.waitingForInput) return 'Input needed'
+  if (agent.pendingInputs?.length && agent.state === 'idle') return 'Ready · input requested'
   switch (agent.state) {
     case 'thinking': return `Thinking${'.'.repeat(1 + Math.floor(time * 2) % 3)}`
     case 'tool_calling': return `Running ${agent.currentTool?.split('.').pop() ?? 'tool'}`
@@ -80,7 +82,7 @@ export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radi
   if (agent.state === 'complete' && !agent.isMain) return
   const usage = Math.min(1, Math.max(0, agent.tokensUsed / Math.max(1, agent.tokensMax)))
   const directions = hudLampDirections[agent.isMain ? 1 : 0]
-  const lit = Math.ceil(usage * directions.length)
+  const lit = Math.ceil((1 - usage) * directions.length)
   const ringRadius = radius + 10
   const halfLength = ringRadius * Math.PI / directions.length * 0.64
   const halfThickness = agent.isMain ? 1.5 : 1.1
@@ -108,16 +110,16 @@ export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radi
     }
     ctx.fill()
   }
-  // Every position has a dark lamp and a faint casing, including unused capacity.
+  // Used capacity is dark; remaining capacity stays blue.
   lamps(0, directions.length, 0.5, '#22313e', 0.65)
   lamps(0, directions.length, 0, '#010408', 1)
-  // Previous lamps stay blue. Only the latest occupied lamp fades on and off.
+  // Only the remaining boundary lamp blinks, without animated shadows.
   if (lit > 1) {
     lamps(0, lit - 1, 0, COLORS.holoBase, 0.9)
     lamps(0, lit - 1, 0, '#d9faff', 0.8, true)
   }
   if (lit) {
-    const brightness = effectsEnabled ? 0.06 + (1 - Math.cos(time * 2.2)) * 0.47 : 1
+    const brightness = effectsEnabled && usage > 0 && usage < 1 ? 0.06 + (1 - Math.cos(time * 2.2)) * 0.47 : 1
     lamps(lit - 1, 1, 0, COLORS.holoBase, brightness * 0.95)
     lamps(lit - 1, 1, 0, '#d9faff', brightness * 0.9, true)
   }
@@ -125,12 +127,12 @@ export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radi
 }
 
 export function drawContextComposition(ctx: CanvasRenderingContext2D, agent: Agent, radius: number, labelScale = 1) {
-  if (agent.tokensUsed <= 0) return
+  if (agent.tokensMax <= 0) return
   ctx.fillStyle = contextGaugeColor(agent.tokensUsed, agent.tokensMax)
   ctx.font = `${10 * labelScale}px "Segoe UI", sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
-  ctx.fillText(`CTX ${Math.round(agent.tokensUsed / Math.max(1, agent.tokensMax) * 100)}%`, agent.x, agent.y + radius + 12 + 57 * labelScale)
+  ctx.fillText(`CTX เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - agent.tokensUsed / Math.max(1, agent.tokensMax))) * 100)}%`, agent.x, agent.y + radius + 12 + 57 * labelScale)
 }
 
 function drawDepthShadow(ctx: CanvasRenderingContext2D, agent: Agent, r: number) {
@@ -214,7 +216,13 @@ export function drawActivityOutline(ctx: CanvasRenderingContext2D, agent: Pick<A
 }
 
 function drawCenterIcon(ctx: CanvasRenderingContext2D, agent: Agent, r: number, color: string, isWaiting: boolean) {
-  if (isWaiting) {
+  if (agent.waitingForInput) {
+    ctx.fillStyle = COLORS.tool
+    ctx.font = `bold ${r * 0.65}px "Segoe UI", sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('?', agent.x, agent.y)
+  } else if (isWaiting) {
     // Geometric lock icon — fits the holographic style
     const s = r * 0.3
     ctx.save()
@@ -351,10 +359,10 @@ function drawAgentLabel(ctx: CanvasRenderingContext2D, agent: Agent, r: number, 
   ctx.fillStyle = getStateColor(agent.state)
   ctx.font = `500 ${(compact ? 11 : 12) * unit}px "Segoe UI", sans-serif`
   ctx.fillText(truncateText(ctx, agentStatusLabel(agent, time), width), agent.x, y + line * 2)
-  if (compact && agent.tokensUsed > 0) {
+  if (compact && agent.tokensMax > 0) {
     ctx.fillStyle = contextGaugeColor(agent.tokensUsed, agent.tokensMax)
     ctx.font = `${10 * unit}px "Segoe UI", sans-serif`
-    ctx.fillText( `CTX ${Math.round(agent.tokensUsed / Math.max(1, agent.tokensMax) * 100)}%`, agent.x, y + line * 3)
+    ctx.fillText( `CTX เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - agent.tokensUsed / Math.max(1, agent.tokensMax))) * 100)}%`, agent.x, y + line * 3)
   }
 }
 
@@ -427,6 +435,17 @@ export function drawAgents(
     drawStateRing(ctx, agent, r, color, isHovered, isSelected, isWaiting, time, effectsEnabled)
     drawContextHud(ctx, agent, r, time, effectsEnabled)
     drawCenterIcon(ctx, agent, r, color, isWaiting)
+    if (agent.pendingInputs?.length && !agent.waitingForInput) {
+      ctx.fillStyle = COLORS.tool
+      ctx.beginPath()
+      ctx.arc(agent.x + r * 0.72, agent.y - r * 0.72, 9, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = '#08111d'
+      ctx.font = 'bold 12px "Segoe UI", sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('?', agent.x + r * 0.72, agent.y - r * 0.72)
+    }
 
     if (activeEffects && detailed && !compact && agent.state === 'thinking') {
       drawOrbitingParticles(ctx, agent, r, color, time)

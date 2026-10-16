@@ -19,3 +19,13 @@ it('renders Codex commands, plan progress, patches and orchestration code', () =
   assert.ok(code.includes('exec_command'))
   assert.ok(code.includes('npm test'))
 })
+
+
+it('renders normalized Codex questions and choices for both input tools', () => {
+  for (const toolName of ['request_user_input', 'functions.request_user_input_async']) {
+    const html = renderToStaticMarkup(<ToolContentRenderer toolName={toolName} inputData={{ questions: [{ question: 'Choose a mode', options: ['Full', 'Low'] }] }} />)
+    assert.ok(html.includes('Choose a mode'))
+    assert.ok(html.includes('Full'))
+    assert.ok(html.includes('Low'))
+  }
+})

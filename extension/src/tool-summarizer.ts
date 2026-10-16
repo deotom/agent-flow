@@ -55,10 +55,12 @@ export function summarizeInput(toolName: string, input?: Record<string, unknown>
       const url = String(input.url || '')
       try { const u = new URL(url); return u.hostname + u.pathname.slice(0, URL_PATH_MAX) } catch { return url.slice(0, ARGS_MAX) }
     }
+    case 'request_user_input':
+    case 'request_user_input_async':
     case 'AskUserQuestion': {
-      const questions = input.questions as Array<{ question?: string }> | undefined
-      if (Array.isArray(questions) && questions[0]?.question) {
-        return String(questions[0].question).slice(0, ARGS_MAX)
+      const questions = input.questions as Array<{ question?: string; title?: string }> | undefined
+      if (Array.isArray(questions) && (questions[0]?.question || questions[0]?.title)) {
+        return String(questions[0].question || questions[0].title).slice(0, ARGS_MAX)
       }
       return 'asking user...'
     }
@@ -162,12 +164,14 @@ export function extractInputData(toolName: string, input: Record<string, unknown
           url: String(input.url || ''),
           prompt: String(input.prompt || '').slice(0, WEB_FETCH_PROMPT_MAX),
         }
+      case 'request_user_input':
+      case 'request_user_input_async':
       case 'AskUserQuestion': {
-        const qs = input.questions as Array<{ question?: string; options?: Array<{ label?: string }> }> | undefined
+        const qs = input.questions as Array<{ question?: string; title?: string; options?: Array<string | { label?: string }> }> | undefined
         return {
           questions: Array.isArray(qs) ? qs.map(q => ({
-            question: String(q.question || ''),
-            options: Array.isArray(q.options) ? q.options.map(o => String(o.label || '')) : [],
+            question: String(q.question || q.title || ''),
+            options: Array.isArray(q.options) ? q.options.map(o => typeof o === 'string' ? o : String(o.label || '')) : [],
           })) : [],
         }
       }

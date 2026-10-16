@@ -100,10 +100,10 @@ export function useCanvasInteraction({
     for (const agent of drawPropsRef.current.agents.values()) {
       const r = (agent.isMain ? NODE.radiusMain : NODE.radiusSub) * agent.scale
       const labelY = agent.y + r + 12 + (compact ? 48 : 57) * unit
-      if (agent.opacity > 0.5 && agent.tokensUsed > 0 && Math.abs(pos.x - agent.x) < 65 * unit && pos.y >= labelY - 5 && pos.y <= labelY + 16 * unit) { contextAgent = agent; break }
+      if (agent.opacity > 0.5 && agent.tokensMax > 0 && Math.abs(pos.x - agent.x) < 65 * unit && pos.y >= labelY - 5 && pos.y <= labelY + 16 * unit) { contextAgent = agent; break }
     }
     if (mainCanvasRef.current) mainCanvasRef.current.title = contextAgent
-      ? `${contextAgent.name}: ${contextAgent.tokensUsed.toLocaleString()} / ${contextAgent.tokensMax.toLocaleString()} tokens (${Math.round(contextAgent.tokensUsed / Math.max(1, contextAgent.tokensMax) * 100)}%)`
+      ? `${contextAgent.name}: ${contextAgent.tokensUsed.toLocaleString()} / ${contextAgent.tokensMax.toLocaleString()} tokens used · เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - contextAgent.tokensUsed / Math.max(1, contextAgent.tokensMax))) * 100)}%`
       : ''
     if (hoveredId !== lastHoveredIdRef.current) {
       lastHoveredIdRef.current = hoveredId
