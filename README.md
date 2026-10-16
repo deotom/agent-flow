@@ -255,3 +255,6 @@ Local patch `local-2026.10.15.18` raises Full-mode standby rendering from 8 to 3
 
 
 Local patch `local-2026.10.16.1` gives the context HUD and standby indicator an LED appearance: rounded cyan lamps with a pale core and a narrow translucent rim. Only the latest context lamp's core and the standby light's core breathe; lamp sizes and positions stay fixed. The rim uses plain strokes/fills without shadow blur, filters, bloom buffers or additional timers. Existing warning colors, frame pacing and Animation Off behavior remain intact.
+
+
+Local patch `local-2026.10.16.2` replaces the segmented context arc with individual round LED lamps. Previous occupied positions stay blue, the latest occupied lamp blinks blue, and all remaining positions are black with faint casings. At zero usage every lamp is off; usage above capacity clamps to the full lamp count. Numeric CTX remains exact and retains warning colors, while the lamps stay blue as requested. Full lamp positions and unit directions are precomputed; drawing uses batched solid fills without blur or extra timers. Animation Off keeps the latest lamp steadily lit.

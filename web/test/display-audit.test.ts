@@ -63,35 +63,38 @@ it('rebuilds timeline markers for equal-length sessions and rolling conversation
   assert.equal(buildTimelineEvents(make('latest message'))[0].label, 'latest message')
 })
 
-it('draws a context HUD with a full capacity track and a bounded usage arc', () => {
+function captureLampHud(agent: Parameters<typeof drawContextHud>[1], time: number, enabled: boolean) {
+  const fills: { color: string; alpha: number; circles: number[][] }[] = []
+  let circles: number[][] = []
+  const canvas = { globalAlpha: 1, fillStyle: '', save() {}, restore() {}, beginPath() { circles = [] }, moveTo() {},
+    arc: (...args: number[]) => circles.push(args), fill() { fills.push({ color: this.fillStyle, alpha: this.globalAlpha, circles: [...circles] }) } }
+  drawContextHud(canvas as unknown as CanvasRenderingContext2D, agent, 48, time, enabled)
+  return fills
+}
+
+it('keeps unused LED lamps black and lights only occupied capacity, clamped to a full ring', () => {
   const state = processEvent({ time: 0, type: 'agent_spawn', payload: { name: 'root', isMain: true } }, createEmptyState(), ctx)
-  for (const [tokensUsed, fraction] of [[46000, 0.46], [150000, 1], [0, 0]] as const) {
-    const arcs: number[][] = []
-    const canvas = { globalAlpha: 1, setLineDash() {}, save() {}, restore() {}, beginPath() {}, stroke() {}, moveTo() {}, lineTo() {}, arc: (...args: number[]) => arcs.push(args) }
-    drawContextHud(canvas as unknown as CanvasRenderingContext2D, { ...state.agents.get('root')!, tokensUsed, tokensMax: 100000 }, 48)
-    assert.equal(arcs[0][4] - arcs[0][3], Math.PI * 2)
-    if (fraction) {
-      assert.equal(arcs.length, 1 + Math.ceil(fraction * 36))
-      assert.ok(arcs.slice(1).every(arc => arc[4] > arc[3] && arc[3] >= -Math.PI / 2 && arc[4] <= Math.PI * 1.5))
-    }
-    else assert.equal(arcs.length, 1)
+  for (const [tokensUsed, lit] of [[14000, 6], [150000, 36], [0, 0]] as const) {
+    const fills = captureLampHud({ ...state.agents.get('root')!, tokensUsed, tokensMax: 100000 }, 0, false)
+    assert.equal(fills[0].circles.length, 36)
+    assert.equal(fills[1].color, '#010408')
+    assert.equal(fills[1].circles.length, 36)
+    const blue = fills.filter(fill => fill.color === COLORS.holoBase)
+    assert.equal(blue.reduce((count, fill) => count + fill.circles.length, 0), lit)
+    assert.ok(blue.every(fill => fill.circles.every(circle => circle[2] === 2.1)))
+    if (lit) assert.equal(blue.at(-1)!.circles.length, 1)
+    else assert.equal(fills.length, 2)
   }
 })
 
-it('pulses only the last context segment without changing its geometry, and respects Animation Off', () => {
+it('blinks only the latest blue LED while previous and unlit lamps stay steady, and respects Animation Off', () => {
   const state = processEvent({ time: 0, type: 'agent_spawn', payload: { name: 'root', isMain: true } }, createEmptyState(), ctx)
-  const agent = { ...state.agents.get('root')!, tokensUsed: 46000, tokensMax: 100000 }
-  const capture = (time: number, enabled: boolean) => {
-    const arcs: number[][] = [], strokes: number[] = []
-    const canvas = { globalAlpha: 1, save() {}, restore() {}, beginPath() {}, moveTo() {}, arc: (...args: number[]) => arcs.push(args), stroke() { strokes.push(this.globalAlpha) } }
-    drawContextHud(canvas as unknown as CanvasRenderingContext2D, agent, 48, time, enabled)
-    return { arcs, strokes }
-  }
-  const dim = capture(0, true), bright = capture(Math.PI / 2.2, true)
-  assert.deepEqual(dim.arcs, bright.arcs)
-  assert.deepEqual(dim.strokes.slice(0, -1), bright.strokes.slice(0, -1))
-  assert.ok(bright.strokes.at(-1)! > dim.strokes.at(-1)!)
-  assert.deepEqual(capture(0, false), capture(10, false))
+  const agent = { ...state.agents.get('root')!, tokensUsed: 14000, tokensMax: 100000 }
+  const dim = captureLampHud(agent, 0, true), bright = captureLampHud(agent, Math.PI / 2.2, true)
+  assert.deepEqual(dim.map(fill => fill.circles), bright.map(fill => fill.circles))
+  assert.deepEqual(dim.slice(0, -2), bright.slice(0, -2))
+  assert.ok(bright.at(-2)!.alpha > dim.at(-2)!.alpha)
+  assert.deepEqual(captureLampHud(agent, 0, false), captureLampHud(agent, 10, false))
 })
 
 it('shows numeric context usage with warning colors at 80 and 90 percent', () => {

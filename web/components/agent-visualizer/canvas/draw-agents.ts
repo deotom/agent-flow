@@ -71,54 +71,47 @@ export function drawAgentBrand(
   else drawClaudeSpark(ctx, cx, cy, r, color)
 }
 
+const hudLampDirections = [24, 36].map(count => Array.from({ length: count }, (_, index) => {
+  const angle = -Math.PI / 2 + index * Math.PI * 2 / count
+  return { x: Math.cos(angle), y: Math.sin(angle) }
+}))
+
 export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radius: number, time = 0, effectsEnabled = false) {
   if (agent.state === 'complete' && !agent.isMain) return
   const usage = Math.min(1, Math.max(0, agent.tokensUsed / Math.max(1, agent.tokensMax)))
+  const directions = hudLampDirections[agent.isMain ? 1 : 0]
+  const lit = Math.ceil(usage * directions.length)
   const ringRadius = radius + 10
-  const slots = agent.isMain ? 36 : 24
-  const step = Math.PI * 2 / slots
-  const gap = step * 0.42
-  const filled = usage * slots
-  const last = Math.ceil(filled) - 1
+  const lampRadius = agent.isMain ? 2.1 : 1.5
   ctx.save()
   const opacity = ctx.globalAlpha
-  ctx.lineCap = 'round'
-  ctx.lineWidth = 0.7
-  ctx.strokeStyle = COLORS.holoBase
-  ctx.globalAlpha = opacity * 0.12
-  ctx.beginPath()
-  ctx.arc(agent.x, agent.y, ringRadius, 0, Math.PI * 2)
-  ctx.stroke()
-  const lampColor = contextGaugeColor(agent.tokensUsed, agent.tokensMax)
-  const coreColor = usage >= 0.8 ? '#fff2e5' : '#e1fcff'
-  const lampWidth = agent.isMain ? 2.8 : 1.9
-  const paintLamp = (tip: boolean) => {
-    // Reuse one path for all three unblurred LED layers.
-    ctx.strokeStyle = lampColor
-    ctx.lineWidth = lampWidth + 2.4
-    ctx.globalAlpha = opacity * 0.09
-    ctx.stroke()
-    ctx.lineWidth = lampWidth
-    ctx.globalAlpha = opacity * 0.82
-    ctx.stroke()
-    ctx.strokeStyle = coreColor
-    ctx.lineWidth = agent.isMain ? 0.85 : 0.6
-    ctx.globalAlpha = opacity * (tip && effectsEnabled ? 0.42 + (1 - Math.cos(time * 2.2)) * 0.27 : 0.8)
-    ctx.stroke()
-  }
-  ctx.beginPath()
-  for (let index = 0; index < last; index++) {
-    const start = -Math.PI / 2 + index * step + gap / 2
-    ctx.moveTo(agent.x + Math.cos(start) * ringRadius, agent.y + Math.sin(start) * ringRadius)
-    ctx.arc(agent.x, agent.y, ringRadius, start, start + step - gap)
-  }
-  if (last > 0) paintLamp(false)
-  if (last >= 0) {
-    const start = -Math.PI / 2 + last * step + gap / 2
-    const fraction = Math.min(1, filled - last)
+  ctx.shadowBlur = 0
+  const lamps = (start: number, count: number, size: number, color: string, alpha: number) => {
+    if (!count) return
+    ctx.globalAlpha = opacity * alpha
+    ctx.fillStyle = color
     ctx.beginPath()
-    ctx.arc(agent.x, agent.y, ringRadius, start, start + (step - gap) * fraction)
-    paintLamp(true)
+    for (let index = start; index < start + count; index++) {
+      const direction = directions[index]
+      const x = agent.x + direction.x * ringRadius
+      const y = agent.y + direction.y * ringRadius
+      ctx.moveTo(x + size, y)
+      ctx.arc(x, y, size, 0, Math.PI * 2)
+    }
+    ctx.fill()
+  }
+  // Every position has a dark lamp and a faint casing, including unused capacity.
+  lamps(0, directions.length, lampRadius + 0.65, '#22313e', 0.65)
+  lamps(0, directions.length, lampRadius, '#010408', 1)
+  // Previous lamps stay blue. Only the latest occupied lamp fades on and off.
+  if (lit > 1) {
+    lamps(0, lit - 1, lampRadius, COLORS.holoBase, 0.9)
+    lamps(0, lit - 1, lampRadius * 0.3, '#d9faff', 0.8)
+  }
+  if (lit) {
+    const brightness = effectsEnabled ? 0.06 + (1 - Math.cos(time * 2.2)) * 0.47 : 1
+    lamps(lit - 1, 1, lampRadius, COLORS.holoBase, brightness * 0.95)
+    lamps(lit - 1, 1, lampRadius * 0.3, '#d9faff', brightness * 0.9)
   }
   ctx.restore()
 }
