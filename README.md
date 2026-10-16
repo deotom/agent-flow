@@ -252,3 +252,6 @@ Local patch `local-2026.10.15.17` keeps the working render cadence during error/
 
 
 Local patch `local-2026.10.15.18` raises Full-mode standby rendering from 8 to 30 FPS for small graphs so rotating JARVIS rings and standby/HUD pulses do not visibly step while Ready. Standby disables the hex grid and detailed node effects and reduces stars to offset drawing cost; bloom remains disabled. Active Full rendering, crowded-graph caps, Low GPU, Off, and the separate quiet simulation cadence remain unchanged. JARVIS rotation now integrates from its previous angle, preserving phase when work/Ready speed or Animation Off changes. Deterministic tests verify even 30 FPS standby pacing at 60 Hz and continuous angle transitions.
+
+
+Local patch `local-2026.10.16.1` gives the context HUD and standby indicator an LED appearance: rounded cyan lamps with a pale core and a narrow translucent rim. Only the latest context lamp's core and the standby light's core breathe; lamp sizes and positions stay fixed. The rim uses plain strokes/fills without shadow blur, filters, bloom buffers or additional timers. Existing warning colors, frame pacing and Animation Off behavior remain intact.

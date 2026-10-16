@@ -9,7 +9,7 @@ import { createLogger } from './logger'
 import type { AgentRuntime, AgentRuntimeMode } from './session-runtime'
 
 const log = createLogger('Extension')
-const PATCH_VERSION = 'local-2026.10.15.18'
+const PATCH_VERSION = 'local-2026.10.16.1'
 let extensionVersion = '0.9.2'
 
 function sendViewerConfig(panel: VisualizerPanel): void {

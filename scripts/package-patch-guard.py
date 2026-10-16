@@ -17,7 +17,7 @@ def main():
         'contributes': {'commands': [{'command': 'agentFlowPatchGuard.recovery', 'title': 'Agent Flow: Local Patch Recovery Instructions'}]},
     }
     expected = {
-        'version': 'local-2026.10.15.18', 'readme': str(repo / 'README.md'),
+        'version': 'local-2026.10.16.1', 'readme': str(repo / 'README.md'),
         'vsix': str(repo / 'artifacts.local/agent-flow-codex-local.vsix'),
         'files': {name: hashlib.sha256((repo / 'extension' / name).read_bytes()).hexdigest()
                   for name in ('dist/extension.js', 'dist/webview/index.js', 'dist/webview/index.css')},
