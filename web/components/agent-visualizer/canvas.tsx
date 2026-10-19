@@ -24,9 +24,7 @@ import { useCanvasCamera } from '@/hooks/use-canvas-camera'
 import { drawAgentTooltip } from './canvas/agent-tooltip'
 import { useCanvasInteraction } from '@/hooks/use-canvas-interaction'
 import { type AnimationMode } from '@/lib/viewer-preferences'
-import { visibleRoundGraph } from '@/hooks/simulation/work-rounds'
-import { sessionGraphPresentation } from '@/lib/graph-presentation'
-import { compactGraphPresentation, createGraphProjector } from '@/lib/graph-presentation'
+import { createGraphProjector } from '@/lib/graph-presentation'
 import { renderBudget, hasVisualMotion, limitVisualParticles } from '@/lib/render-budget'
 import { useVisibleFrameLoop } from '@/hooks/use-visible-frame-loop'
 
@@ -106,8 +104,9 @@ export function AgentCanvas({
   // ─── Stable refs for animation loop & event handlers ────────────────────
   // Simulation data (agents, particles, etc.) is synced from simulationRef
   // at the top of each draw frame, so it's always fresh even without re-renders.
-  const scoped = showAllAgents ? sessionGraphPresentation(simulationRef.current) : visibleRoundGraph(simulationRef.current, currentRoundOnly)
-  const sim = compact ? compactGraphPresentation(scoped) : scoped
+  const projectGraphRef = useRef<ReturnType<typeof createGraphProjector> | null>(null)
+  if (!projectGraphRef.current) projectGraphRef.current = createGraphProjector()
+  const sim = projectGraphRef.current(simulationRef.current, currentRoundOnly, compact, showAllAgents)
   const makeDrawProps = (prev?: { isDragging: boolean }) => ({
     animationMode, animationSpeed, currentRoundOnly, showAllAgents, topInset,
     compact,
@@ -115,7 +114,7 @@ export function AgentCanvas({
     particles: sim.particles, edges: sim.edges, discoveries: sim.discoveries,
     selectedAgentId, hoveredAgentId, showStats, showHexGrid,
     showCostOverlay, selectedToolCallId, selectedDiscoveryId,
-    simTime: sim.currentTime, pauseAutoFit, dimensions,
+    simTime: simulationRef.current.currentTime, pauseAutoFit, dimensions,
     onAgentDrag, onAgentClick, onAgentHover, onContextMenu,
     onToolCallClick, onDiscoveryClick,
     isDragging: prev?.isDragging ?? false,
@@ -187,8 +186,6 @@ export function AgentCanvas({
   // Stable ref so the rAF loop always calls the latest draw without
   // re-subscribing when the callback identity changes.
   const drawRef = useRef<(timestamp: number) => void>(() => {})
-  const projectGraphRef = useRef<ReturnType<typeof createGraphProjector> | null>(null)
-  if (!projectGraphRef.current) projectGraphRef.current = createGraphProjector()
 
   const draw = useCallback((timestamp: number) => {
     const mode = drawPropsRef.current.animationMode

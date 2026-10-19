@@ -296,3 +296,6 @@ Local patch `local-2026.10.19.8` replaces the native white title tooltip with a 
 
 
 Local patch `local-2026.10.19.9` makes child-agent plaques proportional to their smaller nodes: narrower panels, tighter row spacing and slightly smaller typography, while retaining name, model, status and CTX on four separate rows. Main-agent plaques and tool cards are unchanged. Caption rendering and hover bounds continue to share the same geometry.
+
+
+Local patch `local-2026.10.19.10` reserves node/HUD and caption space when presenting tool cards, including calls restored from an existing session. Overlapping cards move to a nearby free position while safe positions remain stable; nearby cards are reserved too. The same projected tool positions drive rendering, beams, particles, click targets and camera bounds. Placement reserves the largest caption size across zoom levels and retains only a bounded live set of coordinates. Source events and transcript coordinates are unchanged.
