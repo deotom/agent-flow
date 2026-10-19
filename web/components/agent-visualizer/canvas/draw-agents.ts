@@ -136,13 +136,22 @@ export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radi
   ctx.restore()
 }
 
+/** Keep the caption below the complete instrument, including its outer sweep. */
+function captionLayout(agent: Pick<Agent, 'y' | 'isMain' | 'archived'>, radius: number, compact: boolean, viewScale: number) {
+  const unit = Math.min(compact ? 2 : 1.25, 1 / Math.max(0.1, viewScale))
+  const instrumentPadding = agent.archived ? 0 : agent.isMain && !compact ? 34 : 14
+  return { unit, width: (compact ? 200 : 260) * Math.min(1, unit), line: (compact ? 16 : 19) * unit,
+    y: agent.y + radius + instrumentPadding + 18 * unit }
+}
+
 export function drawContextComposition(ctx: CanvasRenderingContext2D, agent: Agent, radius: number, labelScale = 1) {
   if (agent.tokensMax <= 0) return
   ctx.fillStyle = contextGaugeColor(agent.tokensUsed, agent.tokensMax)
   ctx.font = `${10 * labelScale}px "Segoe UI", sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
-  ctx.fillText(`CTX เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - agent.tokensUsed / Math.max(1, agent.tokensMax))) * 100)}%`, agent.x, agent.y + radius + 12 + 57 * labelScale)
+  const caption = captionLayout(agent, radius, false, 1 / labelScale)
+  ctx.fillText(`CTX เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - agent.tokensUsed / Math.max(1, agent.tokensMax))) * 100)}%`, agent.x, caption.y + caption.line * 3)
 }
 
 function drawDepthShadow(ctx: CanvasRenderingContext2D, agent: Agent, r: number) {
@@ -347,11 +356,47 @@ function drawWaitingRipples(ctx: CanvasRenderingContext2D, agent: Agent, r: numb
   }
 }
 
-function drawAgentLabel(ctx: CanvasRenderingContext2D, agent: Agent, r: number, isHovered: boolean, time: number, compact: boolean, viewScale: number) {
-  const unit = Math.min(compact ? 2 : 1.25, 1 / Math.max(0.1, viewScale))
-  const width = compact ? 220 : 260
-  const line = (compact ? 16 : 19) * unit
-  const y = agent.y + r + 12
+function drawCaptionPanel(ctx: CanvasRenderingContext2D, agent: Agent,
+  layout: ReturnType<typeof captionLayout>, hovered: boolean) {
+  const { unit, width, line, y } = layout
+  const panelWidth = width + 16 * unit
+  const left = agent.x - panelWidth / 2, top = y - 8 * unit
+  const rows = !agent.archived && agent.tokensMax > 0 ? 4 : 3
+  const height = (rows - 1) * line + 28 * unit
+  const bottom = top + height, right = left + panelWidth
+  ctx.save()
+  ctx.shadowBlur = 0
+  ctx.lineWidth = 0.7 * unit
+  ctx.strokeStyle = hovered ? '#71d8ff80' : '#71d8ff38'
+  ctx.fillStyle = 'rgba(7, 19, 32, 0.9)'
+  ctx.beginPath()
+  ctx.roundRect(left, top, panelWidth, height, 4 * unit)
+  ctx.fill()
+  ctx.stroke()
+  // A small physical link and clipped corner accents make this part of the instrument.
+  ctx.beginPath()
+  ctx.moveTo(agent.x, top - 8 * unit)
+  ctx.lineTo(agent.x, top)
+  ctx.stroke()
+  ctx.strokeStyle = hovered ? '#8ae2ff' : '#55bde6a0'
+  ctx.lineWidth = 1.2 * unit
+  const corner = 7 * unit
+  ctx.beginPath()
+  for (const [x, cy, dx, dy] of [[left, top, 1, 1], [right, top, -1, 1],
+    [left, bottom, 1, -1], [right, bottom, -1, -1]]) {
+    ctx.moveTo(x, cy + dy * corner)
+    ctx.lineTo(x, cy)
+    ctx.lineTo(x + dx * corner, cy)
+  }
+  ctx.stroke()
+  ctx.restore()
+}
+
+export function drawAgentLabel(ctx: CanvasRenderingContext2D, agent: Agent, r: number, isHovered: boolean, time: number, compact: boolean, viewScale: number) {
+  const layout = captionLayout(agent, r, compact, viewScale)
+  const { unit, width, line, y } = layout
+  if (!agent.archived) drawCaptionPanel(ctx, agent, layout, isHovered)
+  ctx.shadowBlur = 0
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   ctx.fillStyle = isHovered ? COLORS.holoBright : COLORS.textPrimary

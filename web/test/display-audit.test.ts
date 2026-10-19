@@ -4,7 +4,7 @@ import { processEvent, type ProcessEventContext } from '../hooks/simulation/proc
 import { createEmptyState, appendConversation } from '../hooks/simulation/types'
 import { computeNextFrame } from '../hooks/simulation/animate'
 import { buildTimelineEvents } from '../hooks/simulation/timeline-events'
-import { drawContextComposition, drawContextHud, advanceInstrumentPhase, agentStatusLabel, drawActivityOutline } from '../components/agent-visualizer/canvas/draw-agents'
+import { drawAgentLabel, drawContextComposition, drawContextHud, advanceInstrumentPhase, agentStatusLabel, drawActivityOutline } from '../components/agent-visualizer/canvas/draw-agents'
 import { COLORS } from '../lib/colors'
 
 const ctx: ProcessEventContext = { syncForceSimulation() {}, findToolSlot: () => ({ x: 0, y: 0 }),
@@ -210,4 +210,33 @@ it('pulses amber only during live compaction, persists beyond 1.6s and stops on 
   assert.equal(state.agents.get('root')!.tokensUsed, 20000)
   assert.equal(amber().length, 0)
   assert.equal(agentStatusLabel(state.agents.get('root')!, 0), 'Ready')
+})
+
+
+it('keeps captions outside the HUD and every row apart at narrow and zoomed sizes', () => {
+  const base = processEvent({ time: 0, type: 'agent_spawn', payload: { name: 'root', isMain: true } }, createEmptyState(), ctx).agents.get('root')!
+  for (const compact of [false, true]) for (const isMain of [false, true]) for (const zoom of [0.5, 1, 2.4]) {
+    const labels: Array<{ text: string; y: number; fontSize: number; width: number }> = []
+    const panels: Array<{ top: number; bottom: number; width: number }> = []
+    const canvas = { font: '', fillStyle: '', shadowBlur: 0, save() {}, restore() {}, beginPath() {},
+      roundRect(_x: number, y: number, width: number, height: number) { panels.push({ top: y, bottom: y + height, width }) },
+      fill() {}, stroke() {}, moveTo() {}, lineTo() {},
+      measureText(text: string) { return { width: text.length * parseFloat(this.font.match(/[\d.]+px/)![0]) * 0.6 } },
+      fillText(text: string, _x: number, y: number) { labels.push({ text, y, fontSize: parseFloat(this.font.match(/[\d.]+px/)![0]), width: this.measureText(text).width }) } }
+    const agent = { ...base, isMain, y: 120, name: 'ตรวจสอบระบบและจัดการโครงการที่มีชื่อยาวมาก '.repeat(8) }
+    const radius = isMain ? 48 : 32
+    drawAgentLabel(canvas as unknown as CanvasRenderingContext2D, agent, radius, false, 0, compact, zoom)
+    if (!compact) drawContextComposition(canvas as unknown as CanvasRenderingContext2D, agent, radius, Math.min(1.25, 1 / zoom))
+    assert.equal(labels.length, 4)
+    assert.equal(panels.length, 1)
+    assert.ok(panels[0].top < labels[0].y)
+    assert.ok(panels[0].bottom > labels[3].y + labels[3].fontSize)
+    assert.ok(panels[0].width < (compact ? 250 : 310))
+    assert.ok(labels[0].y > agent.y + radius + (isMain && !compact ? 34 : 14))
+    assert.match(labels[0].text, /…$/)
+    assert.ok(labels[0].width * zoom <= (compact ? 200 : 260))
+    for (let index = 1; index < labels.length; index++) {
+      assert.ok(labels[index].y >= labels[index - 1].y + labels[index - 1].fontSize + 1 / zoom)
+    }
+  }
 })

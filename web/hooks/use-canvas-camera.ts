@@ -114,7 +114,8 @@ export function useCanvasCamera({
       minX = Math.min(minX, agent.x - Math.max(r, compact ? 115 : 130))
       maxX = Math.max(maxX, agent.x + Math.max(r, compact ? 115 : 130))
       minY = Math.min(minY, agent.y - r)
-      maxY = Math.max(maxY, agent.y + r + 100)
+      // Include the HUD connector and four caption rows at their largest font scale.
+      maxY = Math.max(maxY, agent.y + r + (compact ? 170 : 140))
       if (!compact && agent.messageBubbles.length > 0) {
         const visibleCount = agent.messageBubbles.filter(b => {
           const age = (simTimeRef.current ?? 0) - b.time

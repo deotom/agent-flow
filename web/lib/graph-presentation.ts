@@ -23,7 +23,7 @@ export function compactGraphPresentation(state: SimulationState): SimulationStat
   for (const agent of state.agents.values()) visit(agent)
   return { ...state, agents: new Map(ordered.map((agent, index) => [agent.id, { ...agent,
     x: ordered.length > 3 && index > 0 ? (index % 2 ? -125 : 125) : 0,
-    y: ordered.length > 3 && index > 0 ? Math.ceil(index / 2) * 220 : index * 220 }])) }
+    y: ordered.length > 3 && index > 0 ? Math.ceil(index / 2) * 300 : index * 300 }])) }
 }
 
 export function graphFit(bounds: { minX: number; maxX: number; minY: number; maxY: number }, width: number, height: number, compact: boolean, count: number, topInset = 132) {
