@@ -290,3 +290,6 @@ Local patch `local-2026.10.19.6` places node captions below the full HUD sweep i
 
 
 Local patch `local-2026.10.19.7` tightens the instrument plaque, shortens displayed names to its narrower width, moves it closer to the HUD, and strengthens the static connector. Thinking is the primary cyan text while model and normal context counters use secondary text color; context warnings keep their amber/red colors. Hovering the plaque or node shows the full name and token counters using a native tooltip with the same geometry as the drawn plaque. No animation or rendering buffer is added.
+
+
+Local patch `local-2026.10.19.8` replaces the native white title tooltip with a static navy/cyan HUD hint. It appears after 400 ms on a node or caption, wraps names at grapheme boundaries, shows token counters as secondary text, and stays inside the graph below the toolbar and above the footer. Drag, wheel navigation, mouse leave, hiding and restoration clear the hint. It uses the existing frame loop after bloom with no extra timers, glow or rendering buffers.

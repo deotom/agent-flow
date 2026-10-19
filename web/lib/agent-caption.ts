@@ -1,7 +1,7 @@
 import type { Agent } from './agent-types'
 import { NODE } from './agent-types'
 
-/** Shared geometry for drawing the instrument plaque and its native tooltip. */
+/** Shared geometry for drawing the instrument plaque and its HUD tooltip. */
 export function captionLayout(agent: Pick<Agent, 'x' | 'y' | 'isMain' | 'archived' | 'tokensMax'>, radius: number, compact: boolean, viewScale: number) {
   const unit = Math.min(compact ? 2 : 1.25, 1 / Math.max(0.1, viewScale))
   const instrumentPadding = agent.archived ? 0 : agent.isMain && !compact ? 34 : 14

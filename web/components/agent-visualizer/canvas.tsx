@@ -21,6 +21,7 @@ import {
   detectStateChanges as detectStateChangesPure,
 } from './canvas/index'
 import { useCanvasCamera } from '@/hooks/use-canvas-camera'
+import { drawAgentTooltip } from './canvas/agent-tooltip'
 import { useCanvasInteraction } from '@/hooks/use-canvas-interaction'
 import { type AnimationMode } from '@/lib/viewer-preferences'
 import { visibleRoundGraph } from '@/hooks/simulation/work-rounds'
@@ -135,7 +136,7 @@ export function AgentCanvas({
 
   // ─── Interaction ────────────────────────────────────────────────────────
   const {
-    isDragging, handlers, updateDragLerp,
+    isDragging, handlers, updateDragLerp, tooltipRef,
   } = useCanvasInteraction({
     drawPropsRef, transformRef, userHasNavigatedRef, panVelocityRef,
     simTimeRef, screenToCanvas, doZoomToFit, mainCanvasRef,
@@ -319,6 +320,8 @@ export function AgentCanvas({
       if (showCostOverlay) drawCostSummaryPanel(ctx, agents, toolCalls)
       if (budget.bloom && bloomRef.current) bloomRef.current.apply(canvas, ctx)
 
+      drawAgentTooltip(ctx, tooltipRef.current, agents, performance.now(), w, h, compactRef.current ? 82 : topInset)
+
       // ─── Performance overlay (enabled via ?perf or ?stress) ──────────
       if (PERF_OVERLAY_ENABLED) {
         const perf = perfRef.current
@@ -362,7 +365,7 @@ export function AgentCanvas({
         console.warn('[AgentCanvas] draw error:', err)
       }
     }
-  }, [detectStateChanges, updateCamera, updateDragLerp, transformRef])
+  }, [detectStateChanges, updateCamera, updateDragLerp, transformRef, topInset, tooltipRef])
 
   drawRef.current = draw
 
@@ -378,6 +381,8 @@ export function AgentCanvas({
     prevToolStatesRef.current = new Map([...current.toolCalls].map(([id, tool]) => [id, tool.state]))
     effectsRef.current = []
   })
+
+  useEffect(() => { tooltipRef.current = null }, [visible, restoring, tooltipRef])
 
   return (
     <div ref={containerRef} className="relative w-full h-full overflow-hidden" style={{ visibility: restoring ? 'hidden' : undefined, cursor: isDragging ? 'grabbing' : 'grab' }}>

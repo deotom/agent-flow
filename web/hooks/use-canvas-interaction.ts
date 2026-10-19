@@ -1,3 +1,4 @@
+import { updateAgentHint, type AgentHint } from '@/components/agent-visualizer/canvas/agent-tooltip'
 import { findCaptionAgentAt } from '@/lib/agent-caption'
 import { useState, useCallback, useRef, useEffect, type MutableRefObject } from 'react'
 import { Agent, ToolCallNode, Discovery, ANIM, NODE } from '@/lib/agent-types'
@@ -45,6 +46,7 @@ export function useCanvasInteraction({
   doZoomToFit,
   mainCanvasRef,
 }: InteractionOptions) {
+  const tooltipRef = useRef<AgentHint | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const isDraggingRef = useRef(false)
   const dragTargetRef = useRef<{ type: 'canvas' | 'agent'; id?: string; startX: number; startY: number } | null>(null)
@@ -78,6 +80,7 @@ export function useCanvasInteraction({
   // ─── Mouse Handlers ─────────────────────────────────────────────────────
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    tooltipRef.current = null
     const pos = screenToCanvas(e.clientX, e.clientY)
     const agentId = findAgentAt(pos.x, pos.y)
     if (e.button === 0) {
@@ -98,11 +101,9 @@ export function useCanvasInteraction({
     const compact = !!drawPropsRef.current.compact
     const captionAgent = findCaptionAgentAt(pos.x, pos.y, drawPropsRef.current.agents, compact, transformRef.current.scale)
     const tooltipAgent = captionAgent ?? (hoveredId ? drawPropsRef.current.agents.get(hoveredId) : undefined)
-    if (mainCanvasRef.current) mainCanvasRef.current.title = tooltipAgent
-      ? tooltipAgent.tokensMax > 0
-        ? `${tooltipAgent.name}: ${tooltipAgent.tokensUsed.toLocaleString()} / ${tooltipAgent.tokensMax.toLocaleString()} tokens used · เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - tooltipAgent.tokensUsed / Math.max(1, tooltipAgent.tokensMax))) * 100)}%`
-        : tooltipAgent.name
-      : ''
+    const rect = mainCanvasRef.current?.getBoundingClientRect()
+    tooltipRef.current = !isDraggingRef.current && rect
+      ? updateAgentHint(tooltipRef.current, tooltipAgent?.id, e.clientX - rect.left, e.clientY - rect.top, performance.now()) : null
     if (hoveredId !== lastHoveredIdRef.current) {
       lastHoveredIdRef.current = hoveredId
       drawPropsRef.current.onAgentHover(hoveredId)
@@ -189,6 +190,7 @@ export function useCanvasInteraction({
   const handleWheelRef = useRef<(e: WheelEvent) => void>(() => {})
   handleWheelRef.current = (e: WheelEvent) => {
     e.preventDefault()
+    tooltipRef.current = null
     userHasNavigatedRef.current = true
     if (e.ctrlKey || e.metaKey) {
       const delta = e.deltaY > 0 ? CAMERA.zoomStepDown : CAMERA.zoomStepUp
@@ -217,6 +219,7 @@ export function useCanvasInteraction({
   }, [doZoomToFit])
 
   const handleContextMenuEvent = useCallback((e: React.MouseEvent) => {
+    tooltipRef.current = null
     e.preventDefault()
     const pos = screenToCanvas(e.clientX, e.clientY)
     const agentId = findAgentAt(pos.x, pos.y)
@@ -227,7 +230,7 @@ export function useCanvasInteraction({
     setIsDragging(false)
     dragTargetRef.current = null
     dragLerpRef.current = null
-    if (mainCanvasRef.current) mainCanvasRef.current.title = ''
+    tooltipRef.current = null
     if (lastHoveredIdRef.current !== null) {
       lastHoveredIdRef.current = null
       drawPropsRef.current.onAgentHover(null)
@@ -249,6 +252,7 @@ export function useCanvasInteraction({
   }, [])
 
   return {
+    tooltipRef,
     isDragging,
     dragLerpRef,
     handlers: {
