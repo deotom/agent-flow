@@ -219,7 +219,7 @@ it('keeps captions outside the HUD and every row apart at narrow and zoomed size
   for (const compact of [false, true]) for (const isMain of [false, true]) for (const zoom of [0.5, 1, 2.4]) {
     const labels: Array<{ text: string; x: number; y: number; fontSize: number; width: number }> = []
     const panels: Array<{ top: number; bottom: number; width: number }> = []
-    const canvas = { font: '', fillStyle: '', shadowBlur: 0, save() {}, restore() {}, beginPath() {},
+    const canvas = { font: '', fillStyle: '', shadowBlur: 0, save() {}, restore() {}, beginPath() {}, clip() {}, fillRect() {},
       roundRect(_x: number, y: number, width: number, height: number) { panels.push({ top: y, bottom: y + height, width }) },
       fill() {}, stroke() {}, moveTo() {}, lineTo() {},
       measureText(text: string) { return { width: text.length * parseFloat(this.font.match(/[\d.]+px/)![0]) * 0.6 } },

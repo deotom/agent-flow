@@ -305,3 +305,6 @@ Local patch `local-2026.10.19.11` reduces agent plaques to three rows: name, pro
 
 
 Local patch `local-2026.10.19.12` centers the model and CTX footer as one closely spaced group, retaining three-row captions and existing warning colors.
+
+
+Local patch `local-2026.10.19.13` visually separates the existing three-row plaque into a lightly tinted name header, prominent status body and darker model/CTX footer. Faint cyan rules divide the sections within the original rounded frame. Flat clipped fills add no animation, blur, extra frame or layout height.

@@ -379,6 +379,24 @@ function drawCaptionPanel(ctx: CanvasRenderingContext2D, agent: Agent,
   ctx.beginPath()
   ctx.roundRect(left, top, panelWidth, height, 4 * unit)
   ctx.fill()
+  const headerBottom = layout.y + layout.fonts.name * unit + 2 * unit
+  const footerTop = layout.y + layout.line * 2 - 3 * unit
+  // Clip flat section fills to the existing rounded frame; no extra boxes or effects.
+  ctx.save()
+  ctx.clip()
+  ctx.fillStyle = '#0c2034'
+  ctx.fillRect(left, top, panelWidth, headerBottom - top)
+  ctx.fillStyle = '#04101b'
+  ctx.fillRect(left, footerTop, panelWidth, bottom - footerTop)
+  ctx.restore()
+  ctx.stroke()
+  ctx.strokeStyle = '#71d8ff28'
+  ctx.lineWidth = 0.6 * unit
+  ctx.beginPath()
+  ctx.moveTo(left + unit, headerBottom)
+  ctx.lineTo(right - unit, headerBottom)
+  ctx.moveTo(left + unit, footerTop)
+  ctx.lineTo(right - unit, footerTop)
   ctx.stroke()
   // A short, brighter link joins the plaque to the instrument.
   ctx.strokeStyle = '#71d8ff90'
