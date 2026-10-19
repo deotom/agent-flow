@@ -269,3 +269,6 @@ Codex native `request_user_input` and `request_user_input_async` calls now show 
 
 
 Local patch `local-2026.10.16.5` adds a brief LED recharge when Codex records a completed compaction. The full rectangular LED ring pulses amber four times over 1.6 seconds, then returns to blue lamps indicating real remaining capacity and the normal boundary blink. Numeric context stays accurate throughout; authoritative updates still determine the final blue capacity. Both graph surfaces use the same effect. Historical restores and Animation Off show the final context directly. The effect uses the existing frame loop and batched lamp geometry, without additional timers, shadows or rendering buffers. It indicates a recorded compaction, not estimated progress of the compaction operation.
+
+
+Local patch `local-2026.10.19.1` removes question-mark icons from both graph surfaces, preserving each node's normal brand/task icon. Async question metadata no longer adds a persistent input label to Ready nodes. Actual blocking input waits still use the **Input needed** status text; stale input metadata cannot override an active Thinking/Running/Done state. Permission approval retains its separate lock icon.

@@ -13,9 +13,8 @@ export function contextGaugeColor(used: number, capacity: number): string {
   return usage >= 0.9 ? COLORS.error : usage >= 0.8 ? COLORS.tool : COLORS.holoBase
 }
 export function agentStatusLabel(agent: Pick<Agent, 'state' | 'currentTool' | 'pendingInputs' | 'waitingForInput' | 'contextRecharge'>, time: number): string {
-  if (agent.waitingForInput) return 'Input needed'
+  if (agent.waitingForInput && agent.state === 'waiting_permission') return 'Input needed'
   if (agent.contextRecharge) return 'Recharging context…'
-  if (agent.pendingInputs?.length && agent.state === 'idle') return 'Ready · input requested'
   switch (agent.state) {
     case 'thinking': return `Thinking${'.'.repeat(1 + Math.floor(time * 2) % 3)}`
     case 'tool_calling': return `Running ${agent.currentTool?.split('.').pop() ?? 'tool'}`
@@ -226,13 +225,7 @@ export function drawActivityOutline(ctx: CanvasRenderingContext2D, agent: Pick<A
 }
 
 function drawCenterIcon(ctx: CanvasRenderingContext2D, agent: Agent, r: number, color: string, isWaiting: boolean) {
-  if (agent.waitingForInput) {
-    ctx.fillStyle = COLORS.tool
-    ctx.font = `bold ${r * 0.65}px "Segoe UI", sans-serif`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText('?', agent.x, agent.y)
-  } else if (isWaiting) {
+  if (isWaiting && !agent.waitingForInput) {
     // Geometric lock icon — fits the holographic style
     const s = r * 0.3
     ctx.save()
@@ -445,18 +438,6 @@ export function drawAgents(
     drawStateRing(ctx, agent, r, color, isHovered, isSelected, isWaiting, time, effectsEnabled)
     drawContextHud(ctx, agent, r, time, effectsEnabled)
     drawCenterIcon(ctx, agent, r, color, isWaiting)
-    if (agent.pendingInputs?.length && !agent.waitingForInput) {
-      ctx.fillStyle = COLORS.tool
-      ctx.beginPath()
-      ctx.arc(agent.x + r * 0.72, agent.y - r * 0.72, 9, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.fillStyle = '#08111d'
-      ctx.font = 'bold 12px "Segoe UI", sans-serif'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText('?', agent.x + r * 0.72, agent.y - r * 0.72)
-    }
-
     if (activeEffects && detailed && !compact && agent.state === 'thinking') {
       drawOrbitingParticles(ctx, agent, r, color, time)
     }

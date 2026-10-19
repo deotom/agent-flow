@@ -17,6 +17,9 @@ it('labels each lifecycle state, including running tools and permission waits', 
   assert.equal(agentStatusLabel({ state: 'idle' }, 0), 'Ready')
   assert.equal(agentStatusLabel({ state: 'complete' }, 0), 'Done')
   assert.equal(agentStatusLabel({ state: 'error' }, 0), 'Tool failed')
+  assert.equal(agentStatusLabel({ state: 'waiting_permission', waitingForInput: true }, 0), 'Input needed')
+  assert.equal(agentStatusLabel({ state: 'tool_calling', currentTool: 'exec', waitingForInput: true }, 0), 'Running exec')
+  assert.equal(agentStatusLabel({ state: 'complete', waitingForInput: true }, 0), 'Done')
 })
 
 it('moves amber dashes around active nodes and stops them for idle and completed nodes', () => {
@@ -157,7 +160,7 @@ it('tracks async and blocking inputs separately from permission waits', () => {
     return state.agents.get('root')!
   }
   assert.equal(event('input_requested', { callId: 'async', blocking: false }).state, 'idle')
-  assert.match(agentStatusLabel(state.agents.get('root')!, 0), /input requested/)
+  assert.equal(agentStatusLabel(state.agents.get('root')!, 0), 'Ready')
   assert.equal(event('input_requested', { callId: 'sync', blocking: true }).state, 'waiting_permission')
   assert.equal(agentStatusLabel(state.agents.get('root')!, 0), 'Input needed')
   assert.equal(event('input_resolved', { callId: 'async' }).waitingForInput, true)
