@@ -233,6 +233,11 @@ it('keeps captions outside the HUD and every row apart at narrow and zoomed size
     assert.ok(panels[0].top < labels[0].y)
     assert.ok(panels[0].bottom > labels[3].y + labels[3].fontSize)
     assert.ok(panels[0].width < (compact ? 250 : 310))
+    if (!isMain) {
+      const main = captionLayout({ ...agent, isMain: true }, 48, compact, zoom)
+      assert.ok(panels[0].width < main.panelWidth * 0.8)
+      assert.ok(panels[0].bottom - panels[0].top < main.height)
+    }
     assert.ok(labels[0].y > agent.y + radius + (isMain && !compact ? 34 : 14))
     assert.match(labels[0].text, /…$/)
     assert.ok(labels[0].width * zoom <= (compact ? 200 : 260))

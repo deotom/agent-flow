@@ -293,3 +293,6 @@ Local patch `local-2026.10.19.7` tightens the instrument plaque, shortens displa
 
 
 Local patch `local-2026.10.19.8` replaces the native white title tooltip with a static navy/cyan HUD hint. It appears after 400 ms on a node or caption, wraps names at grapheme boundaries, shows token counters as secondary text, and stays inside the graph below the toolbar and above the footer. Drag, wheel navigation, mouse leave, hiding and restoration clear the hint. It uses the existing frame loop after bloom with no extra timers, glow or rendering buffers.
+
+
+Local patch `local-2026.10.19.9` makes child-agent plaques proportional to their smaller nodes: narrower panels, tighter row spacing and slightly smaller typography, while retaining name, model, status and CTX on four separate rows. Main-agent plaques and tool cards are unchanged. Caption rendering and hover bounds continue to share the same geometry.

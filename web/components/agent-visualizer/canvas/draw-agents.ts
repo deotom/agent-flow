@@ -140,10 +140,10 @@ export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radi
 export function drawContextComposition(ctx: CanvasRenderingContext2D, agent: Agent, radius: number, labelScale = 1) {
   if (agent.tokensMax <= 0) return
   ctx.fillStyle = agent.tokensUsed / Math.max(1, agent.tokensMax) >= 0.8 ? contextGaugeColor(agent.tokensUsed, agent.tokensMax) : COLORS.textMuted
-  ctx.font = `${10 * labelScale}px "Segoe UI", sans-serif`
+  const caption = captionLayout(agent, radius, false, 1 / labelScale)
+  ctx.font = `${caption.fonts.context * labelScale}px "Segoe UI", sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
-  const caption = captionLayout(agent, radius, false, 1 / labelScale)
   ctx.fillText(`CTX เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - agent.tokensUsed / Math.max(1, agent.tokensMax))) * 100)}%`, agent.x, caption.y + caption.line * 3)
 }
 
@@ -385,23 +385,23 @@ function drawCaptionPanel(ctx: CanvasRenderingContext2D, agent: Agent,
 
 export function drawAgentLabel(ctx: CanvasRenderingContext2D, agent: Agent, r: number, isHovered: boolean, time: number, compact: boolean, viewScale: number) {
   const layout = captionLayout(agent, r, compact, viewScale)
-  const { unit, width, line, y } = layout
+  const { unit, fonts, width, line, y } = layout
   if (!agent.archived) drawCaptionPanel(ctx, agent, layout, isHovered)
   ctx.shadowBlur = 0
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   ctx.fillStyle = isHovered ? COLORS.holoBright : COLORS.textPrimary
-  ctx.font = `500 ${(compact ? 11.5 : 12.5) * unit}px "Segoe UI", sans-serif`
+  ctx.font = `500 ${fonts.name * unit}px "Segoe UI", sans-serif`
   ctx.fillText(truncateText(ctx, agent.name, width), agent.x, y)
-  ctx.font = `${(compact ? 10 : 10.5) * unit}px "Segoe UI", sans-serif`
+  ctx.font = `${fonts.model * unit}px "Segoe UI", sans-serif`
   ctx.fillStyle = COLORS.textMuted
   ctx.fillText(truncateText(ctx, agent.model ? formatModelName(agent.model) : 'Model unknown', width), agent.x, y + line)
   ctx.fillStyle = agent.state === 'thinking' ? COLORS.holoBright : getStateColor(agent.state)
-  ctx.font = `600 ${(compact ? 12 : 13) * unit}px "Segoe UI", sans-serif`
+  ctx.font = `600 ${fonts.status * unit}px "Segoe UI", sans-serif`
   ctx.fillText(truncateText(ctx, agentStatusLabel(agent, time), width), agent.x, y + line * 2)
   if (compact && !agent.archived && agent.tokensMax > 0) {
     ctx.fillStyle = agent.tokensUsed / Math.max(1, agent.tokensMax) >= 0.8 ? contextGaugeColor(agent.tokensUsed, agent.tokensMax) : COLORS.textMuted
-    ctx.font = `${10 * unit}px "Segoe UI", sans-serif`
+    ctx.font = `${fonts.context * unit}px "Segoe UI", sans-serif`
     ctx.fillText( `CTX เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - agent.tokensUsed / Math.max(1, agent.tokensMax))) * 100)}%`, agent.x, y + line * 3)
   }
 }

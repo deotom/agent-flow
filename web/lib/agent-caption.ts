@@ -5,14 +5,17 @@ import { NODE } from './agent-types'
 export function captionLayout(agent: Pick<Agent, 'x' | 'y' | 'isMain' | 'archived' | 'tokensMax'>, radius: number, compact: boolean, viewScale: number) {
   const unit = Math.min(compact ? 2 : 1.25, 1 / Math.max(0.1, viewScale))
   const instrumentPadding = agent.archived ? 0 : agent.isMain && !compact ? 34 : 14
-  const width = (compact ? 180 : 220) * Math.min(1, unit)
-  const line = (compact ? 16 : 19) * unit
+  const width = (agent.isMain ? compact ? 180 : 220 : compact ? 140 : 148) * Math.min(1, unit)
+  const line = (agent.isMain ? compact ? 16 : 19 : 15.5) * unit
+  const fonts = agent.isMain
+    ? { name: compact ? 11.5 : 12.5, model: compact ? 10 : 10.5, status: compact ? 12 : 13, context: 10 }
+    : { name: compact ? 11 : 11.5, model: compact ? 9.5 : 10, status: 11.5, context: 9.5 }
   const y = agent.y + radius + instrumentPadding + 13 * unit
-  const panelWidth = width + 16 * unit
+  const panelWidth = width + (agent.isMain ? 16 : 12) * unit
   const top = y - 8 * unit
   const rows = !agent.archived && agent.tokensMax > 0 ? 4 : 3
-  const height = (rows - 1) * line + 28 * unit
-  return { unit, width, line, y, panelWidth, top, height, left: agent.x - panelWidth / 2 }
+  const height = (rows - 1) * line + (agent.isMain ? 28 : 25) * unit
+  return { unit, fonts, width, line, y, panelWidth, top, height, left: agent.x - panelWidth / 2 }
 }
 
 export function findCaptionAgentAt(x: number, y: number, agents: Map<string, Agent>, compact: boolean, viewScale: number): Agent | undefined {
