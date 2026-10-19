@@ -299,3 +299,6 @@ Local patch `local-2026.10.19.9` makes child-agent plaques proportional to their
 
 
 Local patch `local-2026.10.19.10` reserves node/HUD and caption space when presenting tool cards, including calls restored from an existing session. Overlapping cards move to a nearby free position while safe positions remain stable; nearby cards are reserved too. The same projected tool positions drive rendering, beams, particles, click targets and camera bounds. Placement reserves the largest caption size across zoom levels and retains only a bounded live set of coordinates. Source events and transcript coordinates are unchanged.
+
+
+Local patch `local-2026.10.19.11` reduces agent plaques to three rows: name, prominent centered status, then a small model/CTX footer. The footer reserves separate left/right regions to prevent text overlap; model names truncate while the full agent name and token counters remain available on hover. Normal footer text is muted, with existing context warning colors retained. Caption hit bounds and command-card avoidance use the reduced plaque height automatically.

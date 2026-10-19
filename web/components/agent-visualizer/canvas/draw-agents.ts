@@ -6,7 +6,7 @@ import {
 } from '@/lib/canvas-constants'
 import { alphaHex, formatModelName } from '@/lib/utils'
 import { truncateText, drawHexagon, CLAUDE_SPARK_D, OPENAI_LOGO_D, OPENAI_LOGO_VIEWBOX } from './draw-misc'
-import { getAgentGlowSprite } from './render-cache'
+import { getAgentGlowSprite, measureTextCached } from './render-cache'
 
 let _claudeSparkPath: Path2D | null = null
 export function contextGaugeColor(used: number, capacity: number): string {
@@ -137,14 +137,21 @@ export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radi
   ctx.restore()
 }
 
-export function drawContextComposition(ctx: CanvasRenderingContext2D, agent: Agent, radius: number, labelScale = 1) {
-  if (agent.tokensMax <= 0) return
+function contextCaption(agent: Agent): string {
+  return `CTX เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - agent.tokensUsed / Math.max(1, agent.tokensMax))) * 100)}%`
+}
+
+function drawCaptionContext(ctx: CanvasRenderingContext2D, agent: Agent, caption: ReturnType<typeof captionLayout>) {
+  if (agent.archived || agent.tokensMax <= 0) return
   ctx.fillStyle = agent.tokensUsed / Math.max(1, agent.tokensMax) >= 0.8 ? contextGaugeColor(agent.tokensUsed, agent.tokensMax) : COLORS.textMuted
-  const caption = captionLayout(agent, radius, false, 1 / labelScale)
-  ctx.font = `${caption.fonts.context * labelScale}px "Segoe UI", sans-serif`
-  ctx.textAlign = 'center'
+  ctx.font = `${caption.fonts.context * caption.footerUnit}px "Segoe UI", sans-serif`
+  ctx.textAlign = 'right'
   ctx.textBaseline = 'top'
-  ctx.fillText(`CTX เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - agent.tokensUsed / Math.max(1, agent.tokensMax))) * 100)}%`, agent.x, caption.y + caption.line * 3)
+  ctx.fillText(contextCaption(agent), agent.x + caption.width / 2, caption.y + caption.line * 2)
+}
+
+export function drawContextComposition(ctx: CanvasRenderingContext2D, agent: Agent, radius: number, labelScale = 1) {
+  drawCaptionContext(ctx, agent, captionLayout(agent, radius, false, 1 / labelScale))
 }
 
 function drawDepthShadow(ctx: CanvasRenderingContext2D, agent: Agent, r: number) {
@@ -385,7 +392,7 @@ function drawCaptionPanel(ctx: CanvasRenderingContext2D, agent: Agent,
 
 export function drawAgentLabel(ctx: CanvasRenderingContext2D, agent: Agent, r: number, isHovered: boolean, time: number, compact: boolean, viewScale: number) {
   const layout = captionLayout(agent, r, compact, viewScale)
-  const { unit, fonts, width, line, y } = layout
+  const { unit, footerUnit, fonts, width, line, y } = layout
   if (!agent.archived) drawCaptionPanel(ctx, agent, layout, isHovered)
   ctx.shadowBlur = 0
   ctx.textAlign = 'center'
@@ -393,17 +400,19 @@ export function drawAgentLabel(ctx: CanvasRenderingContext2D, agent: Agent, r: n
   ctx.fillStyle = isHovered ? COLORS.holoBright : COLORS.textPrimary
   ctx.font = `500 ${fonts.name * unit}px "Segoe UI", sans-serif`
   ctx.fillText(truncateText(ctx, agent.name, width), agent.x, y)
-  ctx.font = `${fonts.model * unit}px "Segoe UI", sans-serif`
-  ctx.fillStyle = COLORS.textMuted
-  ctx.fillText(truncateText(ctx, agent.model ? formatModelName(agent.model) : 'Model unknown', width), agent.x, y + line)
   ctx.fillStyle = agent.state === 'thinking' ? COLORS.holoBright : getStateColor(agent.state)
   ctx.font = `600 ${fonts.status * unit}px "Segoe UI", sans-serif`
-  ctx.fillText(truncateText(ctx, agentStatusLabel(agent, time), width), agent.x, y + line * 2)
-  if (compact && !agent.archived && agent.tokensMax > 0) {
-    ctx.fillStyle = agent.tokensUsed / Math.max(1, agent.tokensMax) >= 0.8 ? contextGaugeColor(agent.tokensUsed, agent.tokensMax) : COLORS.textMuted
-    ctx.font = `${fonts.context * unit}px "Segoe UI", sans-serif`
-    ctx.fillText( `CTX เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - agent.tokensUsed / Math.max(1, agent.tokensMax))) * 100)}%`, agent.x, y + line * 3)
-  }
+  ctx.fillText(truncateText(ctx, agentStatusLabel(agent, time), width), agent.x, y + line)
+  // The compact footer keeps model and remaining context together without competing with status.
+  ctx.font = `${fonts.model * footerUnit}px "Segoe UI", sans-serif`
+  ctx.fillStyle = COLORS.textMuted
+  const hasContext = !agent.archived && agent.tokensMax > 0
+  const contextWidth = hasContext ? measureTextCached(ctx, contextCaption(agent)) + 10 * footerUnit : 0
+  const modelWidth = Math.max(0, width - contextWidth)
+  ctx.textAlign = hasContext ? 'left' : 'center'
+  ctx.fillText(truncateText(ctx, agent.model ? formatModelName(agent.model) : 'Model unknown', modelWidth),
+    hasContext ? agent.x - width / 2 : agent.x, y + line * 2)
+  if (compact) drawCaptionContext(ctx, agent, layout)
 }
 
 function drawStatsOverlay(ctx: CanvasRenderingContext2D, agent: Agent, r: number) {
