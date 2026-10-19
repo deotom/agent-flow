@@ -14,6 +14,7 @@ export type AgentEventType =
   | 'agent_idle'
   | 'agent_thinking'
   | 'message'
+  | 'context_compaction'
   | 'context_update'
   | 'model_detected'
   | 'tool_call_start'

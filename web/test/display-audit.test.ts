@@ -178,37 +178,36 @@ it('starts a fresh context ring fully lit and steady', () => {
 })
 
 
-it('flashes a full amber LED ring after live compaction, keeps real counts, and returns to current blue capacity', () => {
+it('pulses amber only during live compaction, persists beyond 1.6s and stops on the native end', () => {
   let state = processEvent({ time: 0, type: 'agent_spawn', payload: { name: 'root', isMain: true, runtime: 'codex' } }, createEmptyState(), ctx)
-  state = processEvent({ time: 1, type: 'context_update', payload: { agent: 'root', tokens: 90000, tokensMax: 100000 } }, state, ctx)
+  const apply = (type: 'context_update' | 'context_compaction', payload: Record<string, unknown>) => {
+    state = processEvent({ time: 1, type, payload: { agent: 'root', ...payload } }, state, ctx)
+  }
+  apply('context_update', { tokens: 90000, tokensMax: 100000, compacted: true })
   assert.equal(state.agents.get('root')!.contextRecharge, undefined)
-  state = processEvent({ time: 2, type: 'context_update', payload: { agent: 'root', tokens: 20000, compacted: true } }, state, ctx)
-  const litCount = (enabled = true) => captureLampHud(state.agents.get('root')!, 0, enabled).filter(fill => fill.color === COLORS.holoBase).reduce((sum, fill) => sum + fill.rectangles.length, 0)
-  assert.equal(state.agents.get('root')!.tokensUsed, 20000)
-  assert.match(agentStatusLabel(state.agents.get('root')!, 0), /Recharging/)
-  assert.equal(litCount(), 0)
-  const amber = () => captureLampHud(state.agents.get('root')!, 0, true).filter(fill => fill.color === COLORS.tool)
+  apply('context_compaction', { active: true })
+  assert.match(agentStatusLabel(state.agents.get('root')!, 0), /Compacting/)
+  const amber = (enabled = true) => captureLampHud(state.agents.get('root')!, 0, enabled).filter(fill => fill.color === COLORS.tool)
   assert.equal(amber()[0].rectangles.length, 36)
   const dim = amber()[0].alpha
-  assert.equal(litCount(false), 29)
   const frame = (delta: number, animationMode: 'full' | 'off' = 'full') => {
     state = computeNextFrame(state, delta, state.currentTime + delta, state.currentTime + delta, state,
       { animationMode, useMockData: false, mockScenarioLength: 0, mockScenarioEndTime: 0 })
   }
   frame(0.2)
-  assert.equal(amber()[0].rectangles.length, 36)
   assert.ok(amber()[0].alpha > dim)
-  frame(0.6)
-  // An authoritative count received mid-effect updates the destination without restarting the charge.
-  state = processEvent({ time: 3, type: 'context_update', payload: { agent: 'root', tokens: 25000 } }, state, ctx)
-  assert.ok(Math.abs(state.agents.get('root')!.contextRecharge!.progress - 0.5) < 1e-9)
-  frame(0.9)
+  frame(8)
+  assert.ok(state.agents.get('root')!.contextRecharge)
+  const progress = state.agents.get('root')!.contextRecharge!.progress
+  apply('context_compaction', { active: true })
+  assert.equal(state.agents.get('root')!.contextRecharge!.progress, progress)
+  frame(0.2, 'off')
+  assert.equal(state.agents.get('root')!.contextRecharge!.progress, progress)
+  assert.equal(amber(false)[0].rectangles.length, 36)
+  apply('context_update', { tokens: 20000, compacted: true })
+  apply('context_compaction', { active: false })
   assert.equal(state.agents.get('root')!.contextRecharge, undefined)
-  assert.equal(litCount(), 27)
+  assert.equal(state.agents.get('root')!.tokensUsed, 20000)
+  assert.equal(amber().length, 0)
   assert.equal(agentStatusLabel(state.agents.get('root')!, 0), 'Ready')
-  state = processEvent({ time: 4, type: 'context_update', payload: { agent: 'root', tokens: 10000, compacted: true }, historical: true }, state, ctx)
-  assert.equal(state.agents.get('root')!.contextRecharge, undefined)
-  state = processEvent({ time: 5, type: 'context_update', payload: { agent: 'root', tokens: 5000, compacted: true } }, state, ctx)
-  frame(0.01, 'off')
-  assert.equal(state.agents.get('root')!.contextRecharge, undefined)
 })

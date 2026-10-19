@@ -238,4 +238,31 @@ describe('CodexSessionWatcher history and resume', { concurrency: false }, () =>
     } finally { f.cleanup() }
   })
 
+  it('routes native compaction to the correct child and restores current state without old recharge events', () => {
+    const f = fixture()
+    try {
+      const root = f.rollout(1)
+      const child = f.rollout(2, f.workspace, 0, { id: root.uuid, name: '/root/reviewer' })
+      f.watcher.start()
+      assert.ok(f.watcher.getLiveSessionIds().includes(child.uuid))
+      f.events.length = 0
+      f.watcher.setCompacting(child.uuid, true)
+      f.watcher.setCompacting(child.uuid, true)
+      assert.equal(f.events.length, 1)
+      assert.equal(f.events[0].payload.agent, '/root/reviewer')
+      assert.equal(f.events[0].sessionId, root.uuid)
+      f.events.length = 0
+      f.watcher.replaySessionStart([root.uuid], { latestOnly: true })
+      const rows = f.events[0].payload.agents as Array<Record<string, unknown>>
+      assert.equal(rows.find(row => row.id === '/root/reviewer')?.compacting, true)
+      assert.equal(rows.find(row => row.isMain)?.compacting, false)
+      f.events.length = 0
+      f.watcher.replaySessionStart([root.uuid])
+      assert.deepEqual(f.events.filter(event => event.type === 'context_compaction').map(event => [event.payload.agent, event.payload.active]),
+        [['orchestrator', false], ['/root/reviewer', true]])
+      f.watcher.setCompacting(child.uuid, false)
+      assert.equal(f.events.at(-1)?.payload.active, false)
+    } finally { f.cleanup() }
+  })
+
 })

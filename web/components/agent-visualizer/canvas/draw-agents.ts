@@ -15,7 +15,7 @@ export function contextGaugeColor(used: number, capacity: number): string {
 export function agentStatusLabel(agent: Pick<Agent, 'state' | 'currentTool' | 'pendingInputs' | 'waitingForInput' | 'contextRecharge' | 'archived'>, time: number): string {
   if (agent.archived) return agent.state === 'complete' ? 'Done' : 'Inactive'
   if (agent.waitingForInput && agent.state === 'waiting_permission') return 'Input needed'
-  if (agent.contextRecharge) return 'Recharging context…'
+  if (agent.contextRecharge) return 'Compacting context…'
   switch (agent.state) {
     case 'thinking': return `Thinking${'.'.repeat(1 + Math.floor(time * 2) % 3)}`
     case 'tool_calling': return `Running ${agent.currentTool?.split('.').pop() ?? 'tool'}`
@@ -83,7 +83,7 @@ export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radi
   if (agent.state === 'complete' && !agent.isMain) return
   const usage = Math.min(1, Math.max(0, agent.tokensUsed / Math.max(1, agent.tokensMax)))
   const directions = hudLampDirections[agent.isMain ? 1 : 0]
-  const recharge = effectsEnabled ? agent.contextRecharge : undefined
+  const recharge = agent.contextRecharge
   const lit = Math.ceil((1 - usage) * directions.length)
   const ringRadius = radius + 10
   const halfLength = ringRadius * Math.PI / directions.length * 0.64
@@ -116,8 +116,8 @@ export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radi
   lamps(0, directions.length, 0.5, '#22313e', 0.65)
   lamps(0, directions.length, 0, '#010408', 1)
   if (recharge) {
-    // Four soft amber flashes over 1.6 s; the real blue capacity returns afterward.
-    const brightness = 0.25 + (1 - Math.cos(recharge.progress * Math.PI * 8)) * 0.35
+    // Repeat the amber pulse while the native compaction item is in progress.
+    const brightness = 0.25 + (1 - Math.cos((effectsEnabled ? recharge.progress : 0.25) * Math.PI * 8)) * 0.35
     lamps(0, directions.length, 0, COLORS.tool, brightness)
     lamps(0, directions.length, 0, '#fff1bd', brightness * 0.85, true)
     ctx.restore()

@@ -201,6 +201,21 @@ export class CodexSessionWatcher implements AgentSessionWatcher {
     return !!s && s.sessionDetected && (!s.sessionCompleted || Array.from(this.sessions.values()).some(child => child.rootSessionId === sessionId && !child.sessionCompleted))
   }
 
+  private compactingSessions = new Set<string>()
+
+  getLiveSessionIds(): string[] {
+    return [...this.sessions.values()].sort((a, b) => b.lastActivityTime - a.lastActivityTime).map(session => session.sessionId)
+  }
+
+  setCompacting(sessionId: string, active: boolean): void {
+    const session = this.sessions.get(sessionId)
+    if (!session || this.compactingSessions.has(sessionId) === active) return
+    if (active) this.compactingSessions.add(sessionId)
+    else this.compactingSessions.delete(sessionId)
+    this.emitSessionEvent(sessionId, { time: (Date.now() - session.sessionStartTime) / 1000,
+      type: 'context_compaction', payload: { agent: ORCHESTRATOR_NAME, active } })
+  }
+
   getActiveSessions(): SessionInfo[] {
     return Array.from(this.sessions.values()).filter(s => s.sessionId === s.rootSessionId).map(s => ({
       id: s.sessionId,
@@ -224,11 +239,11 @@ export class CodexSessionWatcher implements AgentSessionWatcher {
           const pending = [...rollout.pendingToolCalls.values()].at(-1)
           const blocking = [...rollout.pendingUserInputs.values()].some(input => input.blocking)
           const isMain = session === root
-          const working = rollout.turnActive && !session.sessionCompleted
+          const working = this.compactingSessions.has(session.sessionId) || rollout.turnActive && !session.sessionCompleted
           return { id: session.agentName, parentId: isMain ? null : session.parentAgentName || ORCHESTRATOR_NAME,
             name: isMain ? root.label : undefined, isMain, runtime: 'codex', model: rollout.model ?? undefined,
             state: blocking ? 'waiting_permission' : working ? pending ? 'tool_calling' : 'thinking' : isMain ? 'idle' : 'complete',
-            waitingForInput: blocking, currentTool: working ? pending?.name : undefined,
+            compacting: this.compactingSessions.has(session.sessionId), waitingForInput: blocking, currentTool: working ? pending?.name : undefined,
             tools: working ? [...rollout.pendingToolCalls].map(([callId, call]) => ({ callId, tool: call.name, args: call.args })) : [],
             tokensUsed: rollout.lastReportedTokens ?? Object.values(rollout.contextBreakdown).reduce((sum, value) => sum + value, 0),
             tokensMax: rollout.reportedContextWindow ?? undefined, toolCalls: rollout.seenToolCalls.size,
@@ -309,6 +324,12 @@ export class CodexSessionWatcher implements AgentSessionWatcher {
           type: 'agent_complete', payload: { name: ORCHESTRATOR_NAME, sessionEnd: true } })
         this._onSessionLifecycle.fire({ type: 'ended', sessionId: root.sessionId, label: root.label })
       }
+    }
+    if (!options?.latestOnly) for (const session of this.sessions.values()) {
+      if (sessionIds && !sessionIds.includes(session.rootSessionId)) continue
+      this._onEvent.fire({ type: 'context_compaction', time: (Date.now() - (this.sessions.get(session.rootSessionId)?.sessionStartTime ?? Date.now())) / 1000,
+        sessionId: session.rootSessionId, historical: true,
+        payload: { agent: session.agentName, active: this.compactingSessions.has(session.sessionId) } })
     }
   }
 
@@ -515,7 +536,7 @@ export class CodexSessionWatcher implements AgentSessionWatcher {
     const root = this.sessions.get(session.rootSessionId)
     const mapped = { ...event, historical: event.historical || !session.sessionDetected, type, time: event.time + (session.sessionStartTime - (root?.sessionStartTime ?? session.sessionStartTime)) / 1000,
       payload, sessionId: session.rootSessionId }
-    this.cacheEvent(session.rootSessionId, mapped)
+    if (type !== 'context_compaction') this.cacheEvent(session.rootSessionId, mapped)
     this._onEvent.fire(mapped)
   }
 

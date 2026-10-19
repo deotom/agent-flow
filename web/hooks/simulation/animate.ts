@@ -178,9 +178,8 @@ export function computeNextFrame(prev: SimulationState, deltaTime: number, newTi
         const active = agent.state === 'thinking' || agent.state === 'tool_calling' || agent.state === 'waiting_permission'
         const activityFade = active ? 1 : Math.max(0, (agent.activityFade ?? 0) - deltaTime * 1.5)
         const resultPulse = options.animationMode === 'off' ? 0 : arrived.has(id) ? 1 : Math.max(0, (agent.resultPulse ?? 0) - deltaTime * 1.8)
-        const rechargeProgress = Math.min(1, (agent.contextRecharge?.progress ?? 1) + deltaTime / 1.6)
-        const contextRecharge = agent.contextRecharge && options.animationMode !== 'off' && rechargeProgress < 1
-          ? { ...agent.contextRecharge, progress: rechargeProgress } : undefined
+        const contextRecharge = agent.contextRecharge && options.animationMode !== 'off'
+          ? { progress: (agent.contextRecharge.progress + deltaTime / 1.6) % 1 } : agent.contextRecharge
         if (activityFade !== agent.activityFade || resultPulse !== agent.resultPulse || contextRecharge !== agent.contextRecharge) {
           if (newAgentsRaw === currentState.agents) newAgentsRaw = new Map(newAgentsRaw)
           newAgentsRaw.set(id, { ...agent, activityFade, resultPulse, contextRecharge })

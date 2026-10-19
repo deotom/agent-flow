@@ -1,13 +1,13 @@
 /**
  * Codex runtime.
  *
- * Codex has no hook mechanism (unlike Claude Code) — its only event source is
- * the rollout JSONL file. This runtime wires CodexSessionWatcher to the
- * visualizer panel and reports a connection status reflecting the watch root.
+ * Rollout files provide history; a read-only native follower provides live
+ * compaction boundaries that rollout files only record after completion.
  */
 
 import * as vscode from 'vscode'
 import * as os from 'os'
+import { CodexCompactionObserver } from './codex-compaction-observer'
 import { CodexSessionWatcher } from './codex-session-watcher'
 import { createLogger } from './logger'
 import { wireWatcherToPanel } from './session-runtime'
@@ -26,6 +26,8 @@ export function startCodexRuntime(context: vscode.ExtensionContext): AgentRuntim
   })
 
   watcher.start()
+  const observer = new CodexCompactionObserver(() => watcher.getLiveSessionIds(), (id, active) => watcher.setCompacting(id, active))
+  context.subscriptions.push(observer)
 
   const homeLabel = process.env.CODEX_HOME
     ? process.env.CODEX_HOME.replace(os.homedir(), '~')
@@ -33,7 +35,7 @@ export function startCodexRuntime(context: vscode.ExtensionContext): AgentRuntim
 
   const connectionStatus = (): string => `Codex session watcher (${homeLabel})`
 
-  const dispose = (): void => { wiring.dispose(); watcher.dispose() }
+  const dispose = (): void => { observer.dispose(); wiring.dispose(); watcher.dispose() }
 
   log.info(`Codex runtime started (home: ${homeLabel})`)
 

@@ -82,6 +82,13 @@ export function processEvent(event: SimulationEvent, prev: SimulationState, ctx:
         case 'tool_call_start':   handleToolCallStart(event.payload, prev.currentTime, state, ctx); break
         case 'tool_call_end':     handleToolCallEnd(event.payload, prev.currentTime, state, ctx); break
         case 'message':           handleMessage(event.payload, prev.currentTime, state); break
+        case 'context_compaction': {
+          const id = String(event.payload.agent)
+          const agent = state.agents.get(id)
+          if (agent) state.agents.set(id, { ...agent, contextRecharge: event.payload.active === true
+            ? agent.contextRecharge ?? { progress: 0 } : undefined })
+          break
+        }
         case 'context_update':    handleContextUpdate(event.payload, state); break
         case 'subagent_dispatch': handleSubagentDispatch(event.payload, prev.currentTime, state); break
         case 'subagent_return':   handleSubagentReturn(event.payload, prev.currentTime, state); break
@@ -98,7 +105,7 @@ export function processEvent(event: SimulationEvent, prev: SimulationState, ctx:
         }
         for (const [id, agent] of state.agents) {
           if (agent !== prev.agents.get(id)) state.agents.set(id, {
-            ...agent, messageBubbles: [], contextRecharge: undefined,
+            ...agent, messageBubbles: [],
             opacity: agent.state === 'complete' && !agent.isMain ? 0 : 1, scale: 1,
           })
         }

@@ -75,7 +75,6 @@ export function handleContextUpdate(
     state.agents.set(agentName, {
       ...agent,
       tokensUsed: tokens,
-      ...(payload.compacted === true ? { contextRecharge: { progress: 0 } } : {}),
       tokensMax: tokensMaxOverride ?? agent.tokensMax,
       contextBreakdown: breakdown || agent.contextBreakdown,
       state: agent.runtime === 'codex' ? agent.state : agent.state === 'complete' ? 'complete' : 'thinking'
