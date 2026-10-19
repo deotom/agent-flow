@@ -49,6 +49,8 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
   const seekGenerationRef = useRef(0)
   const reviewCursorRef = useRef<{ session: string; cursor?: IDBValidKey[]; loading: boolean; done: boolean } | null>(null)
   const savedTasksRef = useRef(new Map<string, string>())
+  const archiveBusyRef = useRef<{ generation: number } | null>(null)
+  const archiveDirtyRef = useRef(false)
   const blockIdCounter = useRef(0)
   const skipForceSyncRef = useRef(false)
   const animateRef = useRef<(timestamp: number) => void>(() => {})
@@ -227,9 +229,13 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
     })
 
     const archiveSession = sessionFilterRef.current
-    if (!useMockData && archiveSession && newEvents.length && !reviewCursorRef.current) {
-      const sequenceSet = new Set(newEvents.map(event => event.sequence))
-      const messages: MessageRow[] = [...result.conversations].flatMap(([agentId, messages]) => messages.filter(message => sequenceSet.has(message.sourceSequence)).map(message => ({ ...message, agentId,
+    if (newEvents.length) archiveDirtyRef.current = true
+    if (!useMockData && archiveSession && archiveDirtyRef.current && !reviewCursorRef.current && !historyArchive.error
+      && archiveBusyRef.current?.generation !== seekGenerationRef.current) {
+      const archiveJob = { generation: seekGenerationRef.current }
+      archiveBusyRef.current = archiveJob
+      archiveDirtyRef.current = false
+      const messages: MessageRow[] = [...result.conversations].flatMap(([agentId, messages]) => messages.filter(message => !message.archived && message.sourceSequence !== undefined && message.sourceSequence <= result.receivedEventCount).map(message => ({ ...message, agentId,
         agentName: result.agents.get(agentId)?.name ?? result.timelineEntries.get(agentId)?.agentName ?? agentId })))
       const tasks = [...result.delegations.values()].filter(task => {
         const signature = `${task.stage}:${task.endTime}:${task.model}`
@@ -247,7 +253,7 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
         const compacted = compactHistory(frameRef.current, result, through)
         frameRef.current = compacted
         historyUIChangedRef.current = true
-      }).catch(error => { historyArchive.error = String(error) })
+      }).catch(error => { historyArchive.error = String(error) }).finally(() => { if (archiveBusyRef.current === archiveJob) archiveBusyRef.current = null })
     }
     const review = reviewCursorRef.current
     if (review && result.eventIndex > 500) result = compactHistory(result, result, result.receivedEventCount)

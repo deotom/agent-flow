@@ -9,12 +9,12 @@ import { createLogger } from './logger'
 import type { AgentRuntime, AgentRuntimeMode } from './session-runtime'
 
 const log = createLogger('Extension')
-const PATCH_VERSION = 'local-2026.10.19.3'
+const PATCH_VERSION = 'local-2026.10.19.4'
 let extensionVersion = '0.9.2'
 
 function sendViewerConfig(panel: VisualizerPanel): void {
   const config = vscode.workspace.getConfiguration('agentVisualizer')
-  panel.postMessage({ type: 'config', config: { visible: panel.isVisible, compact: panel.compact, patchVersion: PATCH_VERSION, extensionVersion,
+  panel.postMessage({ type: 'config', config: { latestOnlySessions: runtimes.filter(runtime => runtime.mode === 'codex').flatMap(runtime => runtime.watcher.getActiveSessions().map(session => session.id)).filter(id => id !== panel.fullHistorySessionId), visible: panel.isVisible, compact: panel.compact, patchVersion: PATCH_VERSION, extensionVersion,
     animationMode: config.get<'full' | 'low' | 'off'>('animationMode', 'full'), animationSpeed: config.get<number>('animationSpeed', 1) } })
 }
 
@@ -180,12 +180,16 @@ function collectActiveSessions(): ReturnType<AgentRuntime['watcher']['getActiveS
   return all
 }
 
-function replaySessions(sessionIds: string[]): void {
+function replaySessions(sessionIds: string[], fullHistorySessionId?: string): void {
   for (const r of runtimes) {
     const ownIds = r.watcher.getActiveSessions()
       .map(s => s.id)
       .filter(id => sessionIds.includes(id))
-    if (ownIds.length > 0) r.watcher.replaySessionStart(ownIds)
+    if (ownIds.length > 0) {
+      const latest = ownIds.filter(id => id !== fullHistorySessionId)
+      if (latest.length) r.watcher.replaySessionStart(latest, { latestOnly: r.mode === 'codex' })
+      if (fullHistorySessionId && ownIds.includes(fullHistorySessionId)) r.watcher.replaySessionStart([fullHistorySessionId])
+    }
   }
   if (jsonlSession && sessionIds.includes(jsonlSession.id)) eventSource?.replay()
 }
@@ -201,7 +205,15 @@ function wirePanel(panel: VisualizerPanel): void {
   let readyHandled = false
   panel.onCommand((message: WebviewToExtensionMessage) => {
     switch (message.type) {
+      case 'load-full-history':
+        if (!collectActiveSessions().some(session => session.id === message.sessionId)) return
+        panel.fullHistorySessionId = message.sessionId
+        panel.selectSession(message.sessionId)
+        readyHandled = false
+        panel.reload()
+        break
       case 'reload-view':
+        panel.fullHistorySessionId = undefined
         readyHandled = false
         panel.reload()
         break
@@ -231,7 +243,7 @@ function wirePanel(panel: VisualizerPanel): void {
           if (panel.selectedSessionId && sessions.some(session => session.id === panel.selectedSessionId)) {
             panel.selectSession(panel.selectedSessionId)
           }
-          panel.restoreHistory(() => replaySessions(sessions.map(s => s.id)))
+          panel.restoreHistory(() => replaySessions(sessions.map(s => s.id), panel.fullHistorySessionId))
         }
         panel.setConnectionStatus(runtimes.length || eventSource ? 'watching' : 'disconnected', combinedConnectionStatus())
         break

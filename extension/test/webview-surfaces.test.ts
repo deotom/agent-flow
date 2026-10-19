@@ -9,13 +9,15 @@ it('streams to the Explorer and editor independently, isolates history replay, a
   const makeSurface = () => {
     const messages: any[] = []
     let visibilityChanged = () => {}
+    let received: (message: any) => void = () => {}
     return {
       visible: true,
       onDidChangeVisibility: (listener: () => void) => { visibilityChanged = listener; return { dispose() {} } },
       changeVisibility(visible: boolean) { this.visible = visible; visibilityChanged() },
       messages,
+      receive(message: any) { received(message) },
       webview: { html: '', options: {}, cspSource: 'test', asWebviewUri: (uri: string) => uri,
-        postMessage: (message: unknown) => messages.push(message), onDidReceiveMessage: () => ({ dispose() {} }) },
+        postMessage: (message: unknown) => messages.push(message), onDidReceiveMessage: (listener: (message: any) => void) => { received = listener; return { dispose() {} } } },
       onDidDispose: () => ({ dispose() {} }), reveal() {},
     }
   }
@@ -86,6 +88,21 @@ it('streams to the Explorer and editor independently, isolates history replay, a
     events.fire(live)
     await new Promise(resolve => setTimeout(resolve, 40))
     assert.equal(editorSurface.messages.flatMap(message => message.events ?? []).length, 1)
+    editorSurface.receive({ type: 'ready', flowControl: true })
+    editorSurface.messages.length = 0
+    editor.restoreHistory(() => { for (let index = 0; index < 1000; index++) editor.sendEvent({ ...live, time: index }) })
+    await new Promise(resolve => setTimeout(resolve, 50))
+    let batches = editorSurface.messages.filter(message => message.type === 'agent-event-batch')
+    assert.equal(batches.length, 1)
+    assert.equal(batches[0].events.length, 128)
+    editorSurface.receive({ type: 'events-consumed', batchId: -1 })
+    await new Promise(resolve => setTimeout(resolve, 30))
+    assert.equal(editorSurface.messages.filter(message => message.type === 'agent-event-batch').length, 1)
+    editorSurface.receive({ type: 'events-consumed', batchId: batches[0].batchId })
+    await new Promise(resolve => setTimeout(resolve, 50))
+    batches = editorSurface.messages.filter(message => message.type === 'agent-event-batch')
+    assert.equal(batches.length, 2)
+    assert.equal(batches[1].events[0].time, 128)
   } finally { wiring.dispose(); sidebar.dispose(); editor.dispose() }
 })
 

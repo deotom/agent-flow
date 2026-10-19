@@ -89,6 +89,7 @@ export interface CodexRolloutState {
   agents: Set<string>
   seenToolCalls: Set<string>
   turnActive: boolean
+  userTurnCount: number
 }
 
 export function createCodexRolloutState(): CodexRolloutState {
@@ -113,6 +114,7 @@ export function createCodexRolloutState(): CodexRolloutState {
     agents: new Set(),
     seenToolCalls: new Set(),
     turnActive: false,
+    userTurnCount: 0,
   }
 }
 
@@ -435,6 +437,7 @@ export class CodexRolloutParser {
     state.seenMessageHashes.add(hash)
 
     if (role === 'user') {
+      state.userTurnCount++
       state.contextBreakdown.userMessages += estimateTokensFromText(text)
       if (!state.label) {
         state.label = text.slice(0, PREVIEW_MAX)

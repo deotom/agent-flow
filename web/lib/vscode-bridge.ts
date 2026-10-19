@@ -12,7 +12,7 @@ import type { AgentEvent, SessionInfo, ConnectionStatus } from './bridge-types'
 type InitCallback = () => void
 type EventCallback = (event: AgentEvent) => void
 type StatusCallback = (status: ConnectionStatus, source: string) => void
-export type ViewerConfig = Partial<{ visible: boolean; mode: string; autoPlay: boolean; showMockData: boolean; disable1MContext: boolean; compact: boolean; selectedSessionId: string;
+export type ViewerConfig = Partial<{ latestOnlySessions: string[]; visible: boolean; mode: string; autoPlay: boolean; showMockData: boolean; disable1MContext: boolean; compact: boolean; selectedSessionId: string;
   animationMode: 'full' | 'low' | 'off'; animationSpeed: number; patchVersion: string; extensionVersion: string }>
 type ConfigCallback = (config: ViewerConfig) => void
 type SessionCallback = (type: 'list' | 'started' | 'ended' | 'updated' | 'reset', data: SessionInfo[] | SessionInfo | string | { sessionId: string; label: string }) => void
@@ -28,6 +28,7 @@ class VSCodeBridge {
   private statusListeners: StatusCallback[] = []
   private configListeners: ConfigCallback[] = []
   private sessionListeners: SessionCallback[] = []
+  private batchListeners: ((batchId: number) => void)[] = []
   private historyListeners: ((progress: { loaded: number; total: number }) => void)[] = []
 
   constructor() {
@@ -46,7 +47,7 @@ class VSCodeBridge {
         break
       case '__vscode-bridge-init':
         this._isVSCode = true
-        if (this.uiReady) this.postToExtension({ type: 'ready' })
+        if (this.uiReady) this.postToExtension({ type: 'ready', flowControl: true })
         for (const cb of this.initListeners) cb()
         this.initListeners = [] // one-shot: no need to keep listeners after init
         break
@@ -63,6 +64,7 @@ class VSCodeBridge {
             cb(event)
           }
         }
+        if (typeof data.batchId === 'number') for (const cb of this.batchListeners) cb(data.batchId)
         break
 
       case 'connection-status':
@@ -150,7 +152,10 @@ class VSCodeBridge {
     return this.subscribe(this.sessionListeners, callback)
   }
 
+  onBatch(callback: (batchId: number) => void): () => void { return this.subscribe(this.batchListeners, callback) }
+  acknowledgeBatch(batchId: number): void { this.postToExtension({ type: 'events-consumed', batchId }) }
   onHistory(callback: (progress: { loaded: number; total: number }) => void): () => void { return this.subscribe(this.historyListeners, callback) }
+  loadFullHistory(sessionId: string): void { this.postToExtension({ type: 'load-full-history', sessionId }) }
   reloadView(): void { this.postToExtension({ type: 'reload-view' }) }
   requestStatus(): void { this.postToExtension({ type: 'request-status' }) }
   setAnimation(mode: 'full' | 'low' | 'off', speed: number): void { this.postToExtension({ type: 'set-animation', mode, speed }) }
@@ -165,7 +170,7 @@ class VSCodeBridge {
 
   ready(): void {
     this.uiReady = true
-    if (this._isVSCode) this.postToExtension({ type: 'ready' })
+    if (this._isVSCode) this.postToExtension({ type: 'ready', flowControl: true })
   }
 
   private postToExtension(message: Record<string, unknown>): void {
@@ -195,6 +200,7 @@ class VSCodeBridge {
     this.configListeners = []
     this.sessionListeners = []
     this.historyListeners = []
+    this.batchListeners = []
   }
 }
 

@@ -174,6 +174,7 @@ export interface SimulationEvent {
   time: number
   type:
     | 'agent_spawn'
+    | 'session_snapshot'
     | 'agent_complete'
     | 'agent_idle'
     | 'agent_thinking'

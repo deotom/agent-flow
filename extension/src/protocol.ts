@@ -9,6 +9,7 @@
 
 export type AgentEventType =
   | 'agent_spawn'
+    | 'session_snapshot'
   | 'agent_complete'
   | 'agent_idle'
   | 'agent_thinking'
@@ -46,7 +47,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'history-progress'; loaded: number; total: number }
   | { type: 'connection-status'; status: 'connected' | 'disconnected' | 'watching'; source: string }
   | { type: 'agent-event'; event: AgentEvent }
-  | { type: 'agent-event-batch'; events: AgentEvent[] }
+  | { type: 'agent-event-batch'; events: AgentEvent[]; batchId?: number }
   | { type: 'reset'; reason: string }
   | { type: 'config'; config: Partial<VisualizerConfig> }
   | { type: 'session-list'; sessions: SessionInfo[] }
@@ -55,6 +56,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'session-updated'; sessionId: string; label: string }
 
 export interface VisualizerConfig {
+  latestOnlySessions: string[]
   visible: boolean
   patchVersion: string
   extensionVersion: string
@@ -71,11 +73,13 @@ export interface VisualizerConfig {
 // ─── Webview → Extension Messages ────────────────────────────────────────────
 
 export type WebviewToExtensionMessage =
+  | { type: 'load-full-history'; sessionId: string }
   | { type: 'reload-view' }
   | { type: 'request-status' }
   | { type: 'set-animation'; mode: 'full' | 'low' | 'off'; speed: number }
   | { type: 'open-graph'; sessionId?: string }
-  | { type: 'ready' }
+  | { type: 'ready'; flowControl?: boolean }
+  | { type: 'events-consumed'; batchId: number }
   | { type: 'request-connect' }
   | { type: 'request-disconnect' }
   | { type: 'open-file'; filePath: string; line?: number }

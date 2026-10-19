@@ -211,12 +211,34 @@ export class CodexSessionWatcher implements AgentSessionWatcher {
     }))
   }
 
-  replaySessionStart(sessionIds?: string[]): void {
+  replaySessionStart(sessionIds?: string[], options?: { latestOnly?: boolean }): void {
     const roots = Array.from(this.sessions.values()).filter(session => session.sessionId === session.rootSessionId
       && (!sessionIds || sessionIds.includes(session.sessionId)))
     for (const root of roots) {
       this._onSessionLifecycle.fire({ type: 'updated', sessionId: root.sessionId, label: root.label })
       const group = Array.from(this.sessions.values()).filter(session => session.rootSessionId === root.sessionId)
+      if (options?.latestOnly) {
+        const now = Date.now()
+        const agents = group.map(session => {
+          const rollout = session.rolloutState
+          const pending = [...rollout.pendingToolCalls.values()].at(-1)
+          const blocking = [...rollout.pendingUserInputs.values()].some(input => input.blocking)
+          const isMain = session === root
+          const working = rollout.turnActive && !session.sessionCompleted
+          return { id: session.agentName, parentId: isMain ? null : session.parentAgentName || ORCHESTRATOR_NAME,
+            name: isMain ? root.label : undefined, isMain, runtime: 'codex', model: rollout.model ?? undefined,
+            state: blocking ? 'waiting_permission' : working ? pending ? 'tool_calling' : 'thinking' : isMain ? 'idle' : 'complete',
+            waitingForInput: blocking, currentTool: working ? pending?.name : undefined,
+            tools: working ? [...rollout.pendingToolCalls].map(([callId, call]) => ({ callId, tool: call.name, args: call.args })) : [],
+            tokensUsed: rollout.lastReportedTokens ?? Object.values(rollout.contextBreakdown).reduce((sum, value) => sum + value, 0),
+            tokensMax: rollout.reportedContextWindow ?? undefined, toolCalls: rollout.seenToolCalls.size,
+            spawnTime: (session.sessionStartTime - root.sessionStartTime) / 1000,
+            timeAlive: Math.max(0, (session.lastActivityTime - session.sessionStartTime) / 1000) }
+        })
+        this._onEvent.fire({ time: (now - root.sessionStartTime) / 1000, type: 'session_snapshot',
+          payload: { agents, round: root.rolloutState.userTurnCount }, sessionId: root.sessionId, historical: true })
+        continue
+      }
       const cached = this.replayCache.get(root.sessionId)
       const unchanged = group.every(session => {
         try { return fs.statSync(session.filePath).size === session.fileSize } catch { return false }

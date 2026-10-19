@@ -33,7 +33,11 @@ export class VisualizerPanel implements vscode.Disposable {
   private _wired = false
   private _ready = false
   selectedSessionId: string | undefined
+  fullHistorySessionId: string | undefined
   private eventQueue: AgentEvent[] = []
+  private flowControl = false
+  private nextBatchId = 0
+  private waitingBatchId: number | null = null
   private restoringHistory = false
   private historyTotal = 0
   private historyLoaded = 0
@@ -59,6 +63,8 @@ export class VisualizerPanel implements vscode.Disposable {
 
   reload(): void {
     this._ready = false
+    this.waitingBatchId = null
+    this.flowControl = false
     if (this.eventFlushTimer) clearTimeout(this.eventFlushTimer)
     this.eventFlushTimer = null
     this.eventQueue = []
@@ -78,6 +84,11 @@ export class VisualizerPanel implements vscode.Disposable {
     // Listen for messages from the webview
     this.panel.webview.onDidReceiveMessage(
       (message: WebviewToExtensionMessage) => {
+        if (message.type === 'ready') this.flowControl = message.flowControl === true
+        if (message.type === 'events-consumed') {
+          if (message.batchId === this.waitingBatchId) { this.waitingBatchId = null; if (this.eventQueue.length) this.scheduleEventFlush() }
+          return
+        }
         this._onCommand.fire(message)
       },
       undefined,
@@ -161,11 +172,24 @@ export class VisualizerPanel implements vscode.Disposable {
   }
 
   private scheduleEventFlush(): void {
-    if (this.eventFlushTimer) return
+    if (this.eventFlushTimer || this.waitingBatchId !== null) return
     this.eventFlushTimer = setTimeout(() => {
       this.eventFlushTimer = null
-      const events = this.eventQueue.splice(0, 500)
-      if (events.length) this.postMessage({ type: 'agent-event-batch', events })
+      let count = Math.min(this.eventQueue.length, this.flowControl ? 128 : 500)
+      if (this.flowControl) {
+        let bytes = 0
+        for (let index = 0; index < count; index++) {
+          const size = JSON.stringify(this.eventQueue[index]).length * 2
+          if (index && bytes + size > 512 * 1024) { count = index; break }
+          bytes += size
+        }
+      }
+      const events = this.eventQueue.splice(0, count)
+      if (events.length) {
+        const batchId = this.flowControl ? ++this.nextBatchId : undefined
+        if (batchId !== undefined) this.waitingBatchId = batchId
+        this.postMessage({ type: 'agent-event-batch', events, ...(batchId !== undefined ? { batchId } : {}) })
+      }
       if (this.historyLoaded < this.historyTotal) {
         this.historyLoaded = Math.min(this.historyTotal, this.historyLoaded + events.filter(event => event.historical).length)
         this.postMessage({ type: 'history-progress', loaded: this.historyLoaded, total: this.historyTotal })

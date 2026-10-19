@@ -33,7 +33,7 @@ export interface AgentSessionWatcher extends TypedDisposable {
   isActive(): boolean
   isSessionActive(sessionId: string): boolean
   getActiveSessions(): SessionInfo[]
-  replaySessionStart(sessionIds?: string[]): void
+  replaySessionStart(sessionIds?: string[], options?: { latestOnly?: boolean }): void
 }
 
 /** A running runtime: its watcher, a status line describing its connection,

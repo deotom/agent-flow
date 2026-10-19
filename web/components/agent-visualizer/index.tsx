@@ -134,9 +134,10 @@ export function AgentVisualizer() {
   }, [isPlaying, play, pause])
 
   const handleEnterReview = useCallback(() => {
+    if (bridge.latestOnly) { bridge.loadFullHistory(); return }
     pause()
     setIsReviewing(true)
-  }, [pause])
+  }, [pause, bridge.latestOnly, bridge.loadFullHistory])
 
   const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const handleResumeLive = useCallback(async () => {
@@ -248,6 +249,10 @@ export function AgentVisualizer() {
       {bridge.restoring && <div role="status" className="absolute left-0 right-0 bottom-0 flex items-center justify-center" style={{ top: bridge.compact ? 36 : toolbarBottom, zIndex: 85, background: COLORS.void, color: COLORS.textMuted }}>
         <span className="text-xs">Restoring latest session state…</span>
       </div>}
+      {bridge.storageError && <div role="alert" className="absolute left-3 right-3 p-3 rounded text-xs" style={{ top: toolbarBottom, zIndex: 90, background: COLORS.panelBg, color: COLORS.tool }}>
+        โหลดประวัติไม่สำเร็จ: {bridge.storageError}
+        <button className="ml-2 underline" onClick={bridge.reloadView}>กลับไปสถานะล่าสุด</button>
+      </div>}
       {/* Canvas fills everything */}
       <AgentCanvas
         topInset={toolbarBottom + 28}
@@ -281,7 +286,7 @@ export function AgentVisualizer() {
       {bridge.compact && (
         <>
           <div className="absolute top-0 left-0 right-0 z-50 flex flex-wrap items-center gap-0.5 px-1 py-1" style={{ background: COLORS.panelBg, borderBottom: `1px solid ${COLORS.glassBorder}` }}>
-            <div className="w-full flex justify-end">{scopeControl}</div>
+            <div className="w-full flex flex-wrap justify-end gap-1">{scopeControl}{bridge.latestOnly && <button className="text-[10px] px-1" style={{ color: COLORS.holoBright }} onClick={bridge.loadFullHistory}>โหลดประวัติย้อนหลัง</button>}</div>
             <SessionPicker compact sessions={bridge.sessions} selectedSessionId={bridge.selectedSessionId} onSelectSession={bridge.selectSession} onCloseSession={handleCloseSession} />
             <button title="Fit graph" aria-label="Fit graph" className="flow-icon-button" style={{ color: COLORS.textPrimary }} onClick={() => setZoomToFitTrigger(n => n + 1)}><FlowIcon name="fit" /></button>
             <button title="Open full graph" aria-label="Open full graph" className="flow-icon-button" style={{ color: COLORS.textPrimary }} onClick={bridge.openGraph}><FlowIcon name="expand" /></button>
@@ -415,7 +420,7 @@ export function AgentVisualizer() {
       {/* Top bar: session tabs + info/controls */}
       <TopBar
         onHeightChange={setToolbarBottom}
-        agentScopeControl={scopeControl}
+        agentScopeControl={<>{scopeControl}{bridge.latestOnly && <button className="px-2 py-1 text-[10px] rounded" style={{ color: COLORS.holoBright, border: `1px solid ${COLORS.glassBorder}` }} onClick={bridge.loadFullHistory}>โหลดประวัติย้อนหลัง</button>}</>}
         viewerControls={<FlowControls bridge={bridge} />}
         sessions={bridge.sessions}
         selectedSessionId={bridge.selectedSessionId}

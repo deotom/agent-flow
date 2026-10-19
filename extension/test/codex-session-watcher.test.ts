@@ -208,4 +208,34 @@ describe('CodexSessionWatcher history and resume', { concurrency: false }, () =>
       assert.equal(f.watcher.isSessionActive(uuid), true)
     } finally { f.cleanup() }
   })
+  it('opens a compact latest-state snapshot without transmitting old transcript messages and can load full history explicitly', () => {
+    const f = fixture()
+    try {
+      const root = f.rollout(1)
+      const child = f.rollout(2, f.workspace, 0, { id: root.uuid, name: '/root/reviewer' })
+      const old = Array.from({ length: 250 }, (_, index) => ({ type: 'response_item', payload: {
+        type: 'message', role: 'assistant', content: `older message ${index} ` + 'large result '.repeat(300),
+      } }))
+      fs.appendFileSync(root.file, old.map(record => JSON.stringify(record)).join('\n') + '\n' + JSON.stringify({ type: 'event_msg', payload: { type: 'task_started' } }) + '\n')
+      fs.appendFileSync(child.file, JSON.stringify({ type: 'event_msg', payload: { type: 'task_started' } }) + '\n' + JSON.stringify({ type: 'response_item', payload: {
+        type: 'function_call', name: 'exec_command', call_id: 'pending-command', arguments: '{"cmd":"npm test"}',
+      } }) + '\n')
+      f.watcher.start()
+      f.events.length = 0
+      f.watcher.replaySessionStart([root.uuid], { latestOnly: true })
+      assert.equal(f.events.length, 1)
+      assert.equal(f.events[0].type, 'session_snapshot')
+      assert.equal(f.events[0].historical, true)
+      const agents = f.events[0].payload.agents as Array<Record<string, unknown>>
+      assert.equal(agents.length, 2)
+      assert.equal(agents.find(agent => agent.id === '/root/reviewer')?.currentTool, 'exec_command')
+      assert.equal(agents.find(agent => agent.id === '/root/reviewer')?.state, 'tool_calling')
+      assert.equal(f.events[0].payload.round, 1)
+      assert.ok(JSON.stringify(f.events).length < 8000)
+      f.events.length = 0
+      f.watcher.replaySessionStart([root.uuid])
+      assert.equal(f.events.filter(event => String(event.payload.content || '').startsWith('older message')).length, 250)
+    } finally { f.cleanup() }
+  })
+
 })

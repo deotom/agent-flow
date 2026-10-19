@@ -11,6 +11,7 @@ import { handleAgentSpawn, handleAgentComplete, handleAgentIdle, handleAgentThin
 import { handleToolCallStart, handleToolCallEnd } from './handle-tool-events'
 import { handleMessage, handleContextUpdate } from './handle-message-events'
 import { handleSubagentDispatch, handleSubagentReturn } from './handle-subagent-events'
+import { restoreLatestSnapshot } from './latest-snapshot'
 import { trackWorkEvent } from './work-rounds'
 
 export interface ProcessEventContext {
@@ -60,6 +61,7 @@ function mapsEqual<K, V>(a: Map<K, V>, b: Map<K, V>): boolean {
 }
 
 export function processEvent(event: SimulationEvent, prev: SimulationState, ctx: ProcessEventContext): SimulationState {
+      if (event.type === 'session_snapshot') return restoreLatestSnapshot(event, prev, ctx)
       const state: MutableEventState = {
         agents: new Map(prev.agents),
         toolCalls: new Map(prev.toolCalls),

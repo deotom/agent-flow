@@ -7,6 +7,8 @@ import { SimulationEvent } from '@/lib/agent-types'
 import { shouldAutoSelectSession, type AnimationMode } from '@/lib/viewer-preferences'
 
 interface BridgeHookResult {
+  latestOnly: boolean
+  loadFullHistory: () => void
   restoring: boolean
   viewVisible: boolean
   historyRevision: number
@@ -65,6 +67,7 @@ interface BridgeHookResult {
  * sessions replays the correct event history.
  */
 export function useVSCodeBridge(): BridgeHookResult {
+  const [latestOnlySessions, setLatestOnlySessions] = useState<string[]>([])
   const [restoring, setRestoring] = useState(false)
   const deliveryPendingRef = useRef(false)
   const [historyRevision, setHistoryRevision] = useState(0)
@@ -111,9 +114,18 @@ export function useVSCodeBridge(): BridgeHookResult {
   const sessionSwitchPendingRef = useRef(false)
   const [sessionsWithActivity, setSessionsWithActivity] = useState<Set<string>>(new Set())
 
-  const finishRestoration = useCallback(() => {
-    if (!deliveryPendingRef.current && !sessionSwitchPendingRef.current && pendingEventsRef.current.length === 0) setRestoring(false)
+  const pendingBatchRef = useRef<{ id: number; persisted: boolean; session: string | null; through: number } | null>(null)
+  const acknowledgeBatch = useCallback(() => {
+    const batch = pendingBatchRef.current
+    if (!batch?.persisted || sessionSwitchPendingRef.current) return
+    if (batch.session === selectedSessionIdRef.current && pendingEventsRef.current.some(event => event.sessionId === batch.session && (event.sequence ?? 0) <= batch.through)) return
+    pendingBatchRef.current = null
+    vscodeBridge?.acknowledgeBatch(batch.id)
   }, [])
+  const finishRestoration = useCallback(() => {
+    acknowledgeBatch()
+    if (!deliveryPendingRef.current && !sessionSwitchPendingRef.current && pendingEventsRef.current.length === 0) setRestoring(false)
+  }, [acknowledgeBatch])
 
   const pruneMemory = useCallback(() => {
     if (pruneTimerRef.current) return
@@ -270,6 +282,7 @@ export function useVSCodeBridge(): BridgeHookResult {
     })
 
     const unsubConfig = bridge.onConfig((config) => {
+      if (config.latestOnlySessions) setLatestOnlySessions(config.latestOnlySessions)
       if (config.visible !== undefined) {
         viewVisibleRef.current = config.visible; setViewVisible(config.visible)
         if (config.visible && reloadRequiredRef.current) { reloadRequiredRef.current = false; setHistoryRevision(value => value + 1) }
@@ -295,6 +308,7 @@ export function useVSCodeBridge(): BridgeHookResult {
     // races between auto-flush here and save/restore logic there.
     const unsubSession = bridge.onSession((type, data) => {
       if (type === 'reset') {
+        pendingBatchRef.current = null
         deliveryPendingRef.current = false; setRestoring(false)
         setLastLiveBySession({})
         lastLiveRef.current.clear()
@@ -368,6 +382,16 @@ export function useVSCodeBridge(): BridgeHookResult {
       }
     })
 
+    const unsubBatch = bridge.onBatch(id => {
+      const session = selectedSessionIdRef.current
+      const batch = { id, persisted: false, session, through: session ? sequenceRef.current.get(session) ?? 0 : 0 }
+      pendingBatchRef.current = batch
+      void historyArchive.settle().then(() => {
+        if (pendingBatchRef.current !== batch) return
+        batch.persisted = true
+        acknowledgeBatch()
+      }).catch(error => setStorageError(String(error)))
+    })
     const unsubHistory = bridge.onHistory(progress => {
       setHistoryProgress(progress)
       deliveryPendingRef.current = progress.loaded < progress.total
@@ -382,6 +406,7 @@ export function useVSCodeBridge(): BridgeHookResult {
       unsubConfig()
       unsubSession()
       unsubHistory()
+      unsubBatch()
     }
   }, [])
 
@@ -478,6 +503,8 @@ export function useVSCodeBridge(): BridgeHookResult {
   }, [])
 
   return {
+    latestOnly: !!selectedSessionId && latestOnlySessions.includes(selectedSessionId),
+    loadFullHistory: () => { if (selectedSessionId) vscodeBridge?.loadFullHistory(selectedSessionId) },
     restoring, viewVisible, historyRevision, storageError, setReviewing,
     sessionLocked,
     toggleSessionLock: () => {
