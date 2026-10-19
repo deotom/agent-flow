@@ -144,6 +144,8 @@ export interface TimelineEvent {
 
 export interface Edge {
   flowLabel?: string
+  flowLabelKey?: string
+  flowLabelStartedAt?: number
   id: string
   from: string
   to: string

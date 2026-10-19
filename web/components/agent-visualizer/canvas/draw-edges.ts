@@ -108,6 +108,7 @@ export function drawEdges(
   effectsEnabled = true,
   compact = false,
   lightweight = false,
+  simulationTime = time,
 ) {
   for (const edge of edges) {
     const fromAgent = agents.get(edge.from)
@@ -167,10 +168,12 @@ export function drawEdges(
     }
 
     ctx.restore()
-    if (!compact && edge.flowLabel && edge.type === 'parent-child') {
+    const labelAge = edge.flowLabelStartedAt === undefined ? Infinity : simulationTime - edge.flowLabelStartedAt
+    if (!compact && edge.flowLabel && edge.type === 'parent-child' && labelAge >= 0 && labelAge < 2.5) {
       const x = bezierPoint(0.5, fromX, cp1x, cp2x, toX)
       const y = bezierPoint(0.5, fromY, cp1y, cp2y, toY)
       ctx.save()
+      ctx.globalAlpha *= Math.min(1, (2.5 - labelAge) / 0.7) * Math.min(fromAgent.opacity, child?.opacity ?? 1, edge.opacity)
       ctx.font = '10px monospace'
       ctx.textAlign = 'center'
       const width = ctx.measureText(edge.flowLabel).width + 12

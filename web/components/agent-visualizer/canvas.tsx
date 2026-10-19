@@ -296,7 +296,7 @@ export function AgentCanvas({
       }
 
       drawDiscoveryConnections(ctx, discoveries, agents)
-      drawEdges(ctx, edges, agents, toolCalls, activeEdgeIds, timeRef.current, mode !== 'off', compactRef.current, !budget.detailed)
+      drawEdges(ctx, edges, agents, toolCalls, activeEdgeIds, timeRef.current, mode !== 'off', compactRef.current, !budget.detailed, simTimeRef.current)
       drawToolCalls(ctx, toolCalls, timeRef.current, selectedToolCallId)
       drawDiscoveries(ctx, discoveries, agents, selectedDiscoveryId)
       drawAgents(ctx, agents, selectedAgentId, hoveredAgentId, showStats, timeRef.current, mode !== 'off', compactRef.current, transform.scale, budget.detailed)

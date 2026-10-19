@@ -92,7 +92,11 @@ export function trackWorkEvent(event: SimulationEvent, prev: SimulationState, ne
   const edges = next.edges.map(edge => {
     if (edge.type !== 'parent-child') return edge
     const task = [...delegations.values()].reverse().find(item => item.child === edge.to && item.parent === edge.from)
-    return task ? { ...edge, flowLabel: FLOW_LABELS[task.stage] } : edge
+    if (!task) return edge
+    const flowLabelKey = `${task.id}:${task.stage}`
+    if (edge.flowLabelKey === flowLabelKey) return edge
+    return { ...edge, flowLabel: FLOW_LABELS[task.stage], flowLabelKey,
+      flowLabelStartedAt: event.historical ? undefined : event.time }
   })
   return { ...next, agents, toolCalls: tools, conversations, edges, round, roundStart, delegations }
 }

@@ -272,3 +272,6 @@ Local patch `local-2026.10.16.5` adds a brief LED recharge when Codex records a 
 
 
 Local patch `local-2026.10.19.1` removes question-mark icons from both graph surfaces, preserving each node's normal brand/task icon. Async question metadata no longer adds a persistent input label to Ready nodes. Actual blocking input waits still use the **Input needed** status text; stale input metadata cannot override an active Thinking/Running/Done state. Permission approval retains its separate lock icon.
+
+
+Local patch `local-2026.10.19.2` shows delegation edge text only when a task or its stage first changes: it holds briefly and fades out within 2.5 seconds. Continued tools/messages in the same stage do not restart the label. Reusing a child for a new task shows its new label once. Labels use simulation time, including Animation Off and Review, without timers. Restoring historical sessions does not flash old edge text; the Explorer keeps its existing label-free compact view. Edge lines and travel effects continue normally.
