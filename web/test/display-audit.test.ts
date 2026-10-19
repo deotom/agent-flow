@@ -1,3 +1,4 @@
+import { captionLayout, findCaptionAgentAt } from '../lib/agent-caption'
 import { it } from 'node:test'
 import assert from 'node:assert/strict'
 import { processEvent, type ProcessEventContext } from '../hooks/simulation/process-event'
@@ -112,7 +113,7 @@ it('shows numeric context usage with warning colors at 80 and 90 percent', () =>
   const labels: { text: string; color: string }[] = []
   const canvas = { fillStyle: '', beginPath() {}, roundRect() {}, fill() {}, fillRect() {}, strokeRect() {},
     fillText(text: string) { labels.push({ text, color: this.fillStyle }) } }
-  for (const [tokensUsed, color] of [[79000, COLORS.holoBase], [80000, COLORS.tool], [90000, COLORS.error]] as const) {
+  for (const [tokensUsed, color] of [[79000, COLORS.textMuted], [80000, COLORS.tool], [90000, COLORS.error]] as const) {
     drawContextComposition(canvas as unknown as CanvasRenderingContext2D, { ...state.agents.get('root')!, tokensUsed, tokensMax: 100000 }, 48)
     assert.equal(labels.at(-1)?.color, color)
     assert.ok(labels.at(-1)?.text.startsWith(`CTX เหลือ ${100 - tokensUsed / 1000}%`))
@@ -239,4 +240,17 @@ it('keeps captions outside the HUD and every row apart at narrow and zoomed size
       assert.ok(labels[index].y >= labels[index - 1].y + labels[index - 1].fontSize + 1 / zoom)
     }
   }
+})
+
+
+it('finds the full-name tooltip on the drawn plaque across compact and zoom settings', () => {
+  const agent = { ...processEvent({ time: 0, type: 'agent_spawn', payload: { name: 'root', isMain: true } }, createEmptyState(), ctx).agents.get('root')!, scale: 1, opacity: 1 }
+  const agents = new Map([[agent.id, agent]])
+  for (const compact of [false, true]) for (const zoom of [0.5, 1, 2.4]) {
+    const box = captionLayout(agent, 48, compact, zoom)
+    assert.equal(findCaptionAgentAt(agent.x, box.top + box.height / 2, agents, compact, zoom), agent)
+    assert.equal(findCaptionAgentAt(box.left - 1, box.top, agents, compact, zoom), undefined)
+    assert.equal(findCaptionAgentAt(agent.x, box.top + box.height + 1, agents, compact, zoom), undefined)
+  }
+  assert.equal(findCaptionAgentAt(agent.x, agent.y + 120, new Map([[agent.id, { ...agent, opacity: 0 }]]), false, 1), undefined)
 })

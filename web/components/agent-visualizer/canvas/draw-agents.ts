@@ -1,3 +1,4 @@
+import { captionLayout } from '@/lib/agent-caption'
 import { Agent, NODE, ANIM } from '@/lib/agent-types'
 import { COLORS, getStateColor } from '@/lib/colors'
 import {
@@ -136,17 +137,9 @@ export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radi
   ctx.restore()
 }
 
-/** Keep the caption below the complete instrument, including its outer sweep. */
-function captionLayout(agent: Pick<Agent, 'y' | 'isMain' | 'archived'>, radius: number, compact: boolean, viewScale: number) {
-  const unit = Math.min(compact ? 2 : 1.25, 1 / Math.max(0.1, viewScale))
-  const instrumentPadding = agent.archived ? 0 : agent.isMain && !compact ? 34 : 14
-  return { unit, width: (compact ? 200 : 260) * Math.min(1, unit), line: (compact ? 16 : 19) * unit,
-    y: agent.y + radius + instrumentPadding + 18 * unit }
-}
-
 export function drawContextComposition(ctx: CanvasRenderingContext2D, agent: Agent, radius: number, labelScale = 1) {
   if (agent.tokensMax <= 0) return
-  ctx.fillStyle = contextGaugeColor(agent.tokensUsed, agent.tokensMax)
+  ctx.fillStyle = agent.tokensUsed / Math.max(1, agent.tokensMax) >= 0.8 ? contextGaugeColor(agent.tokensUsed, agent.tokensMax) : COLORS.textMuted
   ctx.font = `${10 * labelScale}px "Segoe UI", sans-serif`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
@@ -358,11 +351,7 @@ function drawWaitingRipples(ctx: CanvasRenderingContext2D, agent: Agent, r: numb
 
 function drawCaptionPanel(ctx: CanvasRenderingContext2D, agent: Agent,
   layout: ReturnType<typeof captionLayout>, hovered: boolean) {
-  const { unit, width, line, y } = layout
-  const panelWidth = width + 16 * unit
-  const left = agent.x - panelWidth / 2, top = y - 8 * unit
-  const rows = !agent.archived && agent.tokensMax > 0 ? 4 : 3
-  const height = (rows - 1) * line + 28 * unit
+  const { unit, panelWidth, left, top, height } = layout
   const bottom = top + height, right = left + panelWidth
   ctx.save()
   ctx.shadowBlur = 0
@@ -373,9 +362,11 @@ function drawCaptionPanel(ctx: CanvasRenderingContext2D, agent: Agent,
   ctx.roundRect(left, top, panelWidth, height, 4 * unit)
   ctx.fill()
   ctx.stroke()
-  // A small physical link and clipped corner accents make this part of the instrument.
+  // A short, brighter link joins the plaque to the instrument.
+  ctx.strokeStyle = '#71d8ff90'
+  ctx.lineWidth = 1.1 * unit
   ctx.beginPath()
-  ctx.moveTo(agent.x, top - 8 * unit)
+  ctx.moveTo(agent.x, top - 5 * unit)
   ctx.lineTo(agent.x, top)
   ctx.stroke()
   ctx.strokeStyle = hovered ? '#8ae2ff' : '#55bde6a0'
@@ -400,16 +391,16 @@ export function drawAgentLabel(ctx: CanvasRenderingContext2D, agent: Agent, r: n
   ctx.textAlign = 'center'
   ctx.textBaseline = 'top'
   ctx.fillStyle = isHovered ? COLORS.holoBright : COLORS.textPrimary
-  ctx.font = `600 ${(compact ? 12 : 14) * unit}px "Segoe UI", sans-serif`
+  ctx.font = `500 ${(compact ? 11.5 : 12.5) * unit}px "Segoe UI", sans-serif`
   ctx.fillText(truncateText(ctx, agent.name, width), agent.x, y)
-  ctx.font = `${(compact ? 10.5 : 11) * unit}px "Segoe UI", sans-serif`
+  ctx.font = `${(compact ? 10 : 10.5) * unit}px "Segoe UI", sans-serif`
   ctx.fillStyle = COLORS.textMuted
   ctx.fillText(truncateText(ctx, agent.model ? formatModelName(agent.model) : 'Model unknown', width), agent.x, y + line)
-  ctx.fillStyle = getStateColor(agent.state)
-  ctx.font = `500 ${(compact ? 11 : 12) * unit}px "Segoe UI", sans-serif`
+  ctx.fillStyle = agent.state === 'thinking' ? COLORS.holoBright : getStateColor(agent.state)
+  ctx.font = `600 ${(compact ? 12 : 13) * unit}px "Segoe UI", sans-serif`
   ctx.fillText(truncateText(ctx, agentStatusLabel(agent, time), width), agent.x, y + line * 2)
   if (compact && !agent.archived && agent.tokensMax > 0) {
-    ctx.fillStyle = contextGaugeColor(agent.tokensUsed, agent.tokensMax)
+    ctx.fillStyle = agent.tokensUsed / Math.max(1, agent.tokensMax) >= 0.8 ? contextGaugeColor(agent.tokensUsed, agent.tokensMax) : COLORS.textMuted
     ctx.font = `${10 * unit}px "Segoe UI", sans-serif`
     ctx.fillText( `CTX เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - agent.tokensUsed / Math.max(1, agent.tokensMax))) * 100)}%`, agent.x, y + line * 3)
   }

@@ -1,3 +1,4 @@
+import { findCaptionAgentAt } from '@/lib/agent-caption'
 import { useState, useCallback, useRef, useEffect, type MutableRefObject } from 'react'
 import { Agent, ToolCallNode, Discovery, ANIM, NODE } from '@/lib/agent-types'
 import { CAMERA } from '@/lib/canvas-constants'
@@ -95,15 +96,12 @@ export function useCanvasInteraction({
     const pos = screenToCanvas(e.clientX, e.clientY)
     const hoveredId = findAgentAt(pos.x, pos.y)
     const compact = !!drawPropsRef.current.compact
-    const unit = Math.min(compact ? 2 : 1.25, 1 / Math.max(0.1, transformRef.current.scale))
-    let contextAgent: Agent | undefined
-    for (const agent of drawPropsRef.current.agents.values()) {
-      const r = (agent.isMain ? NODE.radiusMain : NODE.radiusSub) * agent.scale
-      const labelY = agent.y + r + 12 + (compact ? 48 : 57) * unit
-      if (agent.opacity > 0.5 && agent.tokensMax > 0 && Math.abs(pos.x - agent.x) < 65 * unit && pos.y >= labelY - 5 && pos.y <= labelY + 16 * unit) { contextAgent = agent; break }
-    }
-    if (mainCanvasRef.current) mainCanvasRef.current.title = contextAgent
-      ? `${contextAgent.name}: ${contextAgent.tokensUsed.toLocaleString()} / ${contextAgent.tokensMax.toLocaleString()} tokens used · เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - contextAgent.tokensUsed / Math.max(1, contextAgent.tokensMax))) * 100)}%`
+    const captionAgent = findCaptionAgentAt(pos.x, pos.y, drawPropsRef.current.agents, compact, transformRef.current.scale)
+    const tooltipAgent = captionAgent ?? (hoveredId ? drawPropsRef.current.agents.get(hoveredId) : undefined)
+    if (mainCanvasRef.current) mainCanvasRef.current.title = tooltipAgent
+      ? tooltipAgent.tokensMax > 0
+        ? `${tooltipAgent.name}: ${tooltipAgent.tokensUsed.toLocaleString()} / ${tooltipAgent.tokensMax.toLocaleString()} tokens used · เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - tooltipAgent.tokensUsed / Math.max(1, tooltipAgent.tokensMax))) * 100)}%`
+        : tooltipAgent.name
       : ''
     if (hoveredId !== lastHoveredIdRef.current) {
       lastHoveredIdRef.current = hoveredId

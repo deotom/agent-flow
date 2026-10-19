@@ -287,3 +287,6 @@ Local patch `local-2026.10.19.5` replaces the after-completion recharge timer wi
 
 
 Local patch `local-2026.10.19.6` places node captions below the full HUD sweep instead of below the inner hexagon. Name, model, status and remaining context share the same row geometry. Caption widths follow the zoom-adjusted font size so long names stay bounded in the Explorer and zoomed editor views. Active node captions sit in a static translucent instrument plaque with cyan corner brackets and a short connector to the HUD. Archived nodes retain tighter unframed spacing. The plaque uses plain batched canvas paths without extra animation, shadows or buffers.
+
+
+Local patch `local-2026.10.19.7` tightens the instrument plaque, shortens displayed names to its narrower width, moves it closer to the HUD, and strengthens the static connector. Thinking is the primary cyan text while model and normal context counters use secondary text color; context warnings keep their amber/red colors. Hovering the plaque or node shows the full name and token counters using a native tooltip with the same geometry as the drawn plaque. No animation or rendering buffer is added.
