@@ -111,7 +111,7 @@ it('blinks only the latest blue LED while previous and unlit lamps stay steady, 
 it('shows numeric context usage with warning colors at 80 and 90 percent', () => {
   const state = processEvent({ time: 0, type: 'agent_spawn', payload: { name: 'root', isMain: true } }, createEmptyState(), ctx)
   const labels: { text: string; color: string }[] = []
-  const canvas = { fillStyle: '', beginPath() {}, roundRect() {}, fill() {}, fillRect() {}, strokeRect() {},
+  const canvas = { fillStyle: '', font: '', measureText(text: string) { return { width: text.length * parseFloat(this.font) * 0.6 } }, beginPath() {}, roundRect() {}, fill() {}, fillRect() {}, strokeRect() {},
     fillText(text: string) { labels.push({ text, color: this.fillStyle }) } }
   for (const [tokensUsed, color] of [[79000, COLORS.textMuted], [80000, COLORS.tool], [90000, COLORS.error]] as const) {
     drawContextComposition(canvas as unknown as CanvasRenderingContext2D, { ...state.agents.get('root')!, tokensUsed, tokensMax: 100000 }, 48)
@@ -243,6 +243,7 @@ it('keeps captions outside the HUD and every row apart at narrow and zoomed size
     assert.ok(labels[0].width * zoom <= (compact ? 200 : 260))
     assert.equal(labels[2].y, labels[3].y)
     assert.ok(labels[2].x + labels[2].width < labels[3].x - labels[3].width, JSON.stringify({ compact, isMain, zoom, labels }))
+    assert.ok(Math.abs((labels[2].x + labels[3].x) / 2 - agent.x) < 0.001)
     assert.ok(labels[2].fontSize < labels[1].fontSize)
     assert.ok(labels[3].fontSize < labels[1].fontSize)
     for (let index = 1; index < 3; index++) {

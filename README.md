@@ -302,3 +302,6 @@ Local patch `local-2026.10.19.10` reserves node/HUD and caption space when prese
 
 
 Local patch `local-2026.10.19.11` reduces agent plaques to three rows: name, prominent centered status, then a small model/CTX footer. The footer reserves separate left/right regions to prevent text overlap; model names truncate while the full agent name and token counters remain available on hover. Normal footer text is muted, with existing context warning colors retained. Caption hit bounds and command-card avoidance use the reduced plaque height automatically.
+
+
+Local patch `local-2026.10.19.12` centers the model and CTX footer as one closely spaced group, retaining three-row captions and existing warning colors.

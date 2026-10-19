@@ -141,13 +141,24 @@ function contextCaption(agent: Agent): string {
   return `CTX เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - agent.tokensUsed / Math.max(1, agent.tokensMax))) * 100)}%`
 }
 
+function captionFooter(ctx: CanvasRenderingContext2D, agent: Agent, caption: ReturnType<typeof captionLayout>) {
+  ctx.font = `${caption.fonts.model * caption.footerUnit}px "Segoe UI", sans-serif`
+  const hasContext = !agent.archived && agent.tokensMax > 0
+  const contextWidth = hasContext ? measureTextCached(ctx, contextCaption(agent)) : 0
+  const gap = hasContext ? 12 * caption.footerUnit : 0
+  const model = truncateText(ctx, agent.model ? formatModelName(agent.model) : 'Model unknown', Math.max(0, caption.width - contextWidth - gap))
+  const width = measureTextCached(ctx, model) + gap + contextWidth
+  return { model, left: agent.x - width / 2, right: agent.x + width / 2 }
+}
+
 function drawCaptionContext(ctx: CanvasRenderingContext2D, agent: Agent, caption: ReturnType<typeof captionLayout>) {
   if (agent.archived || agent.tokensMax <= 0) return
+  const footer = captionFooter(ctx, agent, caption)
   ctx.fillStyle = agent.tokensUsed / Math.max(1, agent.tokensMax) >= 0.8 ? contextGaugeColor(agent.tokensUsed, agent.tokensMax) : COLORS.textMuted
   ctx.font = `${caption.fonts.context * caption.footerUnit}px "Segoe UI", sans-serif`
   ctx.textAlign = 'right'
   ctx.textBaseline = 'top'
-  ctx.fillText(contextCaption(agent), agent.x + caption.width / 2, caption.y + caption.line * 2)
+  ctx.fillText(contextCaption(agent), footer.right, caption.y + caption.line * 2)
 }
 
 export function drawContextComposition(ctx: CanvasRenderingContext2D, agent: Agent, radius: number, labelScale = 1) {
@@ -406,12 +417,9 @@ export function drawAgentLabel(ctx: CanvasRenderingContext2D, agent: Agent, r: n
   // The compact footer keeps model and remaining context together without competing with status.
   ctx.font = `${fonts.model * footerUnit}px "Segoe UI", sans-serif`
   ctx.fillStyle = COLORS.textMuted
-  const hasContext = !agent.archived && agent.tokensMax > 0
-  const contextWidth = hasContext ? measureTextCached(ctx, contextCaption(agent)) + 10 * footerUnit : 0
-  const modelWidth = Math.max(0, width - contextWidth)
-  ctx.textAlign = hasContext ? 'left' : 'center'
-  ctx.fillText(truncateText(ctx, agent.model ? formatModelName(agent.model) : 'Model unknown', modelWidth),
-    hasContext ? agent.x - width / 2 : agent.x, y + line * 2)
+  const footer = captionFooter(ctx, agent, layout)
+  ctx.textAlign = 'left'
+  ctx.fillText(footer.model, footer.left, y + line * 2)
   if (compact) drawCaptionContext(ctx, agent, layout)
 }
 
