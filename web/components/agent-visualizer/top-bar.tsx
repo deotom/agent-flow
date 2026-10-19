@@ -77,6 +77,7 @@ function ConnectionIndicator({ status }: { status: ConnectionStatus }) {
 // ─── Top Bar ────────────────────────────────────────────────────────────────
 
 export interface TopBarProps {
+  agentScopeControl?: ReactNode
   viewerControls?: ReactNode
   onHeightChange?: (height: number) => void
   // Session tabs
@@ -104,7 +105,7 @@ export interface TopBarProps {
 }
 
 export const TopBar = memo(function TopBar({
-  viewerControls, onHeightChange,
+  viewerControls, onHeightChange, agentScopeControl,
   sessions, selectedSessionId, sessionsWithActivity,
   onSelectSession, onCloseSession,
   isVSCode, connectionStatus,
@@ -122,14 +123,17 @@ export const TopBar = memo(function TopBar({
   return (
     <div ref={header} className="absolute top-3 left-3 right-3 flow-hud-panel flex flex-col items-stretch gap-2 text-[12px] p-2 rounded-lg" style={{ zIndex: 80, background: COLORS.panelBg, border: `1px solid ${COLORS.glassBorder}` }}>
       {/* Session tabs — scrollable, takes available space */}
-      {sessions.length > 0 && (
-        <div className="min-w-0">
+      {(
+        <div className="min-w-0 flex flex-wrap items-center gap-2">
+          {sessions.length > 0 && <div className="min-w-0 flex-1">
           <SessionPicker
             sessions={sessions}
             selectedSessionId={selectedSessionId}
             onSelectSession={onSelectSession}
             onCloseSession={onCloseSession}
           />
+          </div>}
+          {agentScopeControl}
         </div>
       )}
 

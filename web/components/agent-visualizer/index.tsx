@@ -30,12 +30,16 @@ import { FlowControls } from './flow-controls'
 import { WorkPanel } from './work-panel'
 import { FlowIcon } from './flow-icon'
 import { SessionPicker } from './session-picker'
+import { AgentScopeSwitch } from './agent-scope-switch'
+import { sessionGraphPresentation } from '@/lib/graph-presentation'
 import { useAudioEffects } from "@/hooks/use-audio-effects"
 
 export function AgentVisualizer() {
   const bridge = useVSCodeBridge()
   const [toolbarBottom, setToolbarBottom] = useState(112)
   const [currentRoundOnly, setCurrentRoundOnly] = useState(true)
+  const [showAllAgents, setShowAllAgents] = useState(false)
+  useEffect(() => setShowAllAgents(false), [bridge.selectedSessionId])
 
   const {
     frameRef,
@@ -73,7 +77,12 @@ export function AgentVisualizer() {
     disable1MContext: bridge.disable1MContext,
   })
 
-  const selection = useSelectionState({ agents, toolCalls, discoveries })
+  const sessionAgents = useMemo(() => showAllAgents ? sessionGraphPresentation(frameRef.current).agents : agents, [agents, timelineEntries, frameRef, showAllAgents])
+  const selection = useSelectionState({ agents: showAllAgents ? sessionAgents : agents, toolCalls, discoveries })
+  const activeAgentCount = [...agents.values()].filter(agent => agent.isMain || agent.state !== 'complete').length
+  const [zoomToFitTrigger, setZoomToFitTrigger] = useState(0)
+  const scopeControl = <AgentScopeSwitch showAll={showAllAgents} activeCount={activeAgentCount} totalCount={Math.max(timelineEntries.size, agents.size)}
+    onChange={all => { setShowAllAgents(all); selection.clearAgent(); setZoomToFitTrigger(value => value + 1) }} />
 
   const [showStats, setShowStats] = useState(false)
   const [showHexGrid, setShowHexGrid] = useState(true)
@@ -88,11 +97,10 @@ export function AgentVisualizer() {
     setShowTranscript(prev => panel === 'transcript' ? !prev : false)
     setShowCostOverlay(prev => panel === 'cost' ? !prev : false)
   }, [])
-  const [zoomToFitTrigger, setZoomToFitTrigger] = useState(0)
 
   const [isReviewing, setIsReviewing] = useState(false)
   useEffect(() => bridge.setReviewing(isReviewing), [isReviewing, bridge.setReviewing])
-  const displayAgents = useMemo(() => !currentRoundOnly || isReviewing ? agents : new Map([...agents].filter(([, agent]) => agent.isMain || (agent.round ?? 0) === round)), [agents, currentRoundOnly, isReviewing, round])
+  const displayAgents = useMemo(() => showAllAgents ? sessionAgents : !currentRoundOnly || isReviewing ? agents : new Map([...agents].filter(([, agent]) => agent.isMain || (agent.round ?? 0) === round)), [agents, sessionAgents, showAllAgents, currentRoundOnly, isReviewing, round])
   const { isMuted, seekingRef, handleToggleMute } = useAudioEffects(agents, toolCalls, isReviewing || bridge.compact)
 
   // Auto-play on mount
@@ -173,7 +181,7 @@ export function AgentVisualizer() {
   const estimatedContextCost = useMemo(() => Array.from(displayAgents.values()).reduce((sum, agent) => sum + agentCost(agent.tokensUsed, agent.model), 0), [displayAgents])
 
   const selectedAgent = selection.selectedAgentId ? displayAgents.get(selection.selectedAgentId) : null
-  const selectedConversation = selection.selectedAgentId ? (conversations.get(selection.selectedAgentId) || []).filter(message => !currentRoundOnly || (message.round ?? 0) === round) : []
+  const selectedConversation = selection.selectedAgentId ? (conversations.get(selection.selectedAgentId) || []).filter(message => showAllAgents || !currentRoundOnly || (message.round ?? 0) === round) : []
 
   // Session runtime — drives the assistant label (CLAUDE vs CODEX) in transcript panels
   const sessionRuntime = useMemo(() => {
@@ -245,6 +253,7 @@ export function AgentVisualizer() {
         topInset={toolbarBottom + 28}
         visible={bridge.viewVisible && !bridge.restoring}
         restoring={bridge.restoring}
+        showAllAgents={showAllAgents}
         currentRoundOnly={currentRoundOnly && !isReviewing}
         animationMode={bridge.animationMode}
         animationSpeed={bridge.animationSpeed}
@@ -271,7 +280,8 @@ export function AgentVisualizer() {
 
       {bridge.compact && (
         <>
-          <div className="absolute top-0 left-0 right-0 z-50 flex items-center gap-0.5 px-1 py-1" style={{ background: COLORS.panelBg, borderBottom: `1px solid ${COLORS.glassBorder}` }}>
+          <div className="absolute top-0 left-0 right-0 z-50 flex flex-wrap items-center gap-0.5 px-1 py-1" style={{ background: COLORS.panelBg, borderBottom: `1px solid ${COLORS.glassBorder}` }}>
+            <div className="w-full flex justify-end">{scopeControl}</div>
             <SessionPicker compact sessions={bridge.sessions} selectedSessionId={bridge.selectedSessionId} onSelectSession={bridge.selectSession} onCloseSession={handleCloseSession} />
             <button title="Fit graph" aria-label="Fit graph" className="flow-icon-button" style={{ color: COLORS.textPrimary }} onClick={() => setZoomToFitTrigger(n => n + 1)}><FlowIcon name="fit" /></button>
             <button title="Open full graph" aria-label="Open full graph" className="flow-icon-button" style={{ color: COLORS.textPrimary }} onClick={bridge.openGraph}><FlowIcon name="expand" /></button>
@@ -330,7 +340,7 @@ export function AgentVisualizer() {
       <AgentChatPanel
         sessionId={bridge.selectedSessionId}
         agentId={selection.selectedAgentId}
-        round={currentRoundOnly ? round : undefined}
+        round={currentRoundOnly && !showAllAgents ? round : undefined}
         visible={!!selectedAgent}
         agentName={selectedAgent?.name ?? ''}
         agentState={selectedAgent?.state ?? 'idle'}
@@ -387,7 +397,7 @@ export function AgentVisualizer() {
       <SessionTranscriptPanel
         topInset={toolbarBottom + 40}
         sessionId={bridge.selectedSessionId}
-        round={currentRoundOnly ? round : undefined}
+        round={currentRoundOnly && !showAllAgents ? round : undefined}
         visible={showTranscript}
         conversation={sessionConversation}
         runtime={sessionRuntime}
@@ -405,6 +415,7 @@ export function AgentVisualizer() {
       {/* Top bar: session tabs + info/controls */}
       <TopBar
         onHeightChange={setToolbarBottom}
+        agentScopeControl={scopeControl}
         viewerControls={<FlowControls bridge={bridge} />}
         sessions={bridge.sessions}
         selectedSessionId={bridge.selectedSessionId}

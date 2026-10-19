@@ -82,7 +82,7 @@ export function useCanvasInteraction({
     if (e.button === 0) {
       panVelocityRef.current = { vx: 0, vy: 0, active: false }
       setIsDragging(true)
-      if (agentId && !drawPropsRef.current.compact) {
+      if (agentId && !drawPropsRef.current.compact && !drawPropsRef.current.agents.get(agentId)?.archived) {
         dragTargetRef.current = { type: 'agent', id: agentId, startX: e.clientX, startY: e.clientY }
       } else {
         dragTargetRef.current = { type: 'canvas', startX: e.clientX, startY: e.clientY }

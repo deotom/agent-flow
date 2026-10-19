@@ -13,6 +13,7 @@ export interface ContextBreakdown {
 }
 
 export interface Agent {
+  archived?: boolean
   pendingInputs?: Array<{ id: string; blocking: boolean }>
   waitingForInput?: boolean
   round?: number
@@ -114,7 +115,10 @@ export interface FileAttention {
 }
 
 // Timeline entry for Gantt view
+export type AgentSummary = Pick<Agent, 'id' | 'name' | 'parentId' | 'state' | 'isMain' | 'runtime' | 'model' | 'round' | 'tokensUsed' | 'tokensMax' | 'toolCalls' | 'timeAlive' | 'spawnTime'>
+
 export interface TimelineEntry {
+  agentSummary?: AgentSummary
   model?: string
   id: string
   agentId: string

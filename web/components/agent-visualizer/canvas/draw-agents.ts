@@ -12,7 +12,8 @@ export function contextGaugeColor(used: number, capacity: number): string {
   const usage = used / Math.max(1, capacity)
   return usage >= 0.9 ? COLORS.error : usage >= 0.8 ? COLORS.tool : COLORS.holoBase
 }
-export function agentStatusLabel(agent: Pick<Agent, 'state' | 'currentTool' | 'pendingInputs' | 'waitingForInput' | 'contextRecharge'>, time: number): string {
+export function agentStatusLabel(agent: Pick<Agent, 'state' | 'currentTool' | 'pendingInputs' | 'waitingForInput' | 'contextRecharge' | 'archived'>, time: number): string {
+  if (agent.archived) return agent.state === 'complete' ? 'Done' : 'Inactive'
   if (agent.waitingForInput && agent.state === 'waiting_permission') return 'Input needed'
   if (agent.contextRecharge) return 'Recharging context…'
   switch (agent.state) {
@@ -362,7 +363,7 @@ function drawAgentLabel(ctx: CanvasRenderingContext2D, agent: Agent, r: number, 
   ctx.fillStyle = getStateColor(agent.state)
   ctx.font = `500 ${(compact ? 11 : 12) * unit}px "Segoe UI", sans-serif`
   ctx.fillText(truncateText(ctx, agentStatusLabel(agent, time), width), agent.x, y + line * 2)
-  if (compact && agent.tokensMax > 0) {
+  if (compact && !agent.archived && agent.tokensMax > 0) {
     ctx.fillStyle = contextGaugeColor(agent.tokensUsed, agent.tokensMax)
     ctx.font = `${10 * unit}px "Segoe UI", sans-serif`
     ctx.fillText( `CTX เหลือ ${Math.round(Math.max(0, Math.min(1, 1 - agent.tokensUsed / Math.max(1, agent.tokensMax))) * 100)}%`, agent.x, y + line * 3)
@@ -411,6 +412,16 @@ export function drawAgents(
     ctx.save()
     ctx.globalAlpha = agent.opacity
 
+    if (agent.archived) {
+      drawHexagon(ctx, agent.x, agent.y, r)
+      ctx.strokeStyle = COLORS.idle
+      ctx.lineWidth = 1.2
+      ctx.stroke()
+      drawCenterIcon(ctx, agent, r, COLORS.idle, false)
+      drawAgentLabel(ctx, agent, r, isHovered, time, compact, viewScale)
+      ctx.restore()
+      continue
+    }
     if (detailed) drawDepthShadow(ctx, agent, r)
     drawAgentGlow(ctx, agent, r, color, isHovered, isSelected, isWaiting)
     if (agent.isMain && !compact) drawMainInstrument(ctx, agent, r, time, effectsEnabled && (activeEffects || agent.state === 'idle'), detailed)

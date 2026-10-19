@@ -39,6 +39,7 @@ export function detectStateChanges(
 
   for (const [id, agent] of agents) {
     newAgentStates.set(id, agent.state)
+    if (agent.archived) continue
     const oldState = prevAgentStates.get(id)
 
     // Spawn: new agent (wasn't in prev)

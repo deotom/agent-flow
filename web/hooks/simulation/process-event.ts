@@ -104,7 +104,7 @@ export function processEvent(event: SimulationEvent, prev: SimulationState, ctx:
 
       // Stabilize references for unchanged collections to prevent
       // downstream React useMemo/re-render cascades (O(n log n) sorts etc.)
-      return trackWorkEvent(event, prev, {
+      const next = trackWorkEvent(event, prev, {
         ...prev,
         receivedEventCount: Math.max(prev.receivedEventCount, event.sequence ?? 0),
         agents: state.agents, toolCalls: state.toolCalls,
@@ -114,4 +114,17 @@ export function processEvent(event: SimulationEvent, prev: SimulationState, ctx:
         timelineEntries: mapsEqual(prev.timelineEntries, state.timelineEntries) ? prev.timelineEntries : state.timelineEntries,
         conversations: mapsEqual(prev.conversations, state.conversations) ? prev.conversations : state.conversations,
       })
+      // Keep one small metadata row per agent after its simulation node fades.
+      // No message bodies, tool results, effects or force nodes are retained here.
+      let timelineCopied = next.timelineEntries !== prev.timelineEntries
+      for (const [id, agent] of next.agents) {
+        if (agent === prev.agents.get(id) && next.timelineEntries.get(id)?.agentSummary) continue
+        const entry = next.timelineEntries.get(id)
+        if (!entry) continue
+        if (!timelineCopied) { next.timelineEntries = new Map(next.timelineEntries); timelineCopied = true }
+        const { name, parentId, state: agentState, isMain, runtime, model, round, tokensUsed, tokensMax, toolCalls, spawnTime } = agent
+        next.timelineEntries.set(id, { ...entry, agentSummary: { id, name, parentId, state: agentState, isMain, runtime, model, round,
+          tokensUsed, tokensMax, toolCalls, spawnTime, timeAlive: Math.max(agent.timeAlive, event.time - spawnTime) } })
+      }
+      return next
 }

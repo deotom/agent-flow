@@ -27,9 +27,9 @@ export function limitVisualParticles<T extends { type: string }>(particles: T[],
 
 
 /** Error/result travel and fading cards remain animated even after the agent stops working. */
-export function hasVisualMotion(agents: Iterable<Pick<Agent, 'state' | 'isMain' | 'opacity'>>, tools: Iterable<Pick<ToolCallNode, 'opacity' | 'historical'>>, particles: number, discoveries: number, effects = 0): boolean {
+export function hasVisualMotion(agents: Iterable<Pick<Agent, 'state' | 'isMain' | 'opacity' | 'archived'>>, tools: Iterable<Pick<ToolCallNode, 'opacity' | 'historical'>>, particles: number, discoveries: number, effects = 0): boolean {
   if (particles || discoveries || effects) return true
-  for (const agent of agents) if (['thinking', 'tool_calling', 'waiting_permission'].includes(agent.state) || (!agent.isMain && agent.state === 'complete' && agent.opacity > 0)) return true
+  for (const agent of agents) if (!agent.archived && (['thinking', 'tool_calling', 'waiting_permission'].includes(agent.state) || (!agent.isMain && agent.state === 'complete' && agent.opacity > 0))) return true
   for (const tool of tools) if (!tool.historical && tool.opacity > 0) return true
   return false
 }

@@ -120,7 +120,8 @@ export function drawEdges(
 
     const fromX = fromAgent.x, fromY = fromAgent.y
     const hasActiveParticles = activeEdgeIds.has(edge.id)
-    const baseAlpha = hasActiveParticles ? BEAM.activeAlpha : BEAM.idleAlpha
+    const archived = fromAgent.archived || agents.get(edge.to)?.archived
+    const baseAlpha = (hasActiveParticles ? BEAM.activeAlpha : BEAM.idleAlpha) * (archived ? 0.3 : 1)
     const pulsing = hasActiveParticles ? Math.sin(time * ANIM.pulseSpeed) * 0.1 + 0.9 : 1
 
     const cp = computeControlPoints(fromX, fromY, toX, toY)
@@ -153,7 +154,7 @@ export function drawEdges(
     // dispatch particle has arrived. Canvas state is isolated by save/restore.
     const child = edge.type === 'parent-child' ? agents.get(edge.to) : undefined
     const returning = child?.state === 'complete' && hasActiveParticles && child.returnStartedAt !== undefined
-    if (effectsEnabled && child && (returning || child.state === 'thinking' || child.state === 'tool_calling')) {
+    if (!archived && effectsEnabled && child && (returning || child.state === 'thinking' || child.state === 'tool_calling')) {
       ctx.beginPath()
       ctx.moveTo(fromX, fromY)
       ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, toX, toY)
@@ -169,7 +170,7 @@ export function drawEdges(
 
     ctx.restore()
     const labelAge = edge.flowLabelStartedAt === undefined ? Infinity : simulationTime - edge.flowLabelStartedAt
-    if (!compact && edge.flowLabel && edge.type === 'parent-child' && labelAge >= 0 && labelAge < 2.5) {
+    if (!archived && !compact && edge.flowLabel && edge.type === 'parent-child' && labelAge >= 0 && labelAge < 2.5) {
       const x = bezierPoint(0.5, fromX, cp1x, cp2x, toX)
       const y = bezierPoint(0.5, fromY, cp1y, cp2y, toY)
       ctx.save()

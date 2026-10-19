@@ -34,7 +34,7 @@ export function WorkPanel({ topInset = 112, sessionId, compact, round, tasks, co
   const task = selected ? archivedTasks.items.find(item => item.id === selected) ?? tasks.get(selected) : undefined
   const archivedMessages = useArchivePage<MessageRow>(open && !!task, sessionId, 'messages', { agent: task?.child, round: task?.round, from: task?.startTime, to: task?.endTime })
   const messages = archivedMessages.items.length && !archivedMessages.error ? [...archivedMessages.items].reverse() : task ? (conversations.get(task.child) ?? []).filter(message => (message.round ?? 0) === task.round && message.timestamp >= task.startTime && (task.endTime === undefined || message.timestamp <= task.endTime)) : []
-  return <div className="absolute text-[12px] leading-relaxed" style={{ zIndex: compact ? 30 : 70, top: compact ? 42 : topInset, right: 8, left: compact ? 8 : undefined, width: compact ? undefined : 340, color: COLORS.textPrimary }}>
+  return <div className="absolute text-[12px] leading-relaxed" style={{ zIndex: compact ? 30 : 70, top: compact ? 70 : topInset, right: 8, left: compact ? 8 : undefined, width: compact ? undefined : 340, color: COLORS.textPrimary }}>
     <div className="flex justify-end gap-2">
       <button aria-label="Tasks and results" aria-expanded={open} onClick={() => setOpen(value => !value)} className="rounded-md px-2 py-1 flex items-center gap-2" style={{ background: COLORS.panelBg, border: `1px solid ${COLORS.glassBorder}` }}><FlowIcon name="tasks" size={14} />Round {round || '—'} · Tasks {visible.length}<FlowIcon name="chevron" size={12} /></button>
     </div>

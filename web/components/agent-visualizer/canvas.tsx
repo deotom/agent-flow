@@ -24,6 +24,7 @@ import { useCanvasCamera } from '@/hooks/use-canvas-camera'
 import { useCanvasInteraction } from '@/hooks/use-canvas-interaction'
 import { type AnimationMode } from '@/lib/viewer-preferences'
 import { visibleRoundGraph } from '@/hooks/simulation/work-rounds'
+import { sessionGraphPresentation } from '@/lib/graph-presentation'
 import { compactGraphPresentation, createGraphProjector } from '@/lib/graph-presentation'
 import { renderBudget, hasVisualMotion, limitVisualParticles } from '@/lib/render-budget'
 import { useVisibleFrameLoop } from '@/hooks/use-visible-frame-loop'
@@ -33,6 +34,7 @@ interface CanvasProps {
   topInset?: number
   restoring?: boolean
   visible?: boolean
+  showAllAgents?: boolean
   currentRoundOnly?: boolean
   animationMode?: AnimationMode
   animationSpeed?: number
@@ -57,7 +59,7 @@ interface CanvasProps {
 }
 
 export function AgentCanvas({
-  topInset = 132, visible = true, restoring = false, currentRoundOnly = true,
+  topInset = 132, visible = true, restoring = false, currentRoundOnly = true, showAllAgents = false,
   animationMode = 'full', animationSpeed = 1,
   compact = false,
   simulationRef,
@@ -103,10 +105,10 @@ export function AgentCanvas({
   // ─── Stable refs for animation loop & event handlers ────────────────────
   // Simulation data (agents, particles, etc.) is synced from simulationRef
   // at the top of each draw frame, so it's always fresh even without re-renders.
-  const scoped = visibleRoundGraph(simulationRef.current, currentRoundOnly)
+  const scoped = showAllAgents ? sessionGraphPresentation(simulationRef.current) : visibleRoundGraph(simulationRef.current, currentRoundOnly)
   const sim = compact ? compactGraphPresentation(scoped) : scoped
   const makeDrawProps = (prev?: { isDragging: boolean }) => ({
-    animationMode, animationSpeed, currentRoundOnly, topInset,
+    animationMode, animationSpeed, currentRoundOnly, showAllAgents, topInset,
     compact,
     agents: sim.agents, toolCalls: sim.toolCalls,
     particles: sim.particles, edges: sim.edges, discoveries: sim.discoveries,
@@ -198,7 +200,7 @@ export function AgentCanvas({
     try {
       // Sync simulation data from ref — always fresh, independent of React renders
       {
-        const s = projectGraphRef.current!(simulationRef.current, drawPropsRef.current.currentRoundOnly, compactRef.current)
+        const s = projectGraphRef.current!(simulationRef.current, drawPropsRef.current.currentRoundOnly, compactRef.current, drawPropsRef.current.showAllAgents)
         const p = drawPropsRef.current
         p.agents = s.agents
         p.toolCalls = s.toolCalls

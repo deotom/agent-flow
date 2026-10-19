@@ -20,7 +20,8 @@ export function compactHistory(state: SimulationState, stored: SimulationState, 
     return [task.id, saved?.summary === task.summary ? { ...task, archived: true, taskArchived: true, summary: task.summary.slice(0, 1600), task: task.task.slice(0, 1600) } : task]
   }))
   const recentAgents = new Set([...tasks.map(task => task.child), ...[...conversations].filter(([, messages]) => messages.length).map(([id]) => id)])
-  const timelineEntries = new Map([...state.timelineEntries].filter(([id]) => state.agents.has(id) || recentAgents.has(id)).map(([id, entry]) => [id, { ...entry, blocks: entry.blocks.slice(-200) }]))
+  const timelineEntries = new Map([...state.timelineEntries].filter(([id, entry]) => entry.agentSummary || state.agents.has(id) || recentAgents.has(id)).map(([id, entry]) => [id, { ...entry,
+    blocks: state.agents.has(id) || recentAgents.has(id) ? entry.blocks.slice(-200) : [] }]))
   let removed = 0
   while (removed < state.eventIndex && (state.eventLog[removed]?.sequence ?? Infinity) <= through) removed++
   return { ...state, conversations, toolCalls, delegations, timelineEntries,
