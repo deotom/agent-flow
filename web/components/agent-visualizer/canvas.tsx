@@ -26,6 +26,8 @@ import { useCanvasInteraction } from '@/hooks/use-canvas-interaction'
 import { type AnimationMode } from '@/lib/viewer-preferences'
 import { createGraphProjector } from '@/lib/graph-presentation'
 import { renderBudget, hasVisualMotion, limitVisualParticles } from '@/lib/render-budget'
+import { findCaptionAgentAt } from '@/lib/agent-caption'
+import { findAgentAt } from './canvas/hit-detection'
 import { useVisibleFrameLoop } from '@/hooks/use-visible-frame-loop'
 
 
@@ -317,6 +319,12 @@ export function AgentCanvas({
       if (showCostOverlay) drawCostSummaryPanel(ctx, agents, toolCalls)
       if (budget.bloom && bloomRef.current) bloomRef.current.apply(canvas, ctx)
 
+      const hint = tooltipRef.current
+      if (hint) {
+        const x = (hint.x - transform.x) / transform.scale, y = (hint.y - transform.y) / transform.scale
+        const target = findCaptionAgentAt(x, y, agents, compactRef.current, transform.scale)?.id ?? findAgentAt(x, y, agents)
+        if (target !== hint.agentId) tooltipRef.current = null
+      }
       drawAgentTooltip(ctx, tooltipRef.current, agents, performance.now(), w, h, compactRef.current ? 82 : topInset)
 
       // ─── Performance overlay (enabled via ?perf or ?stress) ──────────

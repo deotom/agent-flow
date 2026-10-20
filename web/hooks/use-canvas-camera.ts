@@ -1,10 +1,8 @@
+import { captionEnvelope } from '@/lib/agent-caption'
 import { useRef, useEffect, useCallback, type MutableRefObject } from 'react'
 import { Agent, ToolCallNode, Discovery, ANIM, NODE } from '@/lib/agent-types'
 import { BUBBLE_HOLD, BUBBLE_FADE_OUT, BUBBLE_MAX_W, TOOL_CARD_W, TOOL_CARD_H, DISC_BOUNDS_HALF_W, DISC_BOUNDS_HALF_H } from '@/lib/canvas-constants'
 import { graphFit } from '@/lib/graph-presentation'
-
-/** Extra padding added to agent node radii for auto-fit bounding box */
-const AUTOFIT_AGENT_PADDING = 22
 
 export interface Transform {
   x: number
@@ -110,12 +108,14 @@ export function useCanvasCamera({
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
     for (const [id, agent] of agents) {
       if (focusScope && !focusScope.has(id)) continue
-      const r = (agent.isMain ? NODE.radiusMain : NODE.radiusSub) + AUTOFIT_AGENT_PADDING
-      minX = Math.min(minX, agent.x - Math.max(r, compact ? 115 : 130))
-      maxX = Math.max(maxX, agent.x + Math.max(r, compact ? 115 : 130))
+      const r = (agent.isMain ? NODE.radiusMain : NODE.radiusSub) + (agent.isMain && !compact ? 34 : 14)
+      minX = Math.min(minX, agent.x - r)
+      maxX = Math.max(maxX, agent.x + r)
       minY = Math.min(minY, agent.y - r)
-      // Include the HUD connector and four caption rows at their largest font scale.
-      maxY = Math.max(maxY, agent.y + r + (compact ? 170 : 140))
+      const caption = captionEnvelope(agent, agent.isMain ? NODE.radiusMain : NODE.radiusSub, !!compact)
+      minX = Math.min(minX, caption.left); maxX = Math.max(maxX, caption.right)
+      minY = Math.min(minY, caption.top); maxY = Math.max(maxY, caption.bottom)
+      maxY = Math.max(maxY, agent.y + r)
       if (!compact && agent.messageBubbles.length > 0) {
         const visibleCount = agent.messageBubbles.filter(b => {
           const age = (simTimeRef.current ?? 0) - b.time

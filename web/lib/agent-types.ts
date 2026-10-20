@@ -13,6 +13,7 @@ export interface ContextBreakdown {
 }
 
 export interface Agent {
+  captionDock?: { side: 'below' | 'above' | 'left' | 'right' | 'below-left' | 'below-right' | 'above-left' | 'above-right'; ring: number }
   archived?: boolean
   pendingInputs?: Array<{ id: string; blocking: boolean }>
   waitingForInput?: boolean

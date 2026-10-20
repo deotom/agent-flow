@@ -1,6 +1,6 @@
 import { NODE, type Agent, type ToolCallNode } from './agent-types'
 import { TOOL_CARD_W, TOOL_CARD_H } from './canvas-constants'
-import { captionLayout } from './agent-caption'
+import { captionEnvelope } from './agent-caption'
 
 interface Rect { left: number; right: number; top: number; bottom: number }
 interface Point { x: number; y: number }
@@ -19,9 +19,7 @@ export function createToolCaptionLayout() {
       if (agent.archived || !agent.isMain && agent.state === 'complete' && agent.opacity <= 0) continue
       const radius = agent.isMain ? NODE.radiusMain : NODE.radiusSub
       // Reserve the maximum caption size, so changing zoom never shifts a card.
-      const caption = captionLayout(agent, radius, false, 0.1)
-      reserved.push({ left: caption.left, right: caption.left + caption.panelWidth,
-        top: agent.y + radius + (agent.isMain ? 34 : 14), bottom: caption.top + caption.height })
+      reserved.push(captionEnvelope(agent, radius))
       const hud = radius + (agent.isMain ? 34 : 14)
       reserved.push({ left: agent.x - hud, right: agent.x + hud, top: agent.y - hud, bottom: agent.y + hud })
     }

@@ -148,7 +148,7 @@ function captionFooter(ctx: CanvasRenderingContext2D, agent: Agent, caption: Ret
   const gap = hasContext ? 12 * caption.footerUnit : 0
   const model = truncateText(ctx, agent.model ? formatModelName(agent.model) : 'Model unknown', Math.max(0, caption.width - contextWidth - gap))
   const width = measureTextCached(ctx, model) + gap + contextWidth
-  return { model, left: agent.x - width / 2, right: agent.x + width / 2 }
+  return { model, left: caption.centerX - width / 2, right: caption.centerX + width / 2 }
 }
 
 function drawCaptionContext(ctx: CanvasRenderingContext2D, agent: Agent, caption: ReturnType<typeof captionLayout>) {
@@ -402,8 +402,8 @@ function drawCaptionPanel(ctx: CanvasRenderingContext2D, agent: Agent,
   ctx.strokeStyle = '#71d8ff90'
   ctx.lineWidth = 1.1 * unit
   ctx.beginPath()
-  ctx.moveTo(agent.x, top - 5 * unit)
-  ctx.lineTo(agent.x, top)
+  ctx.moveTo(layout.startX, layout.startY)
+  ctx.lineTo(layout.endX, layout.endY)
   ctx.stroke()
   ctx.strokeStyle = hovered ? '#8ae2ff' : '#55bde6a0'
   ctx.lineWidth = 1.2 * unit
@@ -428,10 +428,10 @@ export function drawAgentLabel(ctx: CanvasRenderingContext2D, agent: Agent, r: n
   ctx.textBaseline = 'top'
   ctx.fillStyle = isHovered ? COLORS.holoBright : COLORS.textPrimary
   ctx.font = `500 ${fonts.name * unit}px "Segoe UI", sans-serif`
-  ctx.fillText(truncateText(ctx, agent.name, width), agent.x, y)
+  ctx.fillText(truncateText(ctx, agent.name, width), layout.centerX, y)
   ctx.fillStyle = agent.state === 'thinking' ? COLORS.holoBright : getStateColor(agent.state)
   ctx.font = `600 ${fonts.status * unit}px "Segoe UI", sans-serif`
-  ctx.fillText(truncateText(ctx, agentStatusLabel(agent, time), width), agent.x, y + line)
+  ctx.fillText(truncateText(ctx, agentStatusLabel(agent, time), width), layout.centerX, y + line)
   // The compact footer keeps model and remaining context together without competing with status.
   ctx.font = `${fonts.model * footerUnit}px "Segoe UI", sans-serif`
   ctx.fillStyle = COLORS.textMuted

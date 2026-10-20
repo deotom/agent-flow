@@ -1,3 +1,4 @@
+import { createCaptionPlacement } from './caption-placement'
 import { createToolCaptionLayout } from './tool-caption-layout'
 import { visibleRoundGraph } from '@/hooks/simulation/work-rounds'
 import { emptyContextBreakdown, type Agent } from './agent-types'
@@ -69,6 +70,7 @@ type GraphCollections = Pick<SimulationState, 'agents' | 'toolCalls' | 'edges' |
 /** Cache only graph collections, never transcript history or the simulation clock. */
 export function createGraphProjector() {
   const layoutTools = createToolCaptionLayout()
+  const layoutCaptions = createCaptionPlacement()
   let previous: (GraphCollections & { round: number; roundStart: number; currentOnly: boolean; compact: boolean; showAll: boolean; timelineEntries: SimulationState['timelineEntries'] }) | undefined
   let graph: GraphCollections | undefined
   return (state: SimulationState, currentOnly: boolean, compact: boolean, showAll = false): GraphCollections => {
@@ -78,7 +80,8 @@ export function createGraphProjector() {
       && (!showAll || previous.timelineEntries === state.timelineEntries)) return graph
     const scoped = showAll ? sessionGraphPresentation(state) : visibleRoundGraph(state, currentOnly)
     const projected = compact ? compactGraphPresentation(scoped) : scoped
-    graph = { agents: projected.agents, toolCalls: compact ? new Map() : layoutTools(projected.agents, projected.toolCalls),
+    const agents = layoutCaptions(projected.agents, projected.toolCalls, projected.edges, compact)
+    graph = { agents, toolCalls: compact ? new Map() : layoutTools(agents, projected.toolCalls),
       edges: compact ? projected.edges.filter(edge => edge.type === 'parent-child') : projected.edges,
       particles: compact ? projected.particles.filter(particle => ['dispatch', 'return', 'message'].includes(particle.type)) : projected.particles,
       discoveries: compact ? [] : projected.discoveries }

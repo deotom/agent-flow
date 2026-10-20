@@ -308,3 +308,6 @@ Local patch `local-2026.10.19.12` centers the model and CTX footer as one closel
 
 
 Local patch `local-2026.10.19.13` visually separates the existing three-row plaque into a lightly tinted name header, prominent status body and darker model/CTX footer. Faint cyan rules divide the sections within the original rounded frame. Flat clipped fills add no animation, blur, extra frame or layout height.
+
+
+Local patch `local-2026.10.20.1` lets each plaque dock below, above, beside or diagonally from its node while keeping text horizontal. Placement avoids node HUDs, other plaques, tool cards, conversation bubbles and sampled delegation/tool paths. A safe dock remains fixed until occupied; geometry decisions are cached independently of status clocks and fades. Short connectors meet the closest plaque edge. Drawing, tooltip hit areas, command-card avoidance and auto-fit share the dock geometry. Dock choices are per-view presentation metadata and do not move agents or rewrite transcripts.
