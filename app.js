@@ -1,7 +1,9 @@
 import { config } from './config.js'
+import { consumePairingFragment } from './pairing.mjs'
 import { createCipher, realtimeURL, joinMessage, broadcastMessage } from './protocol.mjs'
 
 const $ = id => document.getElementById(id)
+let scannedPairingKey = consumePairingFragment(window.location, window.history)
 let socket, cipher, retry, heartbeat, joinTimeout, staleTimer
 let generation = 0, active = false, attempt = 0, latest = null, lastSnapshot = 0, lastSentAt = 0, demoMode = false
 const statusText = { working: 'ทำงาน', thinking: 'กำลังคิด', completed: 'เสร็จแล้ว', idle: 'พัก', 'needs-input': 'รอคุณ', error: 'ผิดพลาด' }
@@ -15,13 +17,15 @@ function el(tag, className, text) {
 function connection(text, offline = false) {
   $('connection').textContent = text
   $('connection').classList.toggle('offline', offline)
+  $('remote-graph').contentWindow?.postMessage({ type: 'mobile-connection', connected: !offline }, window.location.origin)
 }
 function notice(text) { $('notice').textContent = text; $('notice').hidden = !text }
-function showDashboard() { $('pair-panel').hidden = true; $('dashboard').hidden = false }
+function showDashboard() { $('pair-panel').hidden = true; $('dashboard').hidden = false; document.body.classList.add('viewing') }
 function clearTimers() { clearTimeout(retry); clearTimeout(joinTimeout); clearInterval(heartbeat); clearInterval(staleTimer) }
 function stop() {
   active = false; generation++; clearTimers(); socket?.close(); socket = undefined
   cipher = undefined; latest = null; lastSnapshot = 0; lastSentAt = 0; demoMode = false
+  $('remote-graph').src = './graph.html'
 }
 function freshness() {
   if (demoMode) return
@@ -37,39 +41,11 @@ function freshness() {
 function render(snapshot) {
   latest = snapshot
   $('workspace').textContent = snapshot.workspace || 'Your workspace'
-  const sessions = snapshot.sessions.slice(0, 12)
-  const agents = sessions.flatMap(s => Array.isArray(s.agents) ? s.agents : [])
-  $('working').textContent = agents.filter(a => ['working', 'thinking'].includes(a.status)).length
-  $('needs').textContent = agents.filter(a => a.status === 'needs-input').length
-  $('sessions-count').textContent = sessions.length
-  const container = $('sessions'); container.replaceChildren()
-  if (!sessions.length) container.append(el('div', 'empty', 'เชื่อมต่อกับคอมแล้ว ยังไม่มีเซสชันในโฟลเดอร์ที่เลือก เริ่มงาน Claude หรือ Codex บนคอมแล้วสถานะจะแสดงที่นี่'))
-  for (const session of sessions) {
-    const card = el('article', 'session-card'), head = el('div', 'session-head')
-    head.append(el('h3', '', session.label || 'Session'), el('span', 'runtime', session.runtime || 'AGENT'))
-    const list = el('div', 'agents')
-    for (const agent of (session.agents || []).slice(0, 32)) {
-      const node = el('div', `agent${agent.parent ? ' child' : ''}`); node.dataset.status = agent.status
-      const content = el('div', 'agent-content')
-      content.append(el('span', 'agent-name', agent.name))
-      const detail = [agent.tool, agent.model, Number.isFinite(agent.tokens) ? `${new Intl.NumberFormat().format(agent.tokens)} tokens` : ''].filter(Boolean).join(' · ')
-      content.append(el('span', 'agent-detail', detail || (agent.parent ? `↳ ${agent.parent}` : 'Main agent')))
-      node.append(el('span', 'agent-dot', agent.parent ? '↳' : '✳'), content, el('span', 'agent-state', statusText[agent.status] || agent.status))
-      list.append(node)
-    }
-    if (!list.children.length) list.append(el('p', 'agent-detail', 'รอกิจกรรมเอเจนต์…'))
-    card.append(head, list, el('div', 'session-foot', session.status === 'completed' ? 'SESSION COMPLETED' : 'SESSION ACTIVE'))
-    container.append(card)
-  }
-  const activity = $('activity'); activity.replaceChildren()
-  const events = sessions.flatMap(s => s.recent || []).sort((a, b) => b.at - a.at).slice(0, 12)
-  if (!events.length) activity.append(el('li', '', 'ยังไม่มีกิจกรรมล่าสุด'))
-  for (const event of events) {
-    const row = el('li'), date = new Date(event.at)
-    row.append(el('span', 'activity-dot'), el('span', 'activity-text', `${event.agent} · ${eventText[event.type] || event.type}${event.tool ? ` / ${event.tool}` : ''}`), el('time', '', Number.isFinite(date.getTime()) ? date.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : ''))
-    activity.append(row)
-  }
+  $('remote-graph').contentWindow?.postMessage({ type: 'mobile-snapshot', snapshot: { ...snapshot, sentAt: snapshot.sentAt || Date.now() } }, window.location.origin)
 }
+window.addEventListener('message', event => {
+  if (event.source === $('remote-graph').contentWindow && event.origin === window.location.origin && event.data?.type === 'graph-ready' && latest) render(latest)
+})
 async function requestSnapshot() {
   const current = socket
   if (!cipher || current?.readyState !== WebSocket.OPEN) return
@@ -128,19 +104,19 @@ $('pair-form').addEventListener('submit', async event => {
   try {
     cipher = await createCipher($('pair-key').value.trim())
     $('pair-key').value = ''; active = true; showDashboard(); render({ workspace: 'Your workspace', sessions: [] })
-    $('updated').textContent = 'รอข้อมูลจากคอม…'; $('live-caption').textContent = 'สถานะจากคอมของคุณ'; connect()
+    $('updated').textContent = 'รอข้อมูลจากคอม…'; connect()
   } catch { $('pair-error').textContent = 'รหัสจับคู่ไม่ถูกต้อง กรุณาวางรหัส 43 ตัวอักษรจากคอม' }
 })
 $('show-key').addEventListener('click', () => {
   const input = $('pair-key'); input.type = input.type === 'password' ? 'text' : 'password'
   $('show-key').textContent = input.type === 'password' ? 'แสดง' : 'ซ่อน'
 })
-$('disconnect').addEventListener('click', () => { stop(); $('pair-panel').hidden = false; $('dashboard').hidden = true; $('pair-key').value = '' })
+$('disconnect').addEventListener('click', () => { stop(); document.body.classList.remove('viewing'); $('pair-panel').hidden = false; $('dashboard').hidden = true; $('pair-key').value = '' })
 document.addEventListener('visibilitychange', () => { if (!document.hidden && active) connect() })
 window.addEventListener('pageshow', event => { if (event.persisted && active) connect() })
 window.addEventListener('pagehide', () => { clearTimers(); generation++; socket?.close() })
 $('demo').addEventListener('click', () => {
-  stop(); demoMode = true; showDashboard(); connection('ตัวอย่าง'); notice('ข้อมูลจำลองสำหรับดูหน้าจอ ไม่ใช่สถานะงานจริง'); $('updated').textContent = 'DEMO WORKSPACE · ข้อมูลตัวอย่าง'; $('live-caption').textContent = 'ข้อมูลจำลอง'
+  stop(); demoMode = true; showDashboard(); connection('ตัวอย่าง'); notice('ข้อมูลจำลองสำหรับดูหน้าจอ ไม่ใช่สถานะงานจริง'); $('updated').textContent = 'DEMO WORKSPACE · ข้อมูลตัวอย่าง'
   render({ workspace: 'A good day to build.', sessions: [
     { id: 'demo-1', label: 'Session a3f82b91', runtime: 'CODEX', status: 'active', agents: [
       { name: 'Orchestrator', status: 'thinking', model: 'Codex', tokens: 24180 },
@@ -150,3 +126,8 @@ $('demo').addEventListener('click', () => {
     { id: 'demo-2', label: 'Session b1e29d04', runtime: 'CLAUDE', status: 'active', agents: [{ name: 'Orchestrator', status: 'needs-input', model: 'Claude' }], recent: [{ type: 'input_requested', agent: 'Orchestrator', at: Date.now() - 20_000 }] },
   ] })
 })
+if (scannedPairingKey) {
+  $('pair-key').value = scannedPairingKey
+  $('pair-form').requestSubmit()
+  scannedPairingKey = null
+}

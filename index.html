@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#f5f6f0">
+  <meta name="theme-color" content="#080e1b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Agent Flow">
   <meta name="referrer" content="no-referrer">
@@ -40,12 +40,7 @@
       <div class="title-row"><h1 id="workspace">Your workspace</h1><span id="connection" class="connection" role="status">กำลังเชื่อมต่อ</span></div>
       <p class="updated" id="updated">รอข้อมูลจากคอม…</p>
       <div id="notice" class="notice" hidden></div>
-      <div class="stats"><div><span class="stat-label">WORKING</span><strong id="working">—</strong><span>กำลังทำงาน</span></div><div><span class="stat-label">NEEDS YOU</span><strong id="needs">—</strong><span>รอการตอบกลับ</span></div><div><span class="stat-label">SESSIONS</span><strong id="sessions-count">—</strong><span>เซสชันที่ติดตาม</span></div></div>
-      <div class="section-title"><h2>Live sessions</h2><span id="live-caption">สถานะจากคอมของคุณ</span></div>
-      <div id="sessions" class="sessions"></div>
-      <div class="section-title activity-title"><h2>Latest activity</h2><span>กิจกรรมล่าสุด</span></div>
-      <ol id="activity" class="activity"></ol>
-      <footer><span>◈ END-TO-END ENCRYPTED</span><span>Agent Flow / Mobile</span></footer>
+      <iframe id="remote-graph" src="./graph.html" title="Agent Flow desktop graph" sandbox="allow-scripts allow-same-origin"></iframe>
     </section>
   </main>
 </body>
