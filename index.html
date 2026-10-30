@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f5f6f0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Agent Flow">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' wss://*.supabase.co; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <title>Agent Flow — Mobile</title>
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <main>
+    <header class="masthead"><a class="brand" href="./"><img src="./icon.svg" width="31" height="31" alt=""><span>agent flow<span class="brand-sub">MOBILE OBSERVATORY</span></span></a><span class="private-badge">↗ YOUR PRIVATE VIEW</span></header>
+    <section id="pair-panel" class="pair-panel">
+      <div class="eyebrow">YOUR AGENTS. WITHIN REACH.</div>
+      <h1>A little closer<br>to the work.</h1>
+      <p class="intro">ติดตามทีมเอเจนต์จากที่ไหนก็ได้<br>จับคู่กับคอมของคุณเพื่อเริ่มดูสถานะสด</p>
+      <div class="pair-card">
+        <span class="step">01 / CONNECT YOUR WORKSPACE</span>
+        <h2>จับคู่กับ Agent Flow</h2>
+        <p>วางรหัสจับคู่จากคอมของคุณ ข้อมูลจะถูกถอดรหัสบนอุปกรณ์นี้เท่านั้น</p>
+        <form id="pair-form">
+          <label for="pair-key">รหัสจับคู่</label>
+          <div class="key-field"><input id="pair-key" type="password" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="วางรหัสจับคู่ 43 ตัวอักษร" required minlength="43" maxlength="43"><button type="button" id="show-key" aria-label="แสดงรหัสจับคู่">แสดง</button></div>
+          <button class="primary" type="submit">เชื่อมต่อ workspace <span>↗</span></button>
+        </form>
+        <p id="pair-error" class="error" role="alert"></p>
+      </div>
+      <div class="privacy-note"><span class="lock-icon">◈</span><p><strong>Encrypted, from end to end.</strong><br>ส่งเฉพาะสถานะเอเจนต์ ไม่ส่งโค้ด บทสนทนา หรือผลลัพธ์คำสั่ง</p></div>
+      <button id="demo" class="text-button">ดูตัวอย่างหน้าจอ <span>→</span></button>
+    </section>
+    <section id="dashboard" hidden>
+      <div class="dashboard-top"><div class="eyebrow">WORKSPACE OVERVIEW</div><button id="disconnect" class="text-button">เลิกจับคู่ ↗</button></div>
+      <div class="title-row"><h1 id="workspace">Your workspace</h1><span id="connection" class="connection" role="status">กำลังเชื่อมต่อ</span></div>
+      <p class="updated" id="updated">รอข้อมูลจากคอม…</p>
+      <div id="notice" class="notice" hidden></div>
+      <div class="stats"><div><span class="stat-label">WORKING</span><strong id="working">—</strong><span>กำลังทำงาน</span></div><div><span class="stat-label">NEEDS YOU</span><strong id="needs">—</strong><span>รอการตอบกลับ</span></div><div><span class="stat-label">SESSIONS</span><strong id="sessions-count">—</strong><span>เซสชันที่ติดตาม</span></div></div>
+      <div class="section-title"><h2>Live sessions</h2><span id="live-caption">สถานะจากคอมของคุณ</span></div>
+      <div id="sessions" class="sessions"></div>
+      <div class="section-title activity-title"><h2>Latest activity</h2><span>กิจกรรมล่าสุด</span></div>
+      <ol id="activity" class="activity"></ol>
+      <footer><span>◈ END-TO-END ENCRYPTED</span><span>Agent Flow / Mobile</span></footer>
+    </section>
+  </main>
+</body>
+</html>
