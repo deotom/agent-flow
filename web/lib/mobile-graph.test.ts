@@ -30,8 +30,8 @@ test('remote snapshots use readable desktop names and remove stale nodes without
   const source = new RemoteState('workspace')
   source.lifecycle('session-started', { id: 's', label: 'ปิด lot1 ต่อ', status: 'active' })
   const rows = [
-    { id: 'orchestrator', name: 'ปิด lot1 ต่อ', isMain: true, runtime: 'codex', state: 'idle', tokensUsed: 100, tokensMax: 200 },
-    { id: '/root/open45_triage', parentId: 'orchestrator', state: 'thinking', model: 'gpt-6.1-sol' },
+    { id: 'orchestrator', name: 'ปิด lot1 ต่อ', isMain: true, runtime: 'claude', state: 'idle', tokensUsed: 100, tokensMax: 200 },
+    { id: '/root/open45_triage', parentId: 'orchestrator', runtime: 'codex', state: 'thinking', model: 'gpt-6.1-sol' },
   ]
   source.event({ sessionId: 's', time: 0, type: 'session_snapshot', payload: { agents: rows, round: 28 } })
   const adapter = new MobileGraphAdapter()
@@ -45,6 +45,8 @@ test('remote snapshots use readable desktop names and remove stale nodes without
   assert.equal(state.agents.get('orchestrator')?.name, 'ปิด lot1 ต่อ')
   assert.equal(state.agents.get('/root/open45_triage')?.name, 'Open45 Triage')
   assert.equal(state.agents.get('orchestrator')?.tokensMax, 200)
+  assert.equal(state.agents.get('orchestrator')?.runtime, 'claude')
+  assert.equal(state.agents.get('/root/open45_triage')?.runtime, 'codex')
   assert.equal(state.round, 28)
   Object.assign(state.agents.get('orchestrator')!, { x: 321, y: 123, pinned: true })
   source.event({ sessionId: 's', time: 1, type: 'session_snapshot', payload: { agents: rows.slice(0, 1), round: 29 } })

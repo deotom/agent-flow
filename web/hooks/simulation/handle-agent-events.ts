@@ -21,7 +21,7 @@ export function handleAgentSpawn(
   const isMain = asBoolean(payload.isMain)
   const task = typeof payload.task === 'string' ? payload.task : undefined
   const model = typeof payload.model === 'string' ? payload.model : state.timelineEntries.get(name)?.model
-  const runtime = payload.runtime === 'codex' ? 'codex' as const : undefined
+  const runtime = payload.runtime === 'codex' ? 'codex' as const : payload.runtime === 'claude' ? 'claude' as const : undefined
 
   // If the agent already exists (e.g. session resuming after inactivity),
   // reactivate it instead of replacing — preserves accumulated stats.

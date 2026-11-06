@@ -141,12 +141,12 @@ export const TopBar = memo(function TopBar({
       <div className="flex flex-wrap items-center justify-end gap-3" style={{ color: COLORS.textMuted }}>
         {isVSCode && <ConnectionIndicator status={connectionStatus} />}
         <span>{agentCount} agents</span>
-        <span>
+        {selectedSessionId?.startsWith('t3:') ? <span>T3 team view · token usage unavailable</span> : <span>
           {formatTokens(totalTokens)} tokens
           <span style={{ color: COLORS.complete + '65', marginLeft: 4 }}>
             <span title="Context cost estimate for visible agents, using configured model rates. Not billed usage.">~${estimatedContextCost.toFixed(2)}</span>
           </span>
-        </span>
+        </span>}
 
         {/* Mutually exclusive panel group */}
         <div className="flex items-center gap-1 px-1 py-0.5 rounded" style={{
@@ -155,14 +155,14 @@ export const TopBar = memo(function TopBar({
         }}>
           <ToggleButton active={showFileAttention} onClick={() => onTogglePanel('files')} style={{ background: showFileAttention ? undefined : 'transparent', border: 'none' }}><FlowIcon name="files" size={14} />Files</ToggleButton>
           <ToggleButton active={showTranscript} onClick={() => onTogglePanel('transcript')} style={{ background: showTranscript ? undefined : 'transparent', border: 'none' }}><FlowIcon name="chat" size={14} />Chat</ToggleButton>
-          <ToggleButton
+          {!selectedSessionId?.startsWith('t3:') && <ToggleButton
             active={showCostOverlay}
             onClick={() => onTogglePanel('cost')}
             activeColor={{ bg: COLORS.costActiveBg, text: COLORS.complete }}
             style={{ background: showCostOverlay ? undefined : 'transparent', border: 'none' }}
           >
             <FlowIcon name="cost" size={14} />Cost
-          </ToggleButton>
+          </ToggleButton>}
         </div>
 
         {/* Independent toggles */}

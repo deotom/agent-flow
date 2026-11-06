@@ -8,6 +8,7 @@ if (process.isMainFrame) contextBridge.exposeInMainWorld('agentFlowDesktop', {
   openLast: () => ipcRenderer.invoke('desktop:open-last'),
   togglePin: () => ipcRenderer.invoke('desktop:toggle-pin'),
   toggleWidget: () => ipcRenderer.invoke('desktop:toggle-widget'),
+  setRuntime: runtime => ipcRenderer.invoke('desktop:set-runtime', runtime),
   pairMobile: () => ipcRenderer.invoke('desktop:pair-mobile'),
   minimize: () => ipcRenderer.invoke('desktop:minimize'),
   close: () => ipcRenderer.invoke('desktop:close'),

@@ -1,6 +1,7 @@
 import type { AgentEvent, SessionInfo } from '../extension/src/protocol'
 
 export interface MobileAgent {
+  runtime?: 'claude' | 'codex'
   name: string; parent?: string; status: string; tool?: string; model?: string; tokens?: number
   displayName?: string; isMain?: boolean; tokensMax?: number; toolCalls?: number
 }
@@ -49,6 +50,7 @@ export class RemoteState {
       item.agents = rows.filter(row => typeof row?.id === 'string').slice(0, 32).map(row => ({
         name: row.id, displayName: short(row.name) || undefined, parent: typeof row.parentId === 'string' ? row.parentId : undefined,
         isMain: row.isMain === true, model: short(row.model) || undefined,
+        runtime: row.runtime === 'claude' || row.runtime === 'codex' ? row.runtime : undefined,
         status: ({ complete: 'completed', tool_calling: 'working', waiting_permission: 'needs-input' } as Record<string, string>)[row.state] || short(row.state, 'idle'),
         tool: short(row.currentTool) || undefined, tokens: numeric(row.tokensUsed), tokensMax: numeric(row.tokensMax), toolCalls: numeric(row.toolCalls),
       }))

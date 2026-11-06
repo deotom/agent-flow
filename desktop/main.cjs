@@ -13,9 +13,9 @@ const shellURL = pathToFileURL(path.join(__dirname, 'shell.html')).href
 let win
 let worker
 let pendingWorker
-let settings = { alwaysOnTop: true, lastFolder: '', widgetMode: true,
+let settings = { alwaysOnTop: true, lastFolder: '', widgetMode: true, runtime: 'auto',
   widgetSize: { width: 360, height: 360 }, fullSize: { width: 1120, height: 800 } }
-let state = { folder: '', url: '', busy: false, error: '' }
+let state = { folder: '', url: '', busy: false, error: '', sourceStatus: '' }
 let quitting = false
 
 function settingsPath() { return path.join(app.getPath('userData'), 'desktop-settings.json') }
@@ -26,6 +26,7 @@ function loadSettings() {
       alwaysOnTop: typeof saved.alwaysOnTop === 'boolean' ? saved.alwaysOnTop : true,
       lastFolder: typeof saved.lastFolder === 'string' ? saved.lastFolder : '',
       widgetMode: typeof saved.widgetMode === 'boolean' ? saved.widgetMode : true,
+      runtime: saved.runtime === 't3' ? 't3' : 'auto',
       widgetSize: validSize(saved.widgetSize, 260, 260, { width: 360, height: 360 }),
       fullSize: validSize(saved.fullSize, 620, 440, { width: 1120, height: 800 }),
     }
@@ -60,7 +61,7 @@ function retire(child) {
   })
 }
 
-async function openFolder(folder) {
+async function openFolder(folder, runtime = settings.runtime) {
   if (state.busy || quitting) return snapshot()
   state.busy = true
   state.error = ''
@@ -69,12 +70,18 @@ async function openFolder(folder) {
   try {
     folder = fs.realpathSync(folder)
     if (!fs.statSync(folder).isDirectory()) throw new Error('Please select a folder.')
-    candidate = utilityProcess.fork(path.join(__dirname, 'dist/worker.cjs'), [folder], {
+    candidate = utilityProcess.fork(path.join(__dirname, 'dist/worker.cjs'), [folder, runtime], {
       cwd: folder,
       serviceName: 'Agent Flow workspace',
       stdio: 'pipe',
     })
     pendingWorker = candidate
+    let sourceStatus = ''
+    candidate.on('message', message => {
+      if (message?.type !== 'source-status' || typeof message.message !== 'string') return
+      sourceStatus = message.message
+      if (worker === candidate) { state.sourceStatus = sourceStatus; publish() }
+    })
     let diagnostics = ''
     candidate.stderr?.on('data', chunk => { diagnostics = (diagnostics + chunk.toString()).slice(-2000) })
     candidate.stdout?.on('data', () => {})
@@ -101,7 +108,9 @@ async function openFolder(folder) {
     pendingWorker = undefined
     state.folder = folder
     state.url = url
+    state.sourceStatus = sourceStatus
     settings.lastFolder = folder
+    settings.runtime = runtime
     worker.once('exit', code => {
       if (worker !== candidate || quitting) return
       worker = undefined
@@ -177,6 +186,14 @@ function registerIPC() {
     'desktop:open-last': () => settings.lastFolder ? openFolder(settings.lastFolder) : snapshot(),
     'desktop:toggle-pin': togglePin,
     'desktop:toggle-widget': toggleWidget,
+    'desktop:set-runtime': async value => {
+      if (value !== 'auto' && value !== 't3') throw new Error('Unknown source mode')
+      if (state.busy || value === settings.runtime) return snapshot()
+      if (state.folder) return openFolder(state.folder, value)
+      settings.runtime = value
+      saveSettings(); publish()
+      return snapshot()
+    },
     'desktop:minimize': () => win.minimize(),
     'desktop:close': () => win.close(),
     'desktop:resize-widget': resizeWidget,

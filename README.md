@@ -17,6 +17,32 @@ Claude Code is powerful, but its execution is a black box — you see the final 
 
 ## Features
 
+### T3 team mode (local desktop and VS Code)
+
+Choose **T3 teams** in the desktop workspace bar, then select the project folder
+used in T3. A parent folder also includes its projects. The viewer groups
+app-owned child threads under their lead using T3's explicit delegation IDs,
+including Claude → Codex work and nested workers. Forks remain separate sessions.
+Use **ทั้ง session / whole session** to include completed workers in the graph.
+The Tasks view distinguishes completion from a result actually observed by the lead.
+
+For VS Code, set `agentVisualizer.runtime` to `t3` and reload the window. For the
+standalone relay, set `AGENT_FLOW_RUNTIME=t3` before starting it. Existing Local /
+auto mode keeps watching native Claude/Codex logs and does not read T3 data.
+
+This initial adapter reads the local T3 V2 SQLite projections every two seconds
+in a short read-only transaction; it does not call T3 tools, change sessions,
+or need authentication tokens. Default path: `~/.t3/userdata/statev2.sqlite`;
+override with `AGENT_FLOW_T3_DB` for another local profile. Node 22.13+ with
+`node:sqlite` is required (included with the desktop build).
+Verified against the T3 0.1.7 V2 schema. Remote T3 hosts and older schemas are
+not supported by this adapter; unavailable/incompatible databases report a
+diagnostic instead of falling back to unrelated native sessions.
+
+T3 mode currently shows team membership, models, latest-run tool activity and
+task/result-delivery status. It does not import chat transcripts, command output,
+token usage or billing estimates. Unknown token usage is not a zero-cost claim.
+
 - **Live agent visualization**: Watch agent execution as an interactive node graph with real-time tool calls, branching, and return flows
 - **Claude Code + Codex**: Auto-detects sessions from both runtimes concurrently and shows them side-by-side, or restrict to one via the `agentVisualizer.runtime` setting
 - **Claude Code hooks**: Lightweight HTTP hook server receives events directly from Claude Code for zero-latency streaming

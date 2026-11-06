@@ -4,6 +4,7 @@ import { JsonlEventSource } from './event-source'
 import { WebviewToExtensionMessage, SessionInfo } from './protocol'
 import { startClaudeRuntime } from './claude-runtime'
 import { startCodexRuntime } from './codex-runtime'
+import { startT3Runtime } from './t3-runtime'
 import { promptHookSetupIfNeeded, configureClaudeHooks, isDisable1MContext } from './hooks-config'
 import { createLogger } from './logger'
 import type { AgentRuntime, AgentRuntimeMode } from './session-runtime'
@@ -26,7 +27,7 @@ let runtimes: AgentRuntime[] = []
 
 function readConfiguredMode(): ConfiguredRuntimeMode {
   const raw = vscode.workspace.getConfiguration('agentVisualizer').get<string>('runtime', 'auto')
-  return raw === 'claude' || raw === 'codex' ? raw : 'auto'
+  return raw === 'claude' || raw === 'codex' || raw === 't3' ? raw : 'auto'
 }
 
 interface StartRuntimesResult {
@@ -40,6 +41,10 @@ async function startRuntimes(
 ): Promise<StartRuntimesResult> {
   const runtimes: AgentRuntime[] = []
   const failures: AgentRuntimeMode[] = []
+  if (mode === 't3') {
+    try { runtimes.push(startT3Runtime(context)) }
+    catch (err) { log.error('T3 runtime failed to start:', err); failures.push('t3') }
+  }
   if (mode === 'claude' || mode === 'auto') {
     log.info('Starting Claude runtime...')
     try { runtimes.push(await startClaudeRuntime(context)) }

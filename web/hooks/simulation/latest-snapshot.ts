@@ -22,11 +22,12 @@ export function restoreLatestSnapshot(event: SimulationEvent, prev: SimulationSt
     const allowed = ['idle', 'thinking', 'tool_calling', 'complete', 'error', 'paused', 'waiting_permission']
     const snapshot: Agent = { ...agent, name: typeof row.name === 'string' ? row.name.slice(0, 80) : formatAgentName(row.id),
       state: allowed.includes(row.state) ? row.state : 'idle',
-      tokensUsed: Number(row.tokensUsed) || 0, tokensMax: Number(row.tokensMax) > 0 ? Number(row.tokensMax) : agent.tokensMax,
+      tokensUsed: Number(row.tokensUsed) || 0, tokensMax: Number(row.tokensMax) >= 0 ? Number(row.tokensMax) : agent.tokensMax,
       toolCalls: Number(row.toolCalls) || 0, timeAlive: Number(row.timeAlive) || 0, spawnTime: Number(row.spawnTime) || 0,
       round: state.round, currentTool: typeof row.currentTool === 'string' ? row.currentTool : undefined,
       contextRecharge: row.compacting === true ? { progress: 0 } : undefined,
       waitingForInput: row.waitingForInput === true, opacity: row.state === 'complete' && !row.isMain ? 0 : 1, scale: 1,
+      task: typeof row.task === 'string' ? row.task : undefined,
       contextBreakdown: emptyContextBreakdown(), messageBubbles: [] }
     const previous = event.payload.preserveLayout === true ? prev.agents.get(row.id) : undefined
     if (previous) Object.assign(snapshot, { x: previous.x, y: previous.y, vx: previous.vx, vy: previous.vy, pinned: previous.pinned })
@@ -42,6 +43,17 @@ export function restoreLatestSnapshot(event: SimulationEvent, prev: SimulationSt
       id, name, parentId, isMain, runtime, model, round, tokensUsed, tokensMax, toolCalls, timeAlive, spawnTime, state: snapshot.state } })
   }
   state.particles = []
+  if (Array.isArray(event.payload.delegations)) {
+    for (const row of event.payload.delegations) {
+      if (!row || typeof row.id !== 'string' || typeof row.child !== 'string' || typeof row.parent !== 'string') continue
+      if (!state.agents.has(row.child) || !state.agents.has(row.parent)) continue
+      if (!['working', 'completed', 'returned', 'received', 'aborted'].includes(row.stage)) continue
+      state.delegations.set(row.id, { id: row.id, child: row.child, parent: row.parent, name: String(row.name || ''),
+        model: String(row.model || ''), task: String(row.task || ''), round: state.round, startTime: Number(row.startTime) || 0,
+        stage: row.stage, summary: String(row.summary || ''), historical: true })
+      state.delegations.delete(`snapshot-${row.child}`)
+    }
+  }
   if (event.payload.preserveHistory === true) {
     state.conversations = prev.conversations
     state.delegations = new Map([...prev.delegations, ...state.delegations])

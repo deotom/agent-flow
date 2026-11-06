@@ -7,6 +7,8 @@ function sendMode() {
   if (currentURL) element('graph').contentWindow.postMessage({ type: 'desktop:widget', widget: widgetMode }, currentURL)
 }
 function render(state) {
+  element('source-mode').value = state.runtime || 'auto'
+  element('source-mode').disabled = state.busy
   widgetMode = state.widgetMode
   document.body.classList.toggle('widget', widgetMode)
   element('pin-button').setAttribute('aria-pressed', String(state.alwaysOnTop))
@@ -21,14 +23,15 @@ function render(state) {
   element('workspace-label').title = state.folder
   element('connection-label').textContent = state.busy ? 'CONNECTING' : state.url ? 'CONNECTED' : 'READY'
   element('connection-dot').classList.toggle('connected', Boolean(state.url))
-  element('error').textContent = state.error
-  element('error').hidden = !state.error
+  const sourceError = state.runtime === 't3' && state.sourceStatus && state.sourceStatus !== 'T3 local teams (read-only)' ? state.sourceStatus : ''
+  element('error').textContent = state.error || sourceError
+  element('error').hidden = !(state.error || sourceError)
   element('welcome').hidden = Boolean(state.url)
   element('graph').hidden = !state.url
   element('open-last').hidden = !state.lastFolder
   element('last-folder').textContent = state.lastFolder
   element('last-folder').title = state.lastFolder
-  element('footer-status').textContent = state.busy ? 'OPENING WORKSPACE…' : state.url ? 'WATCHING LOCAL AGENT SESSIONS' : 'LOCAL WORKSPACE VIEWER'
+  element('footer-status').textContent = state.busy ? 'OPENING WORKSPACE…' : state.runtime === 't3' ? 'T3 TEAMS · READ ONLY' : state.url ? 'WATCHING LOCAL AGENT SESSIONS' : 'LOCAL WORKSPACE VIEWER'
   if (state.url !== currentURL) {
     currentURL = state.url
     element('graph').src = state.url ? `${state.url}/?desktop=1&widget=${widgetMode ? '1' : '0'}` : 'about:blank'
@@ -40,6 +43,7 @@ async function act(action) {
   catch (error) { element('error').textContent = error.message; element('error').hidden = false }
 }
 element('folder-button').addEventListener('click', () => act(api.chooseFolder))
+element('source-mode').addEventListener('change', event => act(() => api.setRuntime(event.target.value)))
 element('welcome-choose').addEventListener('click', () => act(api.chooseFolder))
 element('open-last').addEventListener('click', () => act(api.openLast))
 element('pin-button').addEventListener('click', () => act(api.togglePin))

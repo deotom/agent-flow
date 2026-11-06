@@ -1,6 +1,6 @@
 import { formatAgentName } from './utils'
 
-type AgentRow = { name: string; displayName?: string; parent?: string; isMain?: boolean; status: string; model?: string; tokens?: number; tokensMax?: number; toolCalls?: number; tool?: string }
+type AgentRow = { name: string; displayName?: string; parent?: string; isMain?: boolean; runtime?: string; status: string; model?: string; tokens?: number; tokensMax?: number; toolCalls?: number; tool?: string }
 export interface RemoteGraphSnapshot {
   sentAt: number
   sessions: { id: string; label: string; status: string; lastActivity: number; startTime?: number; round?: number; runtime?: string; agents: AgentRow[] }[]
@@ -25,7 +25,7 @@ export class MobileGraphAdapter {
       messages.push({ type: 'agent-event-batch', events: [{ type: 'session_snapshot', sessionId: session.id,
         time: Math.max(0, (snapshot.sentAt - this.start) / 1000), payload: { round: session.round ?? 0, preserveLayout: true,
           agents: session.agents.map(a => ({ id: a.name, name: a.displayName || (a.isMain ? session.label : formatAgentName(a.name)),
-            parentId: a.parent, isMain: a.isMain ?? !a.parent, runtime: session.runtime, model: a.model, state: graphState(a),
+            parentId: a.parent, isMain: a.isMain ?? !a.parent, runtime: a.runtime ?? session.runtime, model: a.model, state: graphState(a),
             tokensUsed: a.tokens || 0, tokensMax: a.tokensMax, toolCalls: a.toolCalls, currentTool: a.tool,
             waitingForInput: a.status === 'needs-input', tools: a.tool ? [{ callId: `mobile-${a.name}-${a.tool}`, tool: a.tool, args: '' }] : [] })) } }] })
     }

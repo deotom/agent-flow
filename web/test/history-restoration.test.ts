@@ -39,6 +39,23 @@ it('restores a long history quietly across batches, preserves transcripts, and a
   assert.ok(state.particles.length > 0)
 })
 
+it('restores authoritative T3 task delivery without treating completion as receipt or inventing token usage', () => {
+  const ctx: ProcessEventContext = { syncForceSimulation() {}, findToolSlot: () => ({ x: 0, y: 0 }), getContextWindowSize: () => 200000, blockIdCounter: { current: 0 }, skipForceSync: true }
+  const state = processEvent({ type: 'session_snapshot', time: 10, payload: {
+    source: 't3', agents: [
+      { id: 'lead', name: 'Lead', isMain: true, state: 'thinking', runtime: 'claude', tokensMax: 0 },
+      { id: 'worker', name: 'SQL reviewer', parentId: 'lead', state: 'complete', runtime: 'codex', tokensMax: 0, task: 'Inspect SQL' },
+    ], delegations: [{ id: 'task', child: 'worker', parent: 'lead', stage: 'completed', name: 'SQL reviewer', task: 'Inspect SQL', summary: 'Ready' }],
+  } }, createEmptyState(), ctx)
+  assert.equal(state.agents.get('worker')!.parentId, 'lead')
+  assert.equal(state.agents.get('worker')!.runtime, 'codex')
+  assert.equal(state.agents.get('worker')!.tokensMax, 0)
+  assert.equal(state.agents.get('worker')!.task, 'Inspect SQL')
+  assert.equal(state.delegations.get('task')!.stage, 'completed')
+  assert.equal(state.delegations.size, 1)
+  assert.ok(state.edges.some(edge => edge.from === 'lead' && edge.to === 'worker'))
+})
+
 it('shows a new result for a restored pending call and allows explicit history review', () => {
   const ctx: ProcessEventContext = {
     syncForceSimulation() {}, findToolSlot: () => ({ x: 0, y: 0 }),

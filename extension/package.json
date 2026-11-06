@@ -102,11 +102,12 @@
         },
         "agentVisualizer.runtime": {
           "type": "string",
-          "enum": ["auto", "claude", "codex"],
+          "enum": ["auto", "claude", "codex", "t3"],
           "enumDescriptions": [
             "Watch both Claude Code and Codex sessions concurrently (default)",
             "Watch only Claude Code sessions",
-            "Watch only Codex sessions"
+            "Watch only Codex sessions",
+            "Watch local T3 teams with explicit cross-provider delegation links (Node 22.13+)"
           ],
           "default": "auto",
           "description": "Which agent runtime(s) to watch. In auto mode, runtimes you don't use are harmless no-ops (no session directory = nothing to scan)."

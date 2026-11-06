@@ -52,6 +52,7 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
     utilityProcess: { fork(_file, args, options) {
       assert.equal(options.cwd, args[0])
       const child = new EventEmitter()
+      child.args = args
       child.postMessage = value => { if (value === 'stop') { child.stopped = true; setImmediate(() => child.emit('exit', 0)) } }
       child.kill = () => { child.stopped = true; child.emit('exit', 1) }
       children.push(child)
@@ -121,7 +122,18 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   assert.equal(saved.alwaysOnTop, false)
   assert.equal(saved.lastFolder, fs.realpathSync(folders[1]))
   assert.equal(saved.widgetMode, true)
+  assert.equal(invoke('state').runtime, 'auto')
+  await assert.rejects(invoke('set-runtime', 'invalid'), /Unknown source mode/)
+  const previousWorker = children.at(-2)
+  const t3State = await invoke('set-runtime', 't3')
+  assert.equal(t3State.runtime, 't3')
+  assert.equal(children.at(-1).args[1], 't3')
+  assert.equal(previousWorker.stopped, true)
+  failNext = true
+  const failedMode = await invoke('set-runtime', 'auto')
+  assert.equal(failedMode.runtime, 't3', 'Failed mode change keeps the old source and worker')
+  assert.equal(children.at(-2).stopped, undefined)
   app.emit('before-quit', { preventDefault() {} })
   await new Promise(resolve => setImmediate(resolve))
-  assert.equal(children[1].stopped, true)
+  assert.equal(children.at(-2).stopped, true)
 })

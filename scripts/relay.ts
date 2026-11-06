@@ -15,6 +15,7 @@ import { readNewFileLines, foldPathCase } from '../extension/src/fs-utils'
 import { scanSubagentsDir, readSubagentNewLines } from '../extension/src/subagent-watcher'
 import { handlePermissionDetection } from '../extension/src/permission-detection'
 import { CodexSessionWatcher } from '../extension/src/codex-session-watcher'
+import { T3SessionWatcher } from '../extension/src/t3-session-watcher'
 import {
   INACTIVITY_TIMEOUT_MS, SCAN_INTERVAL_MS, ACTIVE_SESSION_AGE_S, POLL_FALLBACK_MS,
   SESSION_ID_DISPLAY, SYSTEM_PROMPT_BASE_TOKENS, ORCHESTRATOR_NAME,
@@ -360,7 +361,7 @@ export interface Relay {
   dispose: () => void
 }
 
-export type RelayRuntimeMode = 'claude' | 'codex' | 'auto'
+export type RelayRuntimeMode = 'claude' | 'codex' | 'auto' | 't3'
 
 export interface RelayOptions {
   workspace: string
@@ -370,12 +371,13 @@ export interface RelayOptions {
    *  Mirrors the extension's `agentVisualizer.runtime` setting so users of the
    *  dev relay and `npx agent-flow-app` have a way to opt out of one runtime. */
   runtime?: RelayRuntimeMode
+  onSourceStatus?: (source: string) => void
 }
 
 function resolveRuntimeMode(explicit?: RelayRuntimeMode): RelayRuntimeMode {
-  if (explicit === 'claude' || explicit === 'codex' || explicit === 'auto') return explicit
+  if (explicit === 'claude' || explicit === 'codex' || explicit === 'auto' || explicit === 't3') return explicit
   const raw = process.env.AGENT_FLOW_RUNTIME
-  return raw === 'claude' || raw === 'codex' ? raw : 'auto'
+  return raw === 'claude' || raw === 'codex' || raw === 't3' ? raw : 'auto'
 }
 
 export async function createRelay(options: RelayOptions): Promise<Relay> {
@@ -438,6 +440,19 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
   // lifecycle 'started' event in CodexSessionWatcher.attachSession, so
   // wiring both would double-broadcast session-started to SSE clients.
   let codexWatcher: CodexSessionWatcher | null = null
+  let t3Watcher: T3SessionWatcher | undefined
+  if (mode === 't3') {
+    t3Watcher = new T3SessionWatcher([workspace])
+    t3Watcher.onEvent(broadcastEvent)
+    t3Watcher.onSessionLifecycle(event => broadcastSessionLifecycle(event.type, event.sessionId, event.label))
+    t3Watcher.onSessionsChanged(sessions => broadcast(JSON.stringify({ type: 'session-list', sessions })))
+    t3Watcher.onDiagnostic(source => {
+      broadcast(JSON.stringify({ type: 'connection-status', status: source === 'T3 local teams (read-only)' ? 'connected' : 'watching', source }))
+      options.onSourceStatus?.(source)
+    })
+    t3Watcher.start()
+    options.onSourceStatus?.(t3Watcher.diagnostic)
+  }
   let remoteSnapshotTimer: ReturnType<typeof setInterval> | undefined
   if (wantCodex) {
     codexWatcher = new CodexSessionWatcher(workspace)
@@ -519,9 +534,15 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
         })
       }
       if (codexWatcher) sessionList.push(...codexWatcher.getActiveSessions())
+      if (t3Watcher) {
+        sessionList.push(...t3Watcher.getActiveSessions())
+        sendSSE(res, { type: 'connection-status', status: t3Watcher.diagnostic === 'T3 local teams (read-only)' ? 'connected' : 'watching', source: t3Watcher.diagnostic })
+      }
       if (sessionList.length > 0) {
         sendSSE(res, { type: 'session-list', sessions: sessionList })
       }
+
+      t3Watcher?.replaySessionStart(undefined, { onSnapshot: event => sendSSE(res, { type: 'agent-event', event }) })
 
       // Replay buffered events for the most recent active session
       const sorted = [...sessionList].sort((a, b) => {
@@ -574,6 +595,7 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
         }
       }
       codexWatcher?.dispose()
+      t3Watcher?.dispose()
     },
   }
 }

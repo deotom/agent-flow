@@ -40,7 +40,7 @@ export function AgentVisualizer({ desktopWidget = false }: { desktopWidget?: boo
   const [toolbarBottom, setToolbarBottom] = useState(112)
   const [currentRoundOnly, setCurrentRoundOnly] = useState(true)
   const [showAllAgents, setShowAllAgents] = useState(false)
-  useEffect(() => setShowAllAgents(false), [bridge.selectedSessionId])
+  useEffect(() => setShowAllAgents(bridge.selectedSessionId?.startsWith('t3:') === true), [bridge.selectedSessionId])
 
   const {
     frameRef,
