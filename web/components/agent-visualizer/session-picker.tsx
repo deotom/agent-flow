@@ -31,7 +31,7 @@ export function SessionPicker({ sessions, selectedSessionId, onSelectSession, on
       <div className="overflow-y-auto" style={{ maxHeight: 'min(320px, 50vh)', overscrollBehavior: 'contain' }}>
         {!results.length && <p className="p-2 text-xs">No matching sessions</p>}
         {results.map(session => <div key={session.id} className="flex items-center gap-1">
-          <button aria-current={session.id === selectedSessionId ? 'true' : undefined} onClick={() => { onSelectSession(session.id); setOpen(false) }} className="min-w-0 flex-1 p-2 text-left rounded text-xs" style={{ background: session.id === selectedSessionId ? COLORS.tabSelectedBg : undefined }}>
+          <button aria-current={session.id === selectedSessionId ? 'true' : undefined} onClick={() => { onSelectSession(session.id); setOpen(false) }} className="min-w-0 flex-1 p-2 text-left rounded text-xs" style={{ color: COLORS.textPrimary, background: session.id === selectedSessionId ? COLORS.tabSelectedBg : undefined }}>
             <div className="truncate" title={session.label}>{session.label}</div><div className="opacity-60">{session.status === 'active' ? 'Active' : 'Completed'} · {new Date(session.lastActivityTime).toLocaleString()}</div>
           </button>
           {onCloseSession && <button aria-label={`Close session ${session.label}`} className="flow-icon-button" onClick={() => onCloseSession(session.id)}><FlowIcon name="close" size={12} /></button>}

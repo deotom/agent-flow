@@ -30,7 +30,7 @@ const MIME_TYPES: Record<string, string> = {
 }
 
 export function serveStatic(req: http.IncomingMessage, res: http.ServerResponse) {
-  const url = req.url || '/'
+  const url = (req.url || '/').split('?')[0]
 
   if (url === '/' || url === '/index.html') {
     res.writeHead(200, { 'Content-Type': 'text/html' })

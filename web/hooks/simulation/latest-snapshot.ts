@@ -28,6 +28,8 @@ export function restoreLatestSnapshot(event: SimulationEvent, prev: SimulationSt
       contextRecharge: row.compacting === true ? { progress: 0 } : undefined,
       waitingForInput: row.waitingForInput === true, opacity: row.state === 'complete' && !row.isMain ? 0 : 1, scale: 1,
       contextBreakdown: emptyContextBreakdown(), messageBubbles: [] }
+    const previous = event.payload.preserveLayout === true ? prev.agents.get(row.id) : undefined
+    if (previous) Object.assign(snapshot, { x: previous.x, y: previous.y, vx: previous.vx, vy: previous.vy, pinned: previous.pinned })
     state.agents.set(row.id, snapshot)
     if (snapshot.parentId && snapshot.state !== 'complete') {
       const id = `snapshot-${snapshot.id}`
@@ -40,7 +42,12 @@ export function restoreLatestSnapshot(event: SimulationEvent, prev: SimulationSt
       id, name, parentId, isMain, runtime, model, round, tokensUsed, tokensMax, toolCalls, timeAlive, spawnTime, state: snapshot.state } })
   }
   state.particles = []
-  state.conversations = new Map()
+  if (event.payload.preserveHistory === true) {
+    state.conversations = prev.conversations
+    state.delegations = new Map([...prev.delegations, ...state.delegations])
+    state.timelineEntries = new Map([...prev.timelineEntries, ...[...state.timelineEntries].map(([id, entry]) =>
+      [id, { ...entry, blocks: prev.timelineEntries.get(id)?.blocks ?? entry.blocks }] as const)])
+  } else state.conversations = new Map()
   state.toolCalls = new Map([...state.toolCalls].map(([id, tool]) => [id, { ...tool, opacity: 1 }]))
   state.edges = state.edges.map(edge => ({ ...edge, opacity: 1 }))
   return state

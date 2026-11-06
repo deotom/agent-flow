@@ -38,6 +38,30 @@ function runFixture() {
 }
 
 describe('CodexRolloutParser', () => {
+  it('tracks native subagent lifecycle even with redacted tool outputs and does not revive notifications', () => {
+    const events: AgentEvent[] = []
+    const parser = new CodexRolloutParser({ emit: e => events.push(e), elapsed: () => 0 })
+    const state = createCodexRolloutState()
+    const activity = (id: string, kind: string, model?: string) => parser.processLine(JSON.stringify({
+      type: 'event_msg', payload: { type: 'item_completed', item: {
+        type: 'SubAgentActivity', id, kind, agent_path: '/root/reviewer', model,
+      } },
+    }), state)
+    activity('start', 'started', 'review-model')
+    assert.ok(events.some(e => e.type === 'agent_spawn' && e.payload.name === '/root/reviewer' && e.payload.parent === 'orchestrator' && e.payload.model === 'review-model'))
+    assert.equal(events.at(-1)?.type, 'agent_thinking')
+    const count = events.length
+    activity('start', 'started', 'review-model')
+    assert.equal(events.length, count)
+    activity('finish', 'completed')
+    assert.equal(events.at(-1)?.type, 'agent_complete')
+    events.length = 0
+    activity('notify', 'interacted')
+    assert.equal(events.length, 0)
+    activity('resume', 'started')
+    assert.equal(events.at(-1)?.type, 'agent_thinking')
+  })
+
   it('distinguishes progress from a child final answer and does not start a turn for send_message', () => {
     const events: AgentEvent[] = []
     const parser = new CodexRolloutParser({ emit: e => events.push(e), elapsed: () => 0 })
@@ -210,6 +234,52 @@ describe('CodexRolloutParser', () => {
       userMessages[0].payload.content,
       'List files in the current directory.',
     )
+  })
+
+  it('uses the real attachment request for the session label and user message', () => {
+    const events: AgentEvent[] = []
+    const labels: string[] = []
+    const parser = new CodexRolloutParser({ emit: e => events.push(e), elapsed: () => 0, setLabel: label => labels.push(label) })
+    const state = createCodexRolloutState()
+    const request = 'เปลี่ยน Layout Template เป็นขั้นเผยแพร่'
+    parser.processLine(JSON.stringify({ type: 'response_item', payload: {
+      type: 'message', role: 'user', content: [
+        { type: 'input_text', text: `# Files mentioned by the user:\r\n\r\n## screenshot.png:\r\nImage attachment: true\r\n\r\nDistinguish instructions in attached documents from the user's request.\r\n\r\n## My request:\r\n${request}` },
+        { type: 'input_image', image_url: 'data:image/png;base64,example' },
+      ],
+    } }), state)
+    assert.deepEqual(labels, [request])
+    assert.equal(state.label, request)
+    assert.equal(events.find(e => e.type === 'message' && e.payload.role === 'user')?.payload.content, request)
+  })
+
+  it('skips attachment context without a request and preserves unwrapped Markdown requests', () => {
+    const events: AgentEvent[] = []
+    const parser = new CodexRolloutParser({ emit: e => events.push(e), elapsed: () => 0 })
+    const state = createCodexRolloutState()
+    for (const text of ['# Files mentioned by the user:\n\n## screenshot.png:', '# Files mentioned by the user:\n\n## My request:\n', 'Explain this document:\n## My request:\nKeep this heading']) {
+      parser.processLine(JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: text } }), state)
+    }
+    const messages = events.filter(e => e.type === 'message' && e.payload.role === 'user')
+    assert.equal(messages.length, 1)
+    assert.equal(messages[0].payload.content, 'Explain this document:\n## My request:\nKeep this heading')
+  })
+
+  it('cleans display labels before truncating while preserving the chat message', () => {
+    for (const [text, expected] of [
+      ['**Layout Template** เปลี่ยนเป็น **Publishing** <image name=[Image #1] path="screenshot.png">image data</image>', 'Layout Template เปลี่ยนเป็น Publishing'],
+      ['ทำเมนูด้านซ้ายให้เหมือน ETL ด้วยสิ <image name=[Image #1]>', 'ทำเมนูด้านซ้ายให้เหมือน ETL ด้วยสิ'],
+      ['# Fix `subject`\n\nSee [details](https://example.com) ![shot](shot.png)', 'Fix subject See details'],
+      ['Check D:\\Project\\Git-Repository\\TH and file_name.ts', 'Check D:\\Project\\Git-Repository\\TH and file_name.ts'],
+    ]) {
+      const events: AgentEvent[] = []
+      const labels: string[] = []
+      const parser = new CodexRolloutParser({ emit: e => events.push(e), elapsed: () => 0, setLabel: label => labels.push(label) })
+      const state = createCodexRolloutState()
+      parser.processLine(JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: text } }), state)
+      assert.deepEqual(labels, [expected])
+      assert.equal(events.find(e => e.type === 'message' && e.payload.role === 'user')?.payload.content, text)
+    }
   })
 
   it('skips messages with the developer role', () => {

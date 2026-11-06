@@ -27,3 +27,4 @@ extension/.vscode/
 extension/package-lock.json
 
 .DS_Store
+mobile/graph/

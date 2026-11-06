@@ -10,6 +10,7 @@ import { exec, execFile } from 'child_process'
 import { createRelay } from '../../scripts/relay'
 import { createTelemetryClient } from '../../scripts/telemetry'
 import { serveStatic } from './static'
+import { listenOnAvailablePort } from './listen'
 
 interface ServerOptions {
   port: number
@@ -45,15 +46,21 @@ export async function startServer(options: ServerOptions) {
     res.end('Not found')
   })
 
-  server.listen(port, '127.0.0.1', () => {
-    const url = `http://127.0.0.1:${port}`
+  try {
+    const boundPort = await listenOnAvailablePort(server, port)
+    if (boundPort !== port) console.log(`Port ${port} is busy; using ${boundPort} instead.`)
+    const url = `http://127.0.0.1:${boundPort}`
     console.log(`Server running at ${url}`)
     console.log('Waiting for agent events...\n')
 
     if (openBrowser) {
       openURL(url)
     }
-  })
+  } catch (error) {
+    relay.dispose()
+    await telemetry.dispose()
+    throw error
+  }
 
   // Cleanup on exit. Idempotent — repeat signals (Ctrl+C spam, SIGTERM+SIGHUP,
   // etc.) would otherwise emit duplicate session_end events and race the

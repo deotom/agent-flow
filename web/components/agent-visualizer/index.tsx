@@ -34,8 +34,9 @@ import { AgentScopeSwitch } from './agent-scope-switch'
 import { sessionGraphPresentation } from '@/lib/graph-presentation'
 import { useAudioEffects } from "@/hooks/use-audio-effects"
 
-export function AgentVisualizer() {
+export function AgentVisualizer({ desktopWidget = false }: { desktopWidget?: boolean } = {}) {
   const bridge = useVSCodeBridge()
+  const compact = bridge.compact || desktopWidget
   const [toolbarBottom, setToolbarBottom] = useState(112)
   const [currentRoundOnly, setCurrentRoundOnly] = useState(true)
   const [showAllAgents, setShowAllAgents] = useState(false)
@@ -81,6 +82,7 @@ export function AgentVisualizer() {
   const selection = useSelectionState({ agents: showAllAgents ? sessionAgents : agents, toolCalls, discoveries })
   const activeAgentCount = [...agents.values()].filter(agent => agent.isMain || agent.state !== 'complete').length
   const [zoomToFitTrigger, setZoomToFitTrigger] = useState(0)
+  useEffect(() => { setZoomToFitTrigger(value => value + 1) }, [desktopWidget])
   const scopeControl = <AgentScopeSwitch showAll={showAllAgents} activeCount={activeAgentCount} totalCount={Math.max(timelineEntries.size, agents.size)}
     onChange={all => { setShowAllAgents(all); selection.clearAgent(); setZoomToFitTrigger(value => value + 1) }} />
 
@@ -101,7 +103,7 @@ export function AgentVisualizer() {
   const [isReviewing, setIsReviewing] = useState(false)
   useEffect(() => bridge.setReviewing(isReviewing), [isReviewing, bridge.setReviewing])
   const displayAgents = useMemo(() => showAllAgents ? sessionAgents : !currentRoundOnly || isReviewing ? agents : new Map([...agents].filter(([, agent]) => agent.isMain || (agent.round ?? 0) === round)), [agents, sessionAgents, showAllAgents, currentRoundOnly, isReviewing, round])
-  const { isMuted, seekingRef, handleToggleMute } = useAudioEffects(agents, toolCalls, isReviewing || bridge.compact)
+  const { isMuted, seekingRef, handleToggleMute } = useAudioEffects(agents, toolCalls, isReviewing || compact)
 
   // Auto-play on mount
   useEffect(() => {
@@ -240,13 +242,13 @@ export function AgentVisualizer() {
       {isEmpty && (
         <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
           <div className="text-center" style={{ fontFamily: "'SF Mono', 'Fira Code', monospace" }}>
-            <div className={bridge.compact ? 'text-[10px]' : 'text-sm'} style={{ color: '#66ccff80' }}>WAITING FOR AGENT SESSION</div>
-            {!bridge.compact && <div className="mt-2 text-xs" style={{ color: '#66ccff40' }}>Start a Claude Code or Codex session to see activity</div>}
+            <div className={compact ? 'text-[10px]' : 'text-sm'} style={{ color: '#66ccff80' }}>WAITING FOR AGENT SESSION</div>
+            {!compact && <div className="mt-2 text-xs" style={{ color: '#66ccff40' }}>Start a Claude Code or Codex session to see activity</div>}
           </div>
         </div>
       )}
 
-      {bridge.restoring && <div role="status" className="absolute left-0 right-0 bottom-0 flex items-center justify-center" style={{ top: bridge.compact ? 36 : toolbarBottom, zIndex: 85, background: COLORS.void, color: COLORS.textMuted }}>
+      {bridge.restoring && <div role="status" className="absolute left-0 right-0 bottom-0 flex items-center justify-center" style={{ top: compact ? 36 : toolbarBottom, zIndex: 85, background: COLORS.void, color: COLORS.textMuted }}>
         <span className="text-xs">Restoring latest session state…</span>
       </div>}
       {bridge.storageError && <div role="alert" className="absolute left-3 right-3 p-3 rounded text-xs" style={{ top: toolbarBottom, zIndex: 90, background: COLORS.panelBg, color: COLORS.tool }}>
@@ -255,14 +257,14 @@ export function AgentVisualizer() {
       </div>}
       {/* Canvas fills everything */}
       <AgentCanvas
-        topInset={toolbarBottom + 28}
+        topInset={desktopWidget ? 36 : toolbarBottom + 28}
         visible={bridge.viewVisible && !bridge.restoring}
         restoring={bridge.restoring}
         showAllAgents={showAllAgents}
         currentRoundOnly={currentRoundOnly && !isReviewing}
         animationMode={bridge.animationMode}
         animationSpeed={bridge.animationSpeed}
-        compact={bridge.compact}
+        compact={compact}
         simulationRef={frameRef}
         selectedAgentId={selection.selectedAgentId}
         hoveredAgentId={selection.hoveredAgentId}
@@ -281,16 +283,16 @@ export function AgentVisualizer() {
         showCostOverlay={showCostOverlay}
       />
 
-      <WorkPanel topInset={toolbarBottom} sessionId={bridge.selectedSessionId} key={bridge.selectedSessionId ?? 'demo'} compact={bridge.compact} round={round} tasks={delegations} conversations={conversations} currentOnly={currentRoundOnly} onCurrentOnly={setCurrentRoundOnly} />
+      {!desktopWidget && <WorkPanel topInset={toolbarBottom} sessionId={bridge.selectedSessionId} key={bridge.selectedSessionId ?? 'demo'} compact={compact} round={round} tasks={delegations} conversations={conversations} currentOnly={currentRoundOnly} onCurrentOnly={setCurrentRoundOnly} />}
 
-      {bridge.compact && (
+      {compact && (
         <>
           <div className="absolute top-0 left-0 right-0 z-50 flex flex-wrap items-center gap-0.5 px-1 py-1" style={{ background: COLORS.panelBg, borderBottom: `1px solid ${COLORS.glassBorder}` }}>
-            <div className="w-full flex flex-wrap justify-end gap-1">{scopeControl}{bridge.latestOnly && <button className="text-[10px] px-1" style={{ color: COLORS.holoBright }} onClick={bridge.loadFullHistory}>โหลดประวัติย้อนหลัง</button>}</div>
+            {!desktopWidget && <div className="w-full flex flex-wrap justify-end gap-1">{scopeControl}{bridge.latestOnly && <button className="text-[10px] px-1" style={{ color: COLORS.holoBright }} onClick={bridge.loadFullHistory}>โหลดประวัติย้อนหลัง</button>}</div>}
             <SessionPicker compact sessions={bridge.sessions} selectedSessionId={bridge.selectedSessionId} onSelectSession={bridge.selectSession} onCloseSession={handleCloseSession} />
             <button title="Fit graph" aria-label="Fit graph" className="flow-icon-button" style={{ color: COLORS.textPrimary }} onClick={() => setZoomToFitTrigger(n => n + 1)}><FlowIcon name="fit" /></button>
-            <button title="Open full graph" aria-label="Open full graph" className="flow-icon-button" style={{ color: COLORS.textPrimary }} onClick={bridge.openGraph}><FlowIcon name="expand" /></button>
-            <FlowControls bridge={bridge} />
+            {!desktopWidget && <><button title="Open full graph" aria-label="Open full graph" className="flow-icon-button" style={{ color: COLORS.textPrimary }} onClick={bridge.openGraph}><FlowIcon name="expand" /></button>
+            <FlowControls bridge={bridge} /></>}
           </div>
           <div className="absolute bottom-0 left-0 right-0 px-2 py-1 text-[10px] truncate pointer-events-none" style={{ color: COLORS.textPrimary, background: COLORS.void }}>
             {selectedAgent ? `${selectedAgent.name} · ${selectedAgent.model ?? 'Model unknown'} · ${selectedAgent.state}` : `${Array.from(displayAgents.values()).filter(agent => agent.isMain || agent.state !== 'complete').length} agents · ${bridge.connectionStatus}`}
@@ -298,7 +300,7 @@ export function AgentVisualizer() {
         </>
       )}
 
-      {!bridge.compact && <>
+      {!compact && <>
       {/* Message feed panel (top-left) */}
       <MessageFeedPanel
         topInset={toolbarBottom}

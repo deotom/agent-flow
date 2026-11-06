@@ -330,7 +330,7 @@ export function useVSCodeBridge(): BridgeHookResult {
         setSessions(sessionList)
         // Auto-select: prefer active sessions, then most recently active.
         // Only set selection — useLayoutEffect handles flushing events.
-        if (!selectedSessionIdRef.current && sessionList.length > 0) {
+        if (sessionList.length > 0 && (!selectedSessionIdRef.current || !sessionList.some(session => session.id === selectedSessionIdRef.current))) {
           const sorted = [...sessionList].sort((a, b) => {
             const aActive = a.status === 'active' ? 1 : 0
             const bActive = b.status === 'active' ? 1 : 0

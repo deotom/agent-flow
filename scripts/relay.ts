@@ -22,6 +22,7 @@ import {
 } from '../extension/src/constants'
 import { setLogLevel } from '../extension/src/logger'
 import type { TelemetryClient } from './telemetry'
+import { createRemoteMirror, type RemoteMirror } from './remote-mirror'
 
 const MAX_EVENT_BUFFER = 5000
 const DISCOVERY_DIR = path.join(os.homedir(), '.claude', 'agent-flow')
@@ -60,6 +61,7 @@ function log(...args: unknown[]) {
 // ─── SSE client management ──────────────────────────────────────────────────
 
 const sseClients = new Set<http.ServerResponse>()
+let remoteMirror: RemoteMirror | undefined
 
 function sendSSE(res: http.ServerResponse, data: unknown) {
   try { res.write(`data: ${JSON.stringify(data)}\n\n`) } catch {
@@ -68,6 +70,7 @@ function sendSSE(res: http.ServerResponse, data: unknown) {
 }
 
 function broadcast(data: string) {
+  remoteMirror?.ingest(data)
   for (const res of sseClients) {
     try { res.write(`data: ${data}\n\n`) } catch {
       sseClients.delete(res)
@@ -386,6 +389,9 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
   }
   relayCreated = true
 
+  try { remoteMirror = await createRemoteMirror(workspace) }
+  catch { console.warn('[mobile] Sharing could not start. Check the local remote configuration.') }
+
   const mode = resolveRuntimeMode(options.runtime)
   const wantClaude = mode === 'claude' || mode === 'auto'
   const wantCodex = mode === 'codex' || mode === 'auto'
@@ -399,6 +405,8 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
     hookServer = new HookServer()
     const hookPort = await hookServer.start()
     if (hookPort === HOOK_SERVER_NOT_STARTED) {
+      remoteMirror?.dispose()
+      remoteMirror = undefined
       throw new Error('Failed to start hook server (port in use)')
     }
 
@@ -430,6 +438,7 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
   // lifecycle 'started' event in CodexSessionWatcher.attachSession, so
   // wiring both would double-broadcast session-started to SSE clients.
   let codexWatcher: CodexSessionWatcher | null = null
+  let remoteSnapshotTimer: ReturnType<typeof setInterval> | undefined
   if (wantCodex) {
     codexWatcher = new CodexSessionWatcher(workspace)
     codexWatcher.onEvent((event) => broadcastEvent(event))
@@ -437,6 +446,20 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
       broadcastSessionLifecycle(lifecycle.type, lifecycle.sessionId, lifecycle.label)
     })
     codexWatcher.start()
+    if (remoteMirror) {
+      const refreshRemote = () => {
+        const claudeSessions = [...sessions.values()].filter(session => session.sessionDetected).map(session => ({
+          id: session.sessionId, label: session.label, status: session.sessionCompleted ? 'completed' : 'active',
+          startTime: session.sessionStartTime, lastActivityTime: session.lastActivityTime,
+        }))
+        remoteMirror?.ingest(JSON.stringify({ type: 'session-list', sessions: [...claudeSessions, ...codexWatcher!.getActiveSessions()] }))
+        codexWatcher!.replaySessionStart(undefined, { latestOnly: true,
+          onSnapshot: event => remoteMirror?.ingest(JSON.stringify({ type: 'agent-event', event })) })
+      }
+      refreshRemote()
+      remoteSnapshotTimer = setInterval(refreshRemote, 2000)
+      remoteSnapshotTimer.unref?.()
+    }
   }
 
   const telemetry = options.telemetry
@@ -513,6 +536,12 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
           sendSSE(res, { type: 'agent-event-batch', events: buffered })
         }
       }
+      // The rolling history tail can lose the root spawn and delegation edges.
+      // Reconcile it with the complete current graph, retaining its chat history.
+      codexWatcher?.replaySessionStart(undefined, { latestOnly: true,
+        onSnapshot: event => sendSSE(res, { type: 'agent-event', event: {
+          ...event, payload: { ...event.payload, preserveHistory: true },
+        } }) })
     },
 
     dispose() {
@@ -520,6 +549,9 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
       // callers or hot-reload could call this twice.
       if (relayDisposed) return
       relayDisposed = true
+      clearInterval(remoteSnapshotTimer)
+      remoteMirror?.dispose()
+      remoteMirror = undefined
       const models = [...observedModels].sort().join(',').slice(0, 128)
       const runtimes = [wantClaude && 'claude', wantCodex && 'codex'].filter(Boolean).join(',')
       telemetry?.emit({

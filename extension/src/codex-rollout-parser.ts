@@ -216,15 +216,16 @@ const CODEX_PURE_INJECTION_PREFIXES = [
   '<send_user_message_question_reply>',
 ]
 
-/** Marker the Codex IDE wrapper places before the actual user prompt. */
-const CODEX_REQUEST_MARKER = '## My request for Codex:'
+/** Request heading used by Codex IDE and desktop attachment wrappers. */
+const CODEX_REQUEST_HEADING = /^## My request(?: for Codex)?:[\t ]*\r?$/m
 
 /**
  * Extract the real user-authored text from a Codex user message.
  *
  * Codex's IDE wrapper inlines open tabs, active file, diagnostics, etc.
  * before the user's actual request, separated by a "## My request for Codex:"
- * header. For pure injections (AGENTS.md, env context, aborts) we return null
+ * header. Desktop attachments use "# Files mentioned by the user:" followed
+ * by "## My request:". For pure injections (AGENTS.md, env context, aborts) we return null
  * so the caller skips the message entirely.
  *
  * Returns null for pure injections, the extracted prompt for wrapped messages,
@@ -235,12 +236,27 @@ function extractCodexUserText(raw: string): string | null {
   if (!text) return null
   if (SYSTEM_CONTENT_PREFIXES.some(p => text.startsWith(p))) return null
   if (CODEX_PURE_INJECTION_PREFIXES.some(p => text.startsWith(p))) return null
-  if (text.startsWith('# Context from my IDE setup:')) {
-    const idx = text.indexOf(CODEX_REQUEST_MARKER)
-    if (idx < 0) return null // IDE context with no request — skip
-    return text.slice(idx + CODEX_REQUEST_MARKER.length).trim() || null
+  if (text.startsWith('# Context from my IDE setup:') || text.startsWith('# Files mentioned by the user:')) {
+    const heading = CODEX_REQUEST_HEADING.exec(text)
+    if (!heading) return null // Context with no request — skip
+    return text.slice(heading.index + heading[0].length).trim() || null
   }
   return text
+}
+
+/** Plain display title; preserve the original Markdown and attachments in chat. */
+function codexSessionLabel(text: string): string {
+  return text
+    .replace(/<image\b[^>]*>[\s\S]*?<\/image\s*>/gi, '')
+    .replace(/<image\b[^>]*(?:>|$)/gi, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/\\([\\`*_{}\[\]()#+.!>~-])/g, '$1')
+    .replace(/\*\*(.+?)\*\*|__(.+?)__|`([^`]+)`/g, (_match, bold, underline, code) => bold ?? underline ?? code)
+    .replace(/^\s*#{1,6}\s+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, PREVIEW_MAX)
 }
 
 /** Parse tool-call arguments — Codex encodes them as a JSON string. */
@@ -440,8 +456,11 @@ export class CodexRolloutParser {
       state.userTurnCount++
       state.contextBreakdown.userMessages += estimateTokensFromText(text)
       if (!state.label) {
-        state.label = text.slice(0, PREVIEW_MAX)
-        this.delegate.setLabel?.(state.label)
+        const label = codexSessionLabel(text)
+        if (label) {
+          state.label = label
+          this.delegate.setLabel?.(label)
+        }
       }
     }
 
@@ -638,6 +657,28 @@ export class CodexRolloutParser {
     if (activate) this.delegate.emit({ time: this.elapsed(), type: 'agent_thinking', payload: { name: child } })
   }
 
+  private handleSubagentActivity(item: Record<string, unknown>, state: CodexRolloutState): void {
+    const child = typeof item.agent_path === 'string' ? item.agent_path : ''
+    const key = `activity:${item.id}:${item.kind}`
+    if (!child || child === '/root' || !item.id || state.seenToolCalls.has(key)) return
+    state.seenToolCalls.add(key)
+    const known = state.agents.has(child)
+    state.agents.add(child)
+    if (item.kind === 'started') {
+      this.delegate.emit({ time: this.elapsed(), type: 'agent_spawn', payload: {
+        name: child, parent: ORCHESTRATOR_NAME, runtime: 'codex',
+        ...(typeof item.model === 'string' ? { model: item.model } : {}),
+      } })
+      this.delegate.emit({ time: this.elapsed(), type: 'agent_thinking', payload: { name: child } })
+    } else if (item.kind === 'completed') {
+      // A native completion remains usable when the tool output is redacted.
+      if (!known) this.delegate.emit({ time: this.elapsed(), type: 'agent_spawn',
+        payload: { name: child, parent: ORCHESTRATOR_NAME, runtime: 'codex' } })
+      this.delegate.emit({ time: this.elapsed(), type: 'agent_complete', payload: { name: child } })
+    }
+    // "interacted" also covers send_message; it is not evidence of a new turn.
+  }
+
   private handleSubagentMessage(payload: Record<string, unknown>, state: CodexRolloutState): void {
     const author = typeof payload.author === 'string' ? payload.author : ''
     // Only attribute messages from known spawned agents. Other records can
@@ -679,6 +720,7 @@ export class CodexRolloutParser {
       case 'item_completed': {
         const item = payload.item
         if (!isRecord(item)) return
+        if (item.type === 'SubAgentActivity') return this.handleSubagentActivity(item, state)
         if (item.type !== 'Reasoning') return this.handleCompletedToolItem(item, state)
         const text = [item.summary_text, item.raw_content].map(parts =>
           Array.isArray(parts) ? parts.filter(p => typeof p === 'string').join('\n') : '',

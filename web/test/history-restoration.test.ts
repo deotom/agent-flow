@@ -81,3 +81,17 @@ it('hydrates latest state and the inactive catalog directly, then processes new 
   assert.equal(state.round, 89)
   assert.equal(state.conversations.get('root')?.length, 1)
 })
+
+it('reconciles a truncated desktop tail with the full graph while keeping its transcript', () => {
+  const ctx: ProcessEventContext = { syncForceSimulation() {}, findToolSlot: () => ({ x: 0, y: 0 }), getContextWindowSize: () => 200000, blockIdCounter: { current: 0 }, skipForceSync: true }
+  let state = processEvent({ time: 10, type: 'message', payload: { agent: 'orchestrator', role: 'assistant', content: 'Recent tail' } }, createEmptyState(), ctx)
+  state = processEvent({ time: 20, type: 'session_snapshot', historical: true, payload: { preserveHistory: true, round: 3, agents: [
+    { id: 'orchestrator', name: 'Current chat', isMain: true, state: 'thinking' },
+    { id: '/root/reviewer', parentId: 'orchestrator', state: 'thinking' },
+  ] } }, state, ctx)
+  assert.equal(state.agents.get('orchestrator')?.name, 'Current chat')
+  assert.equal(state.agents.get('orchestrator')?.isMain, true)
+  assert.ok(state.edges.some(e => e.from === 'orchestrator' && e.to === '/root/reviewer'))
+  assert.equal(state.conversations.get('orchestrator')?.at(-1)?.content, 'Recent tail')
+  assert.equal(state.particles.length, 0)
+})

@@ -12,6 +12,9 @@
     "build:webview": "pnpm --filter agent-flow-web run build:webview",
     "build:all": "pnpm run build:webview && pnpm run build:extension",
     "build:app": "node app/build.js",
+    "desktop": "npm --prefix desktop start",
+    "build:desktop": "npm --prefix desktop run build",
+    "package:desktop": "npm --prefix desktop run package",
     "test": "node --import tsx --test \"scripts/**/*.test.ts\" \"app/src/**/*.test.ts\" \"web/hooks/**/*.test.ts\""
   },
   "devDependencies": {

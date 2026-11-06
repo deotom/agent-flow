@@ -39,6 +39,36 @@ describe('CodexSessionWatcher history and resume', { concurrency: false }, () =>
     } }
   }
 
+  it('uses newer parent lifecycle evidence over a stale completed child file in latest snapshots', () => {
+    const f = fixture()
+    try {
+      const root = f.rollout(1)
+      const child = f.rollout(2, f.workspace, 0, { id: root.uuid, name: '/root/reviewer' })
+      const base = Date.now() - 3600000
+      const write = (file: string, records: unknown[]) => fs.writeFileSync(file, records.map(r => JSON.stringify(r)).join('\n') + '\n')
+      write(root.file, [
+        { timestamp: new Date(base).toISOString(), type: 'session_meta', payload: { id: root.uuid, cwd: f.workspace } },
+        { timestamp: new Date().toISOString(), type: 'event_msg', payload: { type: 'item_completed', item: {
+          type: 'SubAgentActivity', id: 'native-start', kind: 'started', agent_path: '/root/reviewer', model: 'new-model',
+        } } },
+      ])
+      write(child.file, [
+        { timestamp: new Date(base + 1000).toISOString(), type: 'session_meta', payload: { id: child.uuid, cwd: f.workspace,
+          source: { subagent: { thread_spawn: { parent_thread_id: root.uuid, agent_path: '/root/reviewer' } } } } },
+        { timestamp: new Date(base + 2000).toISOString(), type: 'event_msg', payload: { type: 'task_complete' } },
+      ])
+      fs.utimesSync(child.file, new Date(base + 2000), new Date(base + 2000))
+      f.watcher.start()
+      f.events.length = 0
+      f.watcher.replaySessionStart([root.uuid], { latestOnly: true })
+      const agents = f.events[0].payload.agents as Array<Record<string, unknown>>
+      const worker = agents.find(a => a.id === '/root/reviewer')!
+      assert.equal(worker.state, 'thinking')
+      assert.equal(worker.model, 'new-model')
+      assert.equal(worker.parentId, 'orchestrator')
+    } finally { f.cleanup() }
+  })
+
   it('discovers a resumed session in a years-old partition with history disabled', () => {
     const f = fixture(0)
     try {
@@ -232,6 +262,12 @@ describe('CodexSessionWatcher history and resume', { concurrency: false }, () =>
       assert.equal(agents.find(agent => agent.id === '/root/reviewer')?.state, 'tool_calling')
       assert.equal(f.events[0].payload.round, 1)
       assert.ok(JSON.stringify(f.events).length < 8000)
+      const shared: AgentEvent[] = []
+      f.events.length = 0
+      f.watcher.replaySessionStart([root.uuid], { latestOnly: true, onSnapshot: event => shared.push(event) })
+      assert.equal(f.events.length, 0, 'remote refresh must not reset the desktop viewer')
+      assert.equal(shared[0].type, 'session_snapshot')
+      assert.equal((shared[0].payload.agents as unknown[]).length, 2)
       f.events.length = 0
       f.watcher.replaySessionStart([root.uuid])
       assert.equal(f.events.filter(event => String(event.payload.content || '').startsWith('older message')).length, 250)

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; frame-src http://127.0.0.1:*; object-src 'none'; base-uri 'none'">
+  <title>Agent Flow</title>
+  <link rel="stylesheet" href="shell.css">
+</head>
+<body>
+  <header class="toolbar">
+    <div class="brand"><span class="brand-icon">◈</span> <span class="brand-name">AGENT FLOW</span> <span class="desktop-tag">DESKTOP</span></div>
+    <div class="toolbar-actions">
+      <button id="mobile-button" title="Pair iPhone with QR" aria-label="Pair iPhone"><span class="button-icon" aria-hidden="true">▦</span><span class="button-label">iPhone QR</span></button>
+      <button id="folder-button" title="Choose workspace · Ctrl+O" aria-label="Choose workspace"><span class="button-icon" aria-hidden="true">▱</span><span class="button-label" id="folder-text">Choose folder</span></button>
+      <button id="pin-button" aria-pressed="true" title="Keep above other windows · Ctrl+Shift+T" aria-label="Always on top"><span class="button-icon" aria-hidden="true">⌖</span><span class="button-label" id="pin-text">Always on top</span></button>
+      <button id="widget-button" aria-pressed="true" title="Switch widget / full view · Ctrl+Shift+W" aria-label="Expand to full view"><span id="widget-icon" aria-hidden="true">⤢</span><span class="button-label" id="widget-text">Full view</span></button>
+      <button id="minimize-button" class="window-button" title="Minimize" aria-label="Minimize">−</button>
+      <button id="close-button" class="window-button" title="Close" aria-label="Close">×</button>
+    </div>
+  </header>
+  <div class="workspace-bar"><span id="connection-dot" class="dot"></span><span id="workspace-label">No workspace selected</span><span id="connection-label">READY</span></div>
+  <div id="error" role="alert" hidden></div>
+  <main>
+    <section id="welcome">
+      <div class="welcome-orbit" aria-hidden="true"><span>◈</span></div>
+      <div class="eyebrow">YOUR AGENTS, IN VIEW</div>
+      <h1>A window into your workspace.</h1>
+      <p>Choose a project folder to watch Claude Code and Codex sessions as they work.</p>
+      <button id="welcome-choose" class="primary">Choose workspace folder <span>↗</span></button>
+      <button id="open-last" hidden>Open last workspace</button>
+      <div id="last-folder" class="last-folder"></div>
+      <div class="welcome-note">Keep this window nearby. Pin it above your editor with Always on top.</div>
+    </section>
+    <iframe id="graph" title="Agent Flow workspace graph" sandbox="allow-scripts allow-same-origin allow-downloads" hidden></iframe>
+  </main>
+  <footer><span id="footer-status">LOCAL WORKSPACE VIEWER</span><span>Ctrl+O <span class="muted">folder</span> &nbsp; / &nbsp; Ctrl+Shift+T <span class="muted">pin</span></span></footer>
+  <div id="resize-grip" title="Drag to resize widget" aria-hidden="true"></div>
+  <dialog id="mobile-dialog" aria-labelledby="mobile-title">
+    <div class="mobile-dialog-heading"><h2 id="mobile-title">Pair your iPhone</h2><button id="mobile-close" aria-label="Close pairing">×</button></div>
+    <p id="mobile-hint">สแกน QR ด้วยกล้อง iPhone แล้วเปิดใน Safari</p>
+    <img id="mobile-qr" width="240" height="240" alt="QR สำหรับจับคู่ iPhone กับ Agent Flow" hidden>
+    <p id="mobile-error" role="alert" hidden></p>
+    <p class="mobile-private">เก็บ QR นี้เป็นส่วนตัว · ผู้ที่สแกนจะดูสถานะงานได้</p>
+  </dialog>
+  <script src="shell.js"></script>
+</body>
+</html>

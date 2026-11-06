@@ -146,6 +146,7 @@ function readSessionMetadata(filePath: string): CodexSessionMetadata | null {
 // ─── Watcher ───────────────────────────────────────────────────────────────
 
 export class CodexSessionWatcher implements AgentSessionWatcher {
+  private agentActivity = new Map<string, { time: number; active: boolean; model?: string }>()
   private dirWatchers = new Map<string, fs.FSWatcher>()
   private sessions = new Map<string, WatchedCodexSession>()
   private workspacePaths: string[] = []
@@ -226,11 +227,11 @@ export class CodexSessionWatcher implements AgentSessionWatcher {
     }))
   }
 
-  replaySessionStart(sessionIds?: string[], options?: { latestOnly?: boolean }): void {
+  replaySessionStart(sessionIds?: string[], options?: { latestOnly?: boolean; onSnapshot?: (event: AgentEvent) => void }): void {
     const roots = Array.from(this.sessions.values()).filter(session => session.sessionId === session.rootSessionId
       && (!sessionIds || sessionIds.includes(session.sessionId)))
     for (const root of roots) {
-      this._onSessionLifecycle.fire({ type: 'updated', sessionId: root.sessionId, label: root.label })
+      if (!options?.onSnapshot) this._onSessionLifecycle.fire({ type: 'updated', sessionId: root.sessionId, label: root.label })
       const group = Array.from(this.sessions.values()).filter(session => session.rootSessionId === root.sessionId)
       if (options?.latestOnly) {
         const now = Date.now()
@@ -239,9 +240,11 @@ export class CodexSessionWatcher implements AgentSessionWatcher {
           const pending = [...rollout.pendingToolCalls.values()].at(-1)
           const blocking = [...rollout.pendingUserInputs.values()].some(input => input.blocking)
           const isMain = session === root
-          const working = this.compactingSessions.has(session.sessionId) || rollout.turnActive && !session.sessionCompleted
+          const observed = this.agentActivity.get(`${root.sessionId}:${session.agentName}`)
+          const latest = !isMain && observed && observed.time >= session.lastActivityTime ? observed : undefined
+          const working = this.compactingSessions.has(session.sessionId) || (latest ? latest.active : rollout.turnActive && !session.sessionCompleted)
           return { id: session.agentName, parentId: isMain ? null : session.parentAgentName || ORCHESTRATOR_NAME,
-            name: isMain ? root.label : undefined, isMain, runtime: 'codex', model: rollout.model ?? undefined,
+            name: isMain ? root.label : undefined, isMain, runtime: 'codex', model: latest?.model ?? rollout.model ?? undefined,
             state: blocking ? 'waiting_permission' : working ? pending ? 'tool_calling' : 'thinking' : isMain ? 'idle' : 'complete',
             compacting: this.compactingSessions.has(session.sessionId), waitingForInput: blocking, currentTool: working ? pending?.name : undefined,
             tools: working ? [...rollout.pendingToolCalls].map(([callId, call]) => ({ callId, tool: call.name, args: call.args })) : [],
@@ -250,7 +253,8 @@ export class CodexSessionWatcher implements AgentSessionWatcher {
             spawnTime: (session.sessionStartTime - root.sessionStartTime) / 1000,
             timeAlive: Math.max(0, (session.lastActivityTime - session.sessionStartTime) / 1000) }
         })
-        this._onEvent.fire({ time: (now - root.sessionStartTime) / 1000, type: 'session_snapshot',
+        const publish = options.onSnapshot ?? ((event: AgentEvent) => this._onEvent.fire(event))
+        publish({ time: (now - root.sessionStartTime) / 1000, type: 'session_snapshot',
           payload: { agents, round: root.rolloutState.userTurnCount }, sessionId: root.sessionId, historical: true })
         continue
       }
@@ -536,6 +540,15 @@ export class CodexSessionWatcher implements AgentSessionWatcher {
     const root = this.sessions.get(session.rootSessionId)
     const mapped = { ...event, historical: event.historical || !session.sessionDetected, type, time: event.time + (session.sessionStartTime - (root?.sessionStartTime ?? session.sessionStartTime)) / 1000,
       payload, sessionId: session.rootSessionId }
+    const activityName = typeof payload.name === 'string' ? payload.name : ''
+    if (activityName && activityName !== ORCHESTRATOR_NAME && ['agent_spawn', 'agent_thinking', 'agent_complete'].includes(type)) {
+      const key = `${session.rootSessionId}:${activityName}`
+      const previous = this.agentActivity.get(key)
+      const time = (root?.sessionStartTime ?? session.sessionStartTime) + mapped.time * 1000
+      if (!previous || time >= previous.time) this.agentActivity.set(key, {
+        time, active: type !== 'agent_complete', model: typeof payload.model === 'string' ? payload.model : previous?.model,
+      })
+    }
     if (type !== 'context_compaction') this.cacheEvent(session.rootSessionId, mapped)
     this._onEvent.fire(mapped)
   }
@@ -683,6 +696,7 @@ export class CodexSessionWatcher implements AgentSessionWatcher {
       if (s.inactivityTimer) clearTimeout(s.inactivityTimer)
     }
     this.sessions.clear()
+    this.agentActivity.clear()
     this.cwdCache.clear()
     this.replayCache.clear(); this.replayBytes.clear(); this.uncachedRoots.clear()
     this._onEvent.dispose()

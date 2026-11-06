@@ -30,9 +30,8 @@ export function createBuildConfig(target: BuildTarget): UserConfig {
         formats: ['iife'],
         name: target.name,
         fileName: () => 'index',
+        cssFileName: 'index',
       },
-      // @ts-expect-error — cssFileName is valid in Vite 8 but not yet in @types
-      cssFileName: 'index',
       sourcemap: false,
       minify: true,
       rollupOptions: {

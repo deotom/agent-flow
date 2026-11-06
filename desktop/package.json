@@ -1,0 +1,21 @@
+{
+  "name": "agent-flow-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent Flow desktop workspace viewer",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "build": "node build.cjs",
+    "package": "node package.cjs",
+    "test": "node --test test/*.test.cjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "45.0.0",
+    "jsqr": "1.4.0"
+  },
+  "dependencies": {
+    "qrcode": "1.5.4"
+  }
+}

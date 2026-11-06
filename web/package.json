@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "test": "node --import tsx --test \"test/**/*.test.ts\" \"components/**/*.test.tsx\"",
+    "test": "node --import tsx --test \"test/**/*.test.ts\" \"components/**/*.test.tsx\" \"lib/**/*.test.ts\"",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

@@ -41,6 +41,9 @@ Options:
 - `--no-open` — don't open the browser automatically
 - `--verbose` — show detailed event logs
 
+If the requested port is already occupied, the standalone app automatically
+chooses a free port and prints/opens the actual URL without stopping the other app.
+
 ### Standalone Web App (from source)
 
 ```bash
@@ -52,6 +55,71 @@ pnpm run dev        # start the web app + event relay
 ```
 
 Open http://localhost:3000 and start a Claude Code session in another terminal — events will stream to the browser in real-time.
+
+### Desktop app (Windows, local build)
+
+The desktop app opens a folder picker workspace viewer in its own window. Use
+**Choose folder** to select a project, **Change folder** to switch projects, and
+**Always on top** to pin the window above your editor. Pinning is enabled on
+first launch. The app remembers the last folder and pin preference; **Open last
+workspace** reconnects on the next launch. `Ctrl+O` selects a folder and
+`Ctrl+Shift+T` toggles pinning.
+
+The app now starts as a **360 × 360 widget**, resizable down to **260 × 260**.
+Drag the top strip to move it and the bottom-right grip to resize it. The folder, pin, expand, minimize and close
+buttons stay available in that strip. The widget shows the session selector,
+graph and status; expand to the full view for Chat, Tasks and Timeline.
+**Full view / Widget** or `Ctrl+Shift+W` switches modes without reconnecting or
+reloading the graph. Each mode remembers its window size and the last mode is
+restored on launch.
+
+Building the desktop app requires Node.js 22.12 or newer. After installing the
+repository's normal dependencies, install the desktop tooling and build:
+
+```powershell
+npm --prefix desktop ci
+npm run build:desktop
+npm run desktop
+```
+
+To produce a Windows app that runs without Node.js or a terminal:
+
+```powershell
+npm run package:desktop
+```
+
+Open `artifacts.local/desktop/Agent Flow-win32-x64/Agent Flow.exe`. Keep the
+entire output folder together when copying the app to another location. Rebuild
+the desktop assets before packaging after source changes. Desktop dependencies
+have their own `desktop/package-lock.json` and do not change the pnpm workspace.
+
+The desktop relay listens on an automatically selected loopback port, so an
+existing standalone viewer can stay open. Switching folders and exiting the
+app stop the previous relay and its file watchers. It watches existing Claude
+Code/Codex transcripts without changing global Claude hooks or enabling usage
+telemetry. For Claude's optional hook events, run the existing setup command
+once on a machine with Node.js installed.
+
+Desktop integration checks: `npm --prefix desktop test` (after building).
+
+### iPhone / remote mobile viewer
+
+The mobile viewer is available at https://deotom.github.io/agent-flow/.
+It shows encrypted live agent status from the desktop or standalone relay using
+Supabase Realtime, without an inbound port or VPN. Prompts, source code, tool
+inputs/results, transcripts and file paths are excluded from the mobile feed.
+
+The packaged desktop app reads the external mobile configuration at
+`D:\sensitive\agent-flow-supabase.env` automatically. Open
+`artifacts.local/desktop/Agent Flow-win32-x64/Agent Flow.exe`, choose a workspace,
+and click **iPhone QR**. Scan with the iPhone camera and open Safari to pair.
+The QR is generated locally and contains the pairing key in a URL fragment;
+the phone removes it from the address bar after reading it. Keep the QR private.
+The computer must stay awake and online. The optional
+`scripts/start-mobile-desktop.cmd` launcher still works for development.
+
+See [mobile setup and security details](mobile/README.md) for other configuration
+paths, pairing key rotation, disabling sharing, hosting, and verification.
 
 ### VS Code Extension
 

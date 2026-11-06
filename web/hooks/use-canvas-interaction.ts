@@ -218,6 +218,48 @@ export function useCanvasInteraction({
     doZoomToFit()
   }, [doZoomToFit])
 
+  useEffect(() => {
+    const canvas = mainCanvasRef.current
+    if (!canvas) return
+    let gesture: { x: number; y: number; distance: number; moved: boolean; startX: number; startY: number } | null = null
+    const point = (touches: TouchList) => {
+      const a = touches[0], b = touches[1]
+      return { x: b ? (a.clientX + b.clientX) / 2 : a.clientX, y: b ? (a.clientY + b.clientY) / 2 : a.clientY,
+        distance: b ? Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) : 0 }
+    }
+    const start = (e: TouchEvent) => {
+      e.preventDefault()
+      const p = point(e.touches)
+      gesture = { ...p, moved: e.touches.length > 1, startX: p.x, startY: p.y }
+      panVelocityRef.current.active = false
+    }
+    const move = (e: TouchEvent) => {
+      if (!gesture || !e.touches.length) return
+      e.preventDefault()
+      const p = point(e.touches), prev = transformRef.current, rect = canvas.getBoundingClientRect()
+      const scale = gesture.distance && p.distance ? Math.max(CAMERA.minZoom, Math.min(CAMERA.maxZoom, prev.scale * p.distance / gesture.distance)) : prev.scale
+      const x = gesture.x - rect.left, y = gesture.y - rect.top
+      transformRef.current = { scale, x: p.x - rect.left - (x - prev.x) * scale / prev.scale, y: p.y - rect.top - (y - prev.y) * scale / prev.scale }
+      gesture = { ...gesture, ...p, moved: gesture.moved || Math.hypot(p.x - gesture.startX, p.y - gesture.startY) > 5 }
+      if (gesture.moved) userHasNavigatedRef.current = true
+    }
+    const end = (e: TouchEvent) => {
+      e.preventDefault()
+      if (e.touches.length) { start(e); if (gesture) gesture.moved = true; return }
+      if (gesture && !gesture.moved) {
+        const pos = screenToCanvas(gesture.x, gesture.y)
+        drawPropsRef.current.onAgentClick(findAgentAt(pos.x, pos.y))
+      }
+      gesture = null
+    }
+    const cancel = () => { gesture = null }
+    canvas.addEventListener('touchstart', start, { passive: false })
+    canvas.addEventListener('touchmove', move, { passive: false })
+    canvas.addEventListener('touchend', end, { passive: false })
+    canvas.addEventListener('touchcancel', cancel)
+    return () => { canvas.removeEventListener('touchstart', start); canvas.removeEventListener('touchmove', move); canvas.removeEventListener('touchend', end); canvas.removeEventListener('touchcancel', cancel) }
+  }, [mainCanvasRef, transformRef, panVelocityRef, userHasNavigatedRef, screenToCanvas, findAgentAt, drawPropsRef])
+
   const handleContextMenuEvent = useCallback((e: React.MouseEvent) => {
     tooltipRef.current = null
     e.preventDefault()
