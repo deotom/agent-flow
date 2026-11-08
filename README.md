@@ -39,9 +39,22 @@ Verified against the T3 0.1.7 V2 schema. Remote T3 hosts and older schemas are
 not supported by this adapter; unavailable/incompatible databases report a
 diagnostic instead of falling back to unrelated native sessions.
 
+To exercise the adapter without touching T3 data, create and use a synthetic
+fixture outside `~/.t3`:
+
+```powershell
+pnpm exec tsx scripts/t3-fixture-db.ts .tmp/t3-fixture.sqlite
+$env:AGENT_FLOW_RUNTIME='t3'; $env:AGENT_FLOW_T3_DB="$PWD/.tmp/t3-fixture.sqlite"; pnpm run dev:relay
+pnpm exec tsx scripts/t3-fixture-db.ts --advance .tmp/t3-fixture.sqlite
+```
+
+The generator refuses targets under `~/.t3`; `--advance` completes the active
+fixture work so the two-second refresh path can be checked.
+
 T3 mode currently shows team membership, models, latest-run tool activity and
-task/result-delivery status. It does not import chat transcripts, command output,
-token usage or billing estimates. Unknown token usage is not a zero-cost claim.
+task/result-delivery status. Provider context usage is shown only when T3 reports
+both positive counters. It does not import chat transcripts, command output or
+billing estimates. Unknown token usage is not a zero-cost claim.
 
 - **Live agent visualization**: Watch agent execution as an interactive node graph with real-time tool calls, branching, and return flows
 - **Claude Code + Codex**: Auto-detects sessions from both runtimes concurrently and shows them side-by-side, or restrict to one via the `agentVisualizer.runtime` setting

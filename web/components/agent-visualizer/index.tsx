@@ -33,6 +33,8 @@ import { SessionPicker } from './session-picker'
 import { AgentScopeSwitch } from './agent-scope-switch'
 import { sessionGraphPresentation } from '@/lib/graph-presentation'
 import { useAudioEffects } from "@/hooks/use-audio-effects"
+import { TeamWorkspace, type TeamPane } from './team/team-workspace'
+import type { TeamScope } from '@/lib/team-model'
 
 export function AgentVisualizer({ desktopWidget = false }: { desktopWidget?: boolean } = {}) {
   const bridge = useVSCodeBridge()
@@ -40,7 +42,11 @@ export function AgentVisualizer({ desktopWidget = false }: { desktopWidget?: boo
   const [toolbarBottom, setToolbarBottom] = useState(112)
   const [currentRoundOnly, setCurrentRoundOnly] = useState(true)
   const [showAllAgents, setShowAllAgents] = useState(false)
-  useEffect(() => setShowAllAgents(bridge.selectedSessionId?.startsWith('t3:') === true), [bridge.selectedSessionId])
+  // T3 team monitoring replaces the native layout only when the relay reads T3.
+  const teamMode = bridge.sourceHealth !== null || bridge.sessions.some(session => session.id.startsWith('t3:'))
+  const [teamScope, setTeamScope] = useState<TeamScope>('active')
+  const [teamPane, setTeamPane] = useState<TeamPane>('board')
+  useEffect(() => setShowAllAgents(teamMode ? teamScope === 'session' : bridge.selectedSessionId?.startsWith('t3:') === true), [bridge.selectedSessionId, teamMode, teamScope])
 
   const {
     frameRef,
@@ -65,7 +71,8 @@ export function AgentVisualizer({ desktopWidget = false }: { desktopWidget?: boo
     updateAgentPosition,
   } = useAgentSimulation({
     restoring: bridge.restoring,
-    visible: bridge.viewVisible,
+    // The board does not need the canvas animation; the graph pane does.
+    visible: bridge.viewVisible && (!teamMode || (teamPane === 'graph' && !desktopWidget)),
     animationMode: bridge.animationMode,
     animationSpeed: bridge.animationSpeed,
     useMockData: bridge.useMockData,
@@ -234,6 +241,56 @@ export function AgentVisualizer({ desktopWidget = false }: { desktopWidget?: boo
   }, [bridge])
 
   const isEmpty = agents.size === 0 && !bridge.useMockData && !bridge.restoring
+
+  if (teamMode) {
+    return (
+      <div className="agent-flow-ui h-screen w-screen relative overflow-hidden" style={{ background: '#030a13' }}>
+        <TeamWorkspace
+          widget={desktopWidget}
+          sessions={bridge.sessions.filter(session => session.id.startsWith('t3:'))}
+          selectedSessionId={bridge.selectedSessionId}
+          onSelectSession={bridge.selectSession}
+          teamSnapshots={bridge.teamSnapshots}
+          health={bridge.sourceHealth}
+          transport={bridge.transport}
+          animationMode={bridge.animationMode}
+          scope={teamScope}
+          onScope={scope => { setTeamScope(scope); setZoomToFitTrigger(value => value + 1) }}
+          pane={teamPane}
+          onPane={pane => { setTeamPane(pane); setZoomToFitTrigger(value => value + 1) }}
+          viewerControls={<FlowControls bridge={bridge} />}
+          renderGraph={(selectedId, onSelect) => (
+            <AgentCanvas
+              topInset={12}
+              visible={bridge.viewVisible && !bridge.restoring}
+              restoring={bridge.restoring}
+              showAllAgents={showAllAgents}
+              currentRoundOnly={false}
+              animationMode={bridge.animationMode}
+              animationSpeed={bridge.animationSpeed}
+              compact={false}
+              simulationRef={frameRef}
+              selectedAgentId={selectedId}
+              hoveredAgentId={selection.hoveredAgentId}
+              showStats={false}
+              showHexGrid={showHexGrid}
+              zoomToFitTrigger={zoomToFitTrigger}
+              pauseAutoFit={false}
+              onAgentClick={onSelect}
+              onAgentHover={selection.setHoveredAgentId}
+              onAgentDrag={updateAgentPosition}
+              onContextMenu={() => {}}
+              onToolCallClick={() => {}}
+              selectedToolCallId={null}
+              onDiscoveryClick={() => {}}
+              selectedDiscoveryId={null}
+              showCostOverlay={false}
+            />
+          )}
+        />
+      </div>
+    )
+  }
 
   return (
     <OpenFileProvider value={bridge.isVSCode ? openFile : null}>

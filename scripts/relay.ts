@@ -24,6 +24,7 @@ import {
 import { setLogLevel } from '../extension/src/logger'
 import type { TelemetryClient } from './telemetry'
 import { createRemoteMirror, type RemoteMirror } from './remote-mirror'
+import type { SourceHealth } from '../web/lib/team-types'
 
 const MAX_EVENT_BUFFER = 5000
 const DISCOVERY_DIR = path.join(os.homedir(), '.claude', 'agent-flow')
@@ -64,6 +65,26 @@ function log(...args: unknown[]) {
 const sseClients = new Set<http.ServerResponse>()
 let remoteMirror: RemoteMirror | undefined
 
+interface RelaySink { write(value: string): unknown }
+interface MobileSink { ingest(value: string): unknown }
+
+export function distributeRelayMessage(
+  data: string,
+  clients: Iterable<RelaySink>,
+  mirror?: MobileSink,
+  includeRemote = true,
+  onClientError?: (client: RelaySink) => void,
+): void {
+  if (includeRemote) mirror?.ingest(data)
+  for (const client of clients) {
+    try { client.write(`data: ${data}\n\n`) } catch { onClientError?.(client) }
+  }
+}
+
+export function t3ConnectionStatus(health: SourceHealth | null): 'connected' | 'disconnected' {
+  return health?.state === 'ok' ? 'connected' : 'disconnected'
+}
+
 function sendSSE(res: http.ServerResponse, data: unknown) {
   try { res.write(`data: ${JSON.stringify(data)}\n\n`) } catch {
     sseClients.delete(res)
@@ -71,12 +92,18 @@ function sendSSE(res: http.ServerResponse, data: unknown) {
 }
 
 function broadcast(data: string) {
-  remoteMirror?.ingest(data)
-  for (const res of sseClients) {
-    try { res.write(`data: ${data}\n\n`) } catch {
-      sseClients.delete(res)
-    }
-  }
+  distributeRelayMessage(data, sseClients, remoteMirror, true, client => sseClients.delete(client as http.ServerResponse))
+}
+
+function broadcastSourceHealth(health: SourceHealth): void {
+  distributeRelayMessage(JSON.stringify({ type: 'source-health', health }), sseClients, remoteMirror, false,
+    client => sseClients.delete(client as http.ServerResponse))
+}
+
+function broadcastT3ConnectionStatus(health: SourceHealth): void {
+  distributeRelayMessage(JSON.stringify({ type: 'connection-status', status: t3ConnectionStatus(health),
+    source: health.reason || 'T3 local teams (read-only)' }), sseClients, remoteMirror, false,
+  client => sseClients.delete(client as http.ServerResponse))
 }
 
 // ─── Event buffering ────────────────────────────────────────────────────────
@@ -446,8 +473,11 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
     t3Watcher.onEvent(broadcastEvent)
     t3Watcher.onSessionLifecycle(event => broadcastSessionLifecycle(event.type, event.sessionId, event.label))
     t3Watcher.onSessionsChanged(sessions => broadcast(JSON.stringify({ type: 'session-list', sessions })))
+    t3Watcher.onSourceHealth(health => {
+      broadcastSourceHealth(health)
+      broadcastT3ConnectionStatus(health)
+    })
     t3Watcher.onDiagnostic(source => {
-      broadcast(JSON.stringify({ type: 'connection-status', status: source === 'T3 local teams (read-only)' ? 'connected' : 'watching', source }))
       options.onSourceStatus?.(source)
     })
     t3Watcher.start()
@@ -536,7 +566,8 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
       if (codexWatcher) sessionList.push(...codexWatcher.getActiveSessions())
       if (t3Watcher) {
         sessionList.push(...t3Watcher.getActiveSessions())
-        sendSSE(res, { type: 'connection-status', status: t3Watcher.diagnostic === 'T3 local teams (read-only)' ? 'connected' : 'watching', source: t3Watcher.diagnostic })
+        if (t3Watcher.sourceHealth) sendSSE(res, { type: 'source-health', health: t3Watcher.sourceHealth })
+        sendSSE(res, { type: 'connection-status', status: t3ConnectionStatus(t3Watcher.sourceHealth), source: t3Watcher.diagnostic })
       }
       if (sessionList.length > 0) {
         sendSSE(res, { type: 'session-list', sessions: sessionList })

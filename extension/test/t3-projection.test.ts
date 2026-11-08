@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { projectT3Teams, t3WorkspaceMatches, type T3Projection, type T3Row } from '../src/t3-projection'
+import { mapT3Delivery, projectT3Teams, t3WorkspaceMatches, type T3Projection, type T3Row } from '../src/t3-projection'
+import type { TeamSnapshot } from '../../web/lib/team-types'
 
 const row = (fields: T3Row, payload: T3Row = {}) => ({ ...fields, payload_json: JSON.stringify(payload) })
 export function fixture(): T3Projection {
@@ -14,8 +15,9 @@ export function fixture(): T3Projection {
     ],
     subagents: [row({ subagent_id: 'task1', thread_id: 'lead', child_thread_id: 'worker', provider_thread_id: 'p-worker', status: 'completed', driver: 'codex' },
       { title: 'Research worker', model: 'gpt-test', prompt: 'Inspect SQL', result: 'Findings', completionDelivery: { state: 'claimed' } })],
-    runs: [row({ run_id: 'r-lead', thread_id: 'lead', ordinal: 2, status: 'running' }), row({ run_id: 'r-worker', thread_id: 'worker', ordinal: 1, status: 'completed' }, { modelSelection: { model: 'gpt-test' } })],
-    providerThreads: [{ provider_thread_id: 'p-lead', driver: 'claudeAgent' }],
+    runs: [row({ run_id: 'r-lead', thread_id: 'lead', ordinal: 2, status: 'running' }), row({ run_id: 'r-worker', thread_id: 'worker', ordinal: 1, status: 'completed', provider_thread_id: 'p-worker' }, { modelSelection: { model: 'gpt-test' } })],
+    providerThreads: [{ provider_thread_id: 'p-lead', thread_id: 'lead', driver: 'claudeAgent' },
+      row({ provider_thread_id: 'p-worker', thread_id: 'worker', driver: 'codex' }, { contextUsage: { usedTokens: 1200, maxTokens: 8000 } })],
     items: [row({ turn_item_id: 'tool1', thread_id: 'lead', run_id: 'r-lead', type: 'dynamic_tool', status: 'running' }, { toolName: 'delegate_task' })],
     requests: [], nodes: [],
   }
@@ -33,9 +35,30 @@ test('groups cross-provider children, keeps forks independent, filters workspace
   assert.equal(agents[1].model, 'gpt-test')
   assert.equal(agents[1].tokensMax, 0)
   assert.equal((team.event.payload.delegations as T3Row[])[0].stage, 'completed', 'Claiming delivery does not prove receipt')
+  const detail = team.event.payload.team as TeamSnapshot
+  assert.equal(detail.sessionId, 't3:lead')
+  assert.equal(detail.title, 'Index review')
+  assert.equal(detail.agents[0].status, 'running')
+  assert.equal(detail.agents[0].context, null, 'Absent context counters stay null')
+  assert.deepEqual(detail.agents[1].context, { used: 1200, max: 8000 })
+  assert.equal(detail.agents[0].activities[0].toolName, 'delegate_task')
+  assert.equal(detail.agents[0].activities[0].startedAt, null)
+  assert.equal(detail.tasks[0].delivery, 'pending')
+  assert.equal(detail.updatedAt, Date.parse('2026-11-06T01:05:00Z'))
   assert.equal(t3WorkspaceMatches('D:/Project/TH', 'd:/project/th-other'), false)
   assert.equal(t3WorkspaceMatches('D:/Project/TH', 'd:\\project\\TH\\vrm'), true)
   assert.deepEqual(projectT3Teams(fixture(), ['D:/unrelated']), [])
+})
+
+test('maps every documented delivery state without treating delivery as receipt', () => {
+  assert.equal(mapT3Delivery(null), 'none')
+  for (const state of ['claimed', 'queued', 'pending']) assert.equal(mapT3Delivery(state), 'pending')
+  assert.equal(mapT3Delivery('delivered'), 'delivered')
+  assert.equal(mapT3Delivery('acknowledged'), 'received')
+  assert.equal(mapT3Delivery('observed'), 'received')
+  assert.equal(mapT3Delivery('delivered', 'lead-run'), 'received')
+  assert.equal(mapT3Delivery('disposed'), 'discarded')
+  assert.equal(mapT3Delivery('future-state'), 'unknown')
 })
 test('preserves nested native delegation and distinguishes delivered from observed results', () => {
   const data = fixture()

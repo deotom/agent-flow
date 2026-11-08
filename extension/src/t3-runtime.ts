@@ -10,8 +10,12 @@ export function startT3Runtime(context: vscode.ExtensionContext): AgentRuntime {
   const lists = watcher.onSessionsChanged(sessions => {
     for (const panel of VisualizerPanel.getEventTargets()) panel.postMessage({ type: 'session-list', sessions })
   })
+  const health = watcher.onSourceHealth(sourceHealth => {
+    // The shared UI bridge understands this additive message; the legacy extension protocol remains unchanged.
+    for (const panel of VisualizerPanel.getEventTargets()) panel.postMessage({ type: 'source-health', health: sourceHealth } as never)
+  })
   watcher.start()
-  const dispose = () => { lists.dispose(); wiring.dispose(); watcher.dispose() }
+  const dispose = () => { health.dispose(); lists.dispose(); wiring.dispose(); watcher.dispose() }
   context.subscriptions.push({ dispose })
   return { mode: 't3', watcher, connectionStatus: () => watcher.diagnostic, dispose }
 }

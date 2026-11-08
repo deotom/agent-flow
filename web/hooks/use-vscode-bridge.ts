@@ -1,12 +1,15 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { vscodeBridge, type ConnectionStatus, type AgentEvent, type SessionInfo } from '@/lib/vscode-bridge'
+import { vscodeBridge, type ConnectionStatus, type AgentEvent, type SessionInfo, type SourceHealth, type TeamSnapshot, type TransportState } from '@/lib/vscode-bridge'
 import { historyArchive, estimateBytes, type HistoryPage } from '@/lib/history-archive'
 import { SimulationEvent } from '@/lib/agent-types'
 import { shouldAutoSelectSession, type AnimationMode } from '@/lib/viewer-preferences'
 
 interface BridgeHookResult {
+  teamSnapshots: Record<string, TeamSnapshot>
+  sourceHealth: SourceHealth | null
+  transport: TransportState
   latestOnly: boolean
   loadFullHistory: () => void
   restoring: boolean
@@ -97,6 +100,9 @@ export function useVSCodeBridge(): BridgeHookResult {
   const [compact, setCompact] = useState(false)
   const [isVSCode, setIsVSCode] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected')
+  const [teamSnapshots, setTeamSnapshots] = useState<Record<string, TeamSnapshot>>({})
+  const [sourceHealth, setSourceHealth] = useState<SourceHealth | null>(null)
+  const [transport, setTransport] = useState<TransportState>('open')
   const [useMockData, setUseMockData] = useState(
     process.env.NEXT_PUBLIC_DEMO !== '0'
   )
@@ -174,16 +180,19 @@ export function useVSCodeBridge(): BridgeHookResult {
     const es = new EventSource(relayPort ? `http://127.0.0.1:${relayPort}/events` : '/events')
 
     es.onopen = () => {
+      setTransport('open')
       setConnectionStatus('connected')
       setUseMockData(false)
     }
     es.onmessage = (e) => {
       try {
+        setTransport('open')
         const data = JSON.parse(e.data)
         window.postMessage(data, '*')
       } catch {}
     }
     es.onerror = () => {
+      setTransport('reconnecting')
       setConnectionStatus('disconnected')
     }
 
@@ -199,6 +208,7 @@ export function useVSCodeBridge(): BridgeHookResult {
     // Listen for bridge initialization (event-driven, no polling)
     const unsubInit = bridge.onInit(() => {
       setIsVSCode(true)
+      setTransport('open')
       setUseMockData(false)
     })
 
@@ -206,6 +216,10 @@ export function useVSCodeBridge(): BridgeHookResult {
     // selectedSessionIdRef is updated synchronously (not via React state) so it's
     // always current even before React re-renders.
     const unsubEvent = bridge.onEvent((event: AgentEvent) => {
+      const team = event.type === 'session_snapshot' && event.payload.source === 't3' ? event.payload.team as TeamSnapshot | undefined : undefined
+      if (event.sessionId && team?.sessionId === event.sessionId) {
+        setTeamSnapshots(previous => ({ ...previous, [event.sessionId!]: team }))
+      }
       if (!event.historical && event.sessionId && Date.now() - (lastLiveRef.current.get(event.sessionId) ?? 0) > 1000) {
         const time = Date.now()
         lastLiveRef.current.set(event.sessionId, time)
@@ -280,6 +294,7 @@ export function useVSCodeBridge(): BridgeHookResult {
       setConnectionStatus(status)
       setConnectionSource(source)
     })
+    const unsubSourceHealth = bridge.onSourceHealth(health => setSourceHealth(health))
 
     const unsubConfig = bridge.onConfig((config) => {
       if (config.latestOnlySessions) setLatestOnlySessions(config.latestOnlySessions)
@@ -315,6 +330,7 @@ export function useVSCodeBridge(): BridgeHookResult {
         setHistoryProgress({ loaded: 0, total: 0 })
         // Panel was reopened — clear all stale state
         setSessions([])
+        setTeamSnapshots({})
         setSelectedSessionId(null)
         selectedSessionIdRef.current = null
         pendingEventsRef.current.length = 0
@@ -361,7 +377,8 @@ export function useVSCodeBridge(): BridgeHookResult {
           }
           return [...prev, session]
         })
-        if (alreadySelected || !shouldAutoSelectSession(lockedRef.current, selectedSessionIdRef.current)) return
+        if (alreadySelected || (session.id.startsWith('t3:') && selectedSessionIdRef.current)
+          || !shouldAutoSelectSession(lockedRef.current, selectedSessionIdRef.current)) return
         // Auto-select newly started session.
         // Set switch-pending flag to prevent the animation frame from processing
         // events in the wrong simulation state before useLayoutEffect swaps it.
@@ -403,6 +420,7 @@ export function useVSCodeBridge(): BridgeHookResult {
       unsubInit()
       unsubEvent()
       unsubStatus()
+      unsubSourceHealth()
       unsubConfig()
       unsubSession()
       unsubHistory()
@@ -503,6 +521,7 @@ export function useVSCodeBridge(): BridgeHookResult {
   }, [])
 
   return {
+    teamSnapshots, sourceHealth, transport,
     latestOnly: !!selectedSessionId && latestOnlySessions.includes(selectedSessionId),
     loadFullHistory: () => { if (selectedSessionId) vscodeBridge?.loadFullHistory(selectedSessionId) },
     restoring, viewVisible, historyRevision, storageError, setReviewing,

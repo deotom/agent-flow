@@ -6,12 +6,13 @@
  * between the React app and the extension host.
  */
 
-export type { AgentEvent, SessionInfo, ConnectionStatus } from './bridge-types'
-import type { AgentEvent, SessionInfo, ConnectionStatus } from './bridge-types'
+export type { AgentEvent, SessionInfo, ConnectionStatus, SourceHealth, TeamSnapshot, TransportState } from './bridge-types'
+import type { AgentEvent, SessionInfo, ConnectionStatus, SourceHealth } from './bridge-types'
 
 type InitCallback = () => void
 type EventCallback = (event: AgentEvent) => void
 type StatusCallback = (status: ConnectionStatus, source: string) => void
+type SourceHealthCallback = (health: SourceHealth) => void
 export type ViewerConfig = Partial<{ latestOnlySessions: string[]; visible: boolean; mode: string; autoPlay: boolean; showMockData: boolean; disable1MContext: boolean; compact: boolean; selectedSessionId: string;
   animationMode: 'full' | 'low' | 'off'; animationSpeed: number; patchVersion: string; extensionVersion: string }>
 type ConfigCallback = (config: ViewerConfig) => void
@@ -26,6 +27,7 @@ class VSCodeBridge {
   private initListeners: InitCallback[] = []
   private eventListeners: EventCallback[] = []
   private statusListeners: StatusCallback[] = []
+  private sourceHealthListeners: SourceHealthCallback[] = []
   private configListeners: ConfigCallback[] = []
   private sessionListeners: SessionCallback[] = []
   private batchListeners: ((batchId: number) => void)[] = []
@@ -73,6 +75,10 @@ class VSCodeBridge {
         for (const cb of this.statusListeners) {
           cb(this._status, this._source)
         }
+        break
+
+      case 'source-health':
+        for (const cb of this.sourceHealthListeners) cb(data.health)
         break
 
       case 'config':
@@ -144,6 +150,10 @@ class VSCodeBridge {
     return this.subscribe(this.statusListeners, callback)
   }
 
+  onSourceHealth(callback: SourceHealthCallback): () => void {
+    return this.subscribe(this.sourceHealthListeners, callback)
+  }
+
   onConfig(callback: ConfigCallback): () => void {
     return this.subscribe(this.configListeners, callback)
   }
@@ -197,6 +207,7 @@ class VSCodeBridge {
     this.initListeners = []
     this.eventListeners = []
     this.statusListeners = []
+    this.sourceHealthListeners = []
     this.configListeners = []
     this.sessionListeners = []
     this.historyListeners = []

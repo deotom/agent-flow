@@ -23,3 +23,5 @@ export interface SessionInfo {
 }
 
 export type ConnectionStatus = 'connected' | 'disconnected' | 'watching'
+
+export type { SourceHealth, TeamSnapshot, TransportState } from './team-types'

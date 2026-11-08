@@ -13,13 +13,13 @@ const ctx: ProcessEventContext = { syncForceSimulation() {}, findToolSlot: () =>
 
 it('labels each lifecycle state, including running tools and permission waits', () => {
   assert.match(agentStatusLabel({ state: 'thinking' }, 1), /^Thinking\.+$/)
-  assert.equal(agentStatusLabel({ state: 'tool_calling', currentTool: 'functions.exec_command' }, 0), 'Running exec_command')
+  assert.equal(agentStatusLabel({ state: 'tool_calling', currentTool: 'functions.exec_command' }, 0), 'Running a command')
   assert.equal(agentStatusLabel({ state: 'waiting_permission' }, 0), 'Approval needed')
   assert.equal(agentStatusLabel({ state: 'idle' }, 0), 'Ready')
   assert.equal(agentStatusLabel({ state: 'complete' }, 0), 'Done')
   assert.equal(agentStatusLabel({ state: 'error' }, 0), 'Tool failed')
   assert.equal(agentStatusLabel({ state: 'waiting_permission', waitingForInput: true }, 0), 'Input needed')
-  assert.equal(agentStatusLabel({ state: 'tool_calling', currentTool: 'exec', waitingForInput: true }, 0), 'Running exec')
+  assert.equal(agentStatusLabel({ state: 'tool_calling', currentTool: 'exec', waitingForInput: true }, 0), 'Running a command')
   assert.equal(agentStatusLabel({ state: 'complete', waitingForInput: true }, 0), 'Done')
 })
 

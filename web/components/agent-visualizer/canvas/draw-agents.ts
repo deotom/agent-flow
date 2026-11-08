@@ -1,4 +1,5 @@
 import { captionLayout } from '@/lib/agent-caption'
+import { plainToolLabel } from '@/lib/team-model'
 import { Agent, NODE, ANIM } from '@/lib/agent-types'
 import { COLORS, getStateColor } from '@/lib/colors'
 import {
@@ -19,7 +20,7 @@ export function agentStatusLabel(agent: Pick<Agent, 'state' | 'currentTool' | 'p
   if (agent.contextRecharge) return 'Compacting context…'
   switch (agent.state) {
     case 'thinking': return `Thinking${'.'.repeat(1 + Math.floor(time * 2) % 3)}`
-    case 'tool_calling': return `Running ${agent.currentTool?.split('.').pop() ?? 'tool'}`
+    case 'tool_calling': return plainToolLabel(agent.currentTool)
     case 'waiting_permission': return 'Approval needed'
     case 'complete': return 'Done'
     case 'error': return 'Tool failed'
@@ -82,7 +83,9 @@ const hudLampDirections = [24, 36].map(count => Array.from({ length: count }, (_
 
 export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radius: number, time = 0, effectsEnabled = false) {
   if (agent.state === 'complete' && !agent.isMain) return
-  const usage = Math.min(1, Math.max(0, agent.tokensUsed / Math.max(1, agent.tokensMax)))
+  // No reported context window: draw nothing rather than a full "unused" ring.
+  if (!(agent.tokensMax > 0)) return
+  const usage = Math.min(1, Math.max(0, agent.tokensUsed / agent.tokensMax))
   const directions = hudLampDirections[agent.isMain ? 1 : 0]
   const recharge = agent.contextRecharge
   const lit = Math.ceil((1 - usage) * directions.length)

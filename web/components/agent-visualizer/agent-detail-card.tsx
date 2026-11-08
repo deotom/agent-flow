@@ -25,7 +25,8 @@ export function AgentDetailCard({
   agent,
   onClose,
 }: AgentDetailCardProps) {
-  const contextPercent = Math.round((agent.tokensUsed / agent.tokensMax) * 100)
+  const contextKnown = agent.tokensMax > 0
+  const contextPercent = contextKnown ? Math.round((agent.tokensUsed / agent.tokensMax) * 100) : 0
   const stateColor = getStateColor(agent.state)
 
   // Fixed position: middle-left of the screen (below message feed panel)
@@ -66,10 +67,10 @@ export function AgentDetailCard({
         <div className="flex justify-between mb-1">
           <span className="text-[10px]" style={{ color: COLORS.textMuted }}>Context</span>
           <span className="text-[10px] font-mono" style={{ color: COLORS.textDim }}>
-            {formatTokens(agent.tokensUsed)} / {formatTokens(agent.tokensMax)} ({contextPercent}%)
+            {contextKnown ? `${formatTokens(agent.tokensUsed)} / ${formatTokens(agent.tokensMax)} (${contextPercent}%)` : 'Not reported'}
           </span>
         </div>
-        <ProgressBar percent={contextPercent} color={stateColor} />
+        {contextKnown && <ProgressBar percent={contextPercent} color={stateColor} />}
       </div>
 
       {/* Stats row */}

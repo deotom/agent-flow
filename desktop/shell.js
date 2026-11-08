@@ -21,9 +21,11 @@ function render(state) {
   element('folder-text').textContent = state.busy ? 'Opening…' : state.folder ? 'Change folder' : 'Choose folder'
   element('workspace-label').textContent = widgetMode && state.folder ? state.folder.split(/[\\/]/).filter(Boolean).pop() : state.folder || 'No workspace selected'
   element('workspace-label').title = state.folder
-  element('connection-label').textContent = state.busy ? 'CONNECTING' : state.url ? 'CONNECTED' : 'READY'
+  // In T3 mode the team view reports T3 health itself; the shell only reports its local viewer.
+  const t3View = state.runtime === 't3' && Boolean(state.url)
+  element('connection-label').textContent = state.busy ? 'CONNECTING' : t3View ? 'VIEWER ON' : state.url ? 'CONNECTED' : 'READY'
   element('connection-dot').classList.toggle('connected', Boolean(state.url))
-  const sourceError = state.runtime === 't3' && state.sourceStatus && state.sourceStatus !== 'T3 local teams (read-only)' ? state.sourceStatus : ''
+  const sourceError = state.runtime === 't3' && !t3View && state.sourceStatus && state.sourceStatus !== 'T3 local teams (read-only)' ? state.sourceStatus : ''
   element('error').textContent = state.error || sourceError
   element('error').hidden = !(state.error || sourceError)
   element('welcome').hidden = Boolean(state.url)

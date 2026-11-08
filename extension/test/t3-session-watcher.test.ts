@@ -16,26 +16,31 @@ test('reads committed WAL changes without modifying T3, replays teams and recove
   db.exec(`PRAGMA journal_mode=WAL;
     CREATE TABLE projection_projects(project_id TEXT, workspace_root TEXT, deleted_at TEXT);
     INSERT INTO projection_projects VALUES('p','D:/Project/TH',NULL);
-    CREATE TABLE orchestration_v2_projection_threads(thread_id TEXT,project_id TEXT,title TEXT,default_provider TEXT,worktree_path TEXT,created_at TEXT,updated_at TEXT,archived_at TEXT,deleted_at TEXT,payload_json TEXT);
+    CREATE TABLE orchestration_v2_projection_threads(thread_id TEXT,project_id TEXT,title TEXT,default_provider TEXT,active_provider_thread_id TEXT,created_at TEXT,updated_at TEXT,archived_at TEXT,deleted_at TEXT,payload_json TEXT);
     INSERT INTO orchestration_v2_projection_threads VALUES('root','p','Team','claudeAgent',NULL,'2026-11-06T01:00:00Z','2026-11-06T01:01:00Z',NULL,NULL,'{}');
-    CREATE TABLE orchestration_v2_projection_subagents(subagent_id TEXT,thread_id TEXT,child_thread_id TEXT,parent_node_id TEXT,provider_thread_id TEXT,status TEXT,driver TEXT,started_at TEXT,completed_at TEXT,updated_at TEXT,payload_json TEXT);
-    CREATE TABLE orchestration_v2_projection_runs(run_id TEXT,thread_id TEXT,ordinal INTEGER,status TEXT,provider_thread_id TEXT,payload_json TEXT);
-    INSERT INTO orchestration_v2_projection_runs VALUES('r','root',1,'running',NULL,'{}');
-    CREATE TABLE orchestration_v2_projection_provider_threads(provider_thread_id TEXT,thread_id TEXT,driver TEXT,payload_json TEXT);
-    CREATE TABLE orchestration_v2_projection_runtime_requests(thread_id TEXT,status TEXT,payload_json TEXT);
-    CREATE TABLE orchestration_v2_projection_nodes(node_id TEXT,thread_id TEXT,provider_thread_id TEXT,payload_json TEXT);
-    CREATE TABLE orchestration_v2_projection_turn_items(turn_item_id TEXT,thread_id TEXT,run_id TEXT,provider_thread_id TEXT,type TEXT,status TEXT,payload_json TEXT);
-    INSERT INTO orchestration_v2_projection_turn_items VALUES('t','root','r',NULL,'dynamic_tool','running','{"toolName":"delegate_task","output":"PRIVATE_TOOL_OUTPUT"}');`)
+    CREATE TABLE orchestration_v2_projection_subagents(subagent_id TEXT,thread_id TEXT,run_id TEXT,parent_node_id TEXT,provider TEXT,child_thread_id TEXT,provider_thread_id TEXT,status TEXT,driver TEXT,started_at TEXT,completed_at TEXT,updated_at TEXT,completion_delivery_state TEXT,payload_json TEXT);
+    CREATE TABLE orchestration_v2_projection_runs(run_id TEXT,thread_id TEXT,ordinal INTEGER,provider TEXT,status TEXT,provider_thread_id TEXT,completed_at TEXT,payload_json TEXT);
+    INSERT INTO orchestration_v2_projection_runs VALUES('r','root',1,'claude','running',NULL,NULL,'{}');
+    CREATE TABLE orchestration_v2_projection_provider_threads(provider_thread_id TEXT,thread_id TEXT,provider TEXT,driver TEXT,updated_at TEXT,payload_json TEXT);
+    CREATE TABLE orchestration_v2_projection_runtime_requests(runtime_request_id TEXT,thread_id TEXT,node_id TEXT,kind TEXT,status TEXT,created_at TEXT,resolved_at TEXT,payload_json TEXT);
+    CREATE TABLE orchestration_v2_projection_nodes(node_id TEXT,thread_id TEXT,parent_node_id TEXT,provider_thread_id TEXT,started_at TEXT,completed_at TEXT,payload_json TEXT);
+    CREATE TABLE orchestration_v2_projection_turn_items(turn_item_id TEXT,thread_id TEXT,run_id TEXT,provider_thread_id TEXT,type TEXT,status TEXT,updated_at TEXT,payload_json TEXT);
+    INSERT INTO orchestration_v2_projection_turn_items VALUES('t','root','r',NULL,'dynamic_tool','running','2026-11-06T01:01:00Z','{"toolName":"delegate_task","output":"PRIVATE_TOOL_OUTPUT"}');`)
   const hash = () => createHash('sha256').update(fs.readFileSync(file)).update(fs.readFileSync(`${file}-wal`)).digest('hex')
   const before = hash()
   const watcher = new T3SessionWatcher(['D:/Project/TH'], file)
   t.after(() => watcher.dispose())
   const events: AgentEvent[] = [], lifecycle: string[] = []
+  const health: Array<{ state: string; lastSuccessAt: number | null; lastChangeAt: number | null }> = []
   watcher.onEvent(event => events.push(event))
   watcher.onSessionLifecycle(event => lifecycle.push(event.type))
+  watcher.onSourceHealth(value => health.push(value))
   watcher.poll()
   assert.equal(watcher.getActiveSessions().length, 1)
   assert.equal(events.length, 1)
+  assert.equal(health.at(-1)?.state, 'ok')
+  assert.ok(health.at(-1)?.lastSuccessAt)
+  assert.ok(health.at(-1)?.lastChangeAt)
   assert.equal(hash(), before, 'Read-only polling must not write the main DB or WAL')
   assert.ok(!JSON.stringify(events).includes('PRIVATE_TOOL_OUTPUT'))
   watcher.poll()
@@ -51,8 +56,10 @@ test('reads committed WAL changes without modifying T3, replays teams and recove
   db.exec('ALTER TABLE orchestration_v2_projection_nodes RENAME TO saved_nodes')
   watcher.poll()
   assert.match(watcher.diagnostic, /unavailable or incompatible/)
-  assert.equal(watcher.getActiveSessions().length, 0, 'A stale active team must not survive a broken data source')
-  assert.ok(lifecycle.includes('ended'))
+  assert.equal(watcher.getActiveSessions().length, 1, 'A failed poll keeps the last known team')
+  assert.equal(health.at(-1)?.state, 'unavailable')
+  assert.equal(health.length, 4, 'Health is emitted after every poll')
+  assert.equal(lifecycle.includes('ended'), false)
   db.exec('ALTER TABLE saved_nodes RENAME TO orchestration_v2_projection_nodes')
   watcher.poll()
   assert.equal(watcher.getActiveSessions().length, 1)
