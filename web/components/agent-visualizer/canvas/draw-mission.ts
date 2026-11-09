@@ -462,7 +462,7 @@ export function drawMissionAgents(
     const radius = agent.isMain ? NODE.radiusMain : NODE.radiusSub
     const core = radius * (node.role === 'lead' ? 0.67 : 0.56)
     // The lead has no inbound link: colour it from its own T3 status.
-    const stage = stages.get(id) ?? (node.status === 'running' || node.status === 'thinking' ? 'working'
+    const stage = stages.get(id) ?? (node.status === 'running' || node.status === 'thinking' || node.status === 'background' ? 'working'
       : node.status === 'waiting_approval' || node.status === 'waiting_input' ? 'waiting' : node.status === 'failed' ? 'failed' : 'queued')
     const color = MISSION_COLORS[stage]
     const moving = effectsEnabled && !node.collapsed

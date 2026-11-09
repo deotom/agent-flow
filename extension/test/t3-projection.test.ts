@@ -107,3 +107,24 @@ test('shows native context compaction instead of generic thinking', () => {
   assert.equal((after.event.payload.agents as T3Row[])[0].compacting, false)
   assert.equal((after.event.payload.team as TeamSnapshot).agents[0].status, 'thinking')
 })
+
+test('keeps a lead whose run ended busy while T3 waits on its background commands', () => {
+  const data = fixture()
+  data.runs[0].status = 'completed'
+  data.items = []
+  data.providerThreads[0] = row({ provider_thread_id: 'p-lead', thread_id: 'lead', driver: 'claudeAgent' }, { pendingBackgroundTasks: [
+    { taskId: 'b1', kind: 'command', description: 'Watch   pipeline run', command: 'secret --token x', output: 'tool output' },
+    { taskId: 'b2', kind: 'command' },
+  ] })
+  const team = projectT3Teams(data, ['d:/project/th']).find(t => t.session.id === 't3:lead')!
+  assert.equal(team.session.status, 'active', 'A team waiting on background commands is still active')
+  assert.equal((team.event.payload.agents as T3Row[])[0].state, 'thinking')
+  const lead = (team.event.payload.team as TeamSnapshot).agents[0]
+  assert.equal(lead.status, 'background')
+  assert.deepEqual(lead.activities.map(a => [a.type, a.title]), [['background_command', 'Watch pipeline run'], ['background_command', null]])
+  assert.ok(!JSON.stringify(lead).includes('secret') && !JSON.stringify(lead).includes('tool output'), 'Only the short description crosses the contract')
+  data.providerThreads[0] = row({ provider_thread_id: 'p-lead', thread_id: 'lead', driver: 'claudeAgent' }, { pendingBackgroundTasks: [] })
+  const after = projectT3Teams(data, ['d:/project/th']).find(t => t.session.id === 't3:lead')!
+  assert.equal((after.event.payload.team as TeamSnapshot).agents[0].status, 'idle')
+  assert.equal(after.session.status, 'completed')
+})

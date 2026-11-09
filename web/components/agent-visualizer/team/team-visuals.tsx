@@ -13,6 +13,7 @@ function StatusGlyph({ status }: { status: TeamAgentStatus }) {
     case 'waiting_input': return <path d="M13.2 13.2a2.9 2.9 0 1 1 4.4 2.5c-1 .6-1.6 1.2-1.6 2.3M16 21v.3" />
     case 'running': return <path d="M13.6 11.8l6 4.2-6 4.2z" />
     case 'thinking': return <circle cx="16" cy="16" r="2.4" />
+    case 'background': return <path d="M16 11.5V16l3 2" />
     default: return null
   }
 }

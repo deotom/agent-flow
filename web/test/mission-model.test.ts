@@ -130,3 +130,13 @@ describe('mission activity drives the node effect', () => {
     assert.equal(missionActivity(agent('w', { status: 'done' })), null)
   })
 })
+
+describe('mission background commands', () => {
+  it('keeps the node working with a command effect', () => {
+    const bg = [{ id: 'b', type: 'background_command', toolName: null, title: 'Watch run', startedAt: null }]
+    const view = buildMissionView(team([lead({ status: 'background', activities: bg })]))!
+    assert.equal(view.nodes.get('lead')!.activity, 'command')
+    assert.equal(view.nodes.get('lead')!.statusLine, 'await bg(1) // commands')
+    assert.equal(missionStage(agent('w', { status: 'background' }), task('w')), 'working')
+  })
+})

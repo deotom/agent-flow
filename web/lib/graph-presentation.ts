@@ -99,7 +99,7 @@ export function missionPresentation(state: SimulationState, mission: MissionView
 
 const STAND_IN_STATE: Record<MissionNode['status'], Agent['state']> = {
   running: 'tool_calling', thinking: 'thinking', waiting_approval: 'waiting_permission', waiting_input: 'waiting_permission',
-  done: 'complete', failed: 'error', cancelled: 'complete', idle: 'idle',
+  background: 'thinking', done: 'complete', failed: 'error', cancelled: 'complete', idle: 'idle',
 }
 
 function missionStandIn(node: MissionNode): Agent {

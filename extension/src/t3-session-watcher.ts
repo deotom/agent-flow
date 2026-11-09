@@ -84,7 +84,8 @@ export class T3SessionWatcher {
         json_object('modelSelection', json_extract(payload_json, '$.modelSelection')) AS payload_json
         FROM orchestration_v2_projection_runs WHERE thread_id IN (${placeholders})`).all(...selected)
       const providerThreads = db.prepare(`SELECT provider_thread_id, thread_id, provider, driver, updated_at,
-        json_object('contextUsage', json_extract(payload_json, '$.contextUsage')) AS payload_json
+        json_object('contextUsage', json_extract(payload_json, '$.contextUsage'),
+          'pendingBackgroundTasks', json_extract(payload_json, '$.pendingBackgroundTasks')) AS payload_json
         FROM orchestration_v2_projection_provider_threads WHERE thread_id IN (${placeholders})`).all(...selected)
       const requests = db.prepare(`SELECT runtime_request_id, thread_id, node_id, kind, status, created_at, resolved_at
         FROM orchestration_v2_projection_runtime_requests WHERE thread_id IN (${placeholders})`).all(...selected)

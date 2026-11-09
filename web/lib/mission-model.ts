@@ -89,12 +89,12 @@ const MAX_CHILD_SPAN = (150 * Math.PI) / 180
 /** A question for the user outranks a failure, so the path to it always lights. */
 const strongest = (a: MissionAlert, b: MissionAlert): MissionAlert => a === 'waiting' || b === 'waiting' ? 'waiting' : a ?? b
 const isWaiting = (status: TeamAgentRow['status']) => status === 'waiting_approval' || status === 'waiting_input'
-const isActive = (status: TeamAgentRow['status']) => status === 'running' || status === 'thinking' || isWaiting(status)
+const isActive = (status: TeamAgentRow['status']) => status === 'running' || status === 'thinking' || status === 'background' || isWaiting(status)
 const reachedParent = (task: TeamTaskRow | undefined) => task?.delivery === 'delivered' || task?.delivery === 'received'
 
 export function missionStage(agent: TeamAgentRow, task: TeamTaskRow | undefined): MissionStage {
   if (isWaiting(agent.status)) return 'waiting'
-  if (agent.status === 'running' || agent.status === 'thinking') return 'working'
+  if (agent.status === 'running' || agent.status === 'thinking' || agent.status === 'background') return 'working'
   if (agent.status === 'cancelled' || task?.status === 'cancelled') return 'cancelled'
   if (agent.status === 'failed' || task?.status === 'failed') return 'failed'
   if (!task) return 'unknown'
@@ -110,6 +110,7 @@ export function missionStage(agent: TeamAgentRow, task: TeamTaskRow | undefined)
 
 export function missionActivity(agent: TeamAgentRow): MissionActivity {
   if (agent.status === 'thinking') return 'thinking'
+  if (agent.status === 'background') return 'command'
   if (agent.status !== 'running') return null
   const activity = agent.activities.at(-1)
   const kind = `${activity?.toolName ?? ''} ${activity?.type ?? ''}`.toLowerCase()
@@ -135,6 +136,7 @@ function statusLine(agent: TeamAgentRow, stage: MissionStage, role: MissionNode[
   if (activity?.type === 'compaction') return '› compacting context'
   if (agent.status === 'running') return `$ ${activityLabel(activity)}`
   if (agent.status === 'thinking') return '› thinking'
+  if (agent.status === 'background') return `await bg(${agent.activities.length || '…'}) // commands`
   if (agent.status === 'waiting_approval') return 'await you() // approval'
   if (agent.status === 'waiting_input') return 'await you() // answer'
   if (role === 'lead') return agent.status === 'idle' ? '› idle' : `› ${agent.status}`

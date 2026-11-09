@@ -14,6 +14,7 @@ const ACTIVITY_BY_TYPE: Record<string, string> = {
   subagent: 'Delegating to a worker',
   reasoning: 'Thinking',
   compaction: 'Compacting context',
+  background_command: 'Background command',
 }
 const ACTIVITY_BY_TOOL: Record<string, string> = {
   bash: 'Running a command', powershell: 'Running a command', shell: 'Running a command', exec: 'Running a command', exec_command: 'Running a command', write_stdin: 'Running a command', command_execution: 'Running a command',
@@ -55,7 +56,7 @@ export function describeActivity(activity: TeamActivity): { label: string; detai
 
 export const STATUS_LABEL: Record<TeamAgentStatus, string> = {
   running: 'Running', thinking: 'Thinking', waiting_approval: 'Needs approval', waiting_input: 'Needs your answer',
-  done: 'Done', failed: 'Failed', cancelled: 'Cancelled', idle: 'Idle',
+  background: 'Waiting on commands', done: 'Done', failed: 'Failed', cancelled: 'Cancelled', idle: 'Idle',
 }
 
 export const LEGEND: { status: TeamAgentStatus; meaning: string }[] = [
@@ -63,6 +64,7 @@ export const LEGEND: { status: TeamAgentStatus; meaning: string }[] = [
   { status: 'thinking', meaning: 'Run is in progress, no tool in use' },
   { status: 'waiting_approval', meaning: 'T3 has an open approval request' },
   { status: 'waiting_input', meaning: 'T3 has an open question' },
+  { status: 'background', meaning: 'Run ended, background commands still running' },
   { status: 'done', meaning: 'Finished successfully' },
   { status: 'failed', meaning: 'Ended with an error' },
   { status: 'cancelled', meaning: 'Stopped before finishing' },
@@ -70,13 +72,17 @@ export const LEGEND: { status: TeamAgentStatus; meaning: string }[] = [
 ]
 
 const isWaiting = (status: TeamAgentStatus) => status === 'waiting_approval' || status === 'waiting_input'
-export const isWorking = (status: TeamAgentStatus) => status === 'running' || status === 'thinking'
+export const isWorking = (status: TeamAgentStatus) => status === 'running' || status === 'thinking' || status === 'background'
 export const isTerminal = (status: TeamAgentStatus) => status === 'done' || status === 'failed' || status === 'cancelled'
 
 export function statusText(agent: TeamAgentRow, workingChildren = 0): string {
   if (agent.status === 'running') {
     const current = agent.activities.at(-1)
     return current ? describeActivity(current).label : 'Using a tool'
+  }
+  if (agent.status === 'background') {
+    const count = agent.activities.length
+    return count > 0 ? `Waiting on ${count} background ${count === 1 ? 'command' : 'commands'}` : STATUS_LABEL.background
   }
   if (agent.status === 'idle' && workingChildren > 0) return `Idle · ${workingChildren} ${workingChildren === 1 ? 'worker' : 'workers'} still working`
   return STATUS_LABEL[agent.status]

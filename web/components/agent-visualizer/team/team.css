@@ -517,3 +517,8 @@
 /* The in-app Animation setting is authoritative, as for the graph canvas: Windows often
    disables animation effects system-wide, and the viewer's own "Full effects" choice
    should still apply. "Effects off" above stops every animation. */
+
+/* Background commands: the run ended, but T3 still waits on commands it started. Calm working colour. */
+.jv-root [data-status="background"] { --c: var(--jv-run); }
+.jv-lamp[data-status="background"] .jv-lamp-arc { stroke-dasharray: 4 6; animation: jv-spin calc(6s * var(--jv-speed)) linear infinite; }
+.jv-row[data-live="true"][data-status="background"]::after { opacity: 1; animation: jv-row-sweep calc(6s * var(--jv-speed)) ease-in-out infinite; }

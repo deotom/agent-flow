@@ -16,6 +16,7 @@ export type TeamAgentStatus =
   | 'done'              // Terminal success of the task or child run.
   | 'failed'
   | 'cancelled'         // Includes interrupted.
+  | 'background'        // Run ended, but T3 still tracks background commands it started (pendingBackgroundTasks).
   | 'idle'              // Lead with no run in progress.
 
 /** Raw evidence only. Plain-language wording is decided by the UI. */

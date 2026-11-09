@@ -72,7 +72,7 @@ function TeamPicker({ sessions, selectedSessionId, onSelect, snapshots, compact 
         <div className="jv-popover jv-picker-list" role="listbox" aria-label="Teams">
           {ordered.map(session => {
             const team = snapshots[session.id]
-            const working = team?.agents.filter(agent => ['running', 'thinking', 'waiting_approval', 'waiting_input'].includes(agent.status)).length ?? 0
+            const working = team?.agents.filter(agent => ['running', 'thinking', 'background', 'waiting_approval', 'waiting_input'].includes(agent.status)).length ?? 0
             return (
               <button key={session.id} role="option" aria-selected={session.id === selectedSessionId} className="jv-picker-option" onClick={() => { onSelect(session.id); setOpen(false) }}>
                 <span className="jv-dot" data-active={session.status === 'active'} aria-hidden="true" />
@@ -258,6 +258,7 @@ function DetailPanel({ snapshot, agentId, live, now, onSelect, onClose }: { snap
               })}
             </ul>
           ) : <p className="jv-caption">{agent.status === 'thinking' ? 'Run in progress, no tool in use at the last read.' : 'No tool in progress at the last read.'}</p>}
+          {agent.status === 'background' && <p className="jv-caption">The run ended. T3 is still waiting on these background commands and reports back when they finish.</p>}
           {agent.requestKind && <p className="jv-caption jv-warn-text">Open request in T3: {agent.requestKind.replace(/[_-]+/g, ' ')}</p>}
         </section>
         {task && <TaskEvidence task={task} />}

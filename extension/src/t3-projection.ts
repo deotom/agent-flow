@@ -46,6 +46,20 @@ const runtime = (driver: unknown): 'claude' | 'codex' | undefined => driver === 
 const terminalSuccess = new Set(['completed', 'complete', 'succeeded', 'success', 'done'])
 const terminalFailure = new Set(['failed', 'error'])
 const terminalCancelled = new Set(['cancelled', 'canceled', 'interrupted'])
+/**
+ * Background commands T3 still tracks after the run that started them ended (T3 shows "Waiting on N commands").
+ * Only the kind and the agent's short description are kept, never the command text or its output.
+ */
+function backgroundActivities(provider: T3Row | undefined): TeamActivity[] {
+  const list = t3Payload(provider || {}).pendingBackgroundTasks
+  if (!Array.isArray(list)) return []
+  return list.slice(0, 5).map((value, index) => {
+    const task = object(value)
+    const kind = text(task.kind).replace(/[^a-z_]/gi, '').slice(0, 24) || 'task'
+    const description = text(task.description).replace(/\s+/g, ' ').trim().slice(0, 120)
+    return { id: `background:${text(task.taskId).slice(0, 40) || index}`, type: `background_${kind}`, toolName: null, title: description || null, startedAt: null }
+  })
+}
 
 export function mapT3Delivery(stateValue: unknown, observedByRunId?: unknown): TeamDelivery {
   const state = text(stateValue).toLowerCase()
@@ -121,8 +135,11 @@ export function projectT3Teams(data: T3Projection, workspaces: string[], now = D
         .sort((a, b) => (optionalTimestamp(b.created_at) ?? 0) - (optionalTimestamp(a.created_at) ?? 0))[0]
       const status = task?.status || latest?.status
       const model = text(object(payload.modelSelection).model) || text(object(t3Payload(latest || {}).modelSelection).model) || text(task && t3Payload(task).model) || undefined
-      const state = blocked ? 'waiting_permission' : pending.length ? 'tool_calling' : running(status) ? 'thinking'
+      // Background commands keep the agent busy on the canvas after its run ended.
+      const background = backgroundActivities(provider)
+      const baseState = blocked ? 'waiting_permission' : pending.length ? 'tool_calling' : running(status) ? 'thinking'
         : ['failed', 'error'].includes(text(status)) ? 'error' : id !== rootId && ['completed', 'cancelled', 'interrupted'].includes(text(status)) ? 'complete' : 'idle'
+      const state = background.length && (baseState === 'idle' || baseState === 'complete') ? 'thinking' : baseState
       const parentId = parents.get(id)
       const providerPayload = t3Payload(provider || {})
       const contextUsage = object(providerPayload.contextUsage)
@@ -145,16 +162,17 @@ export function projectT3Teams(data: T3Projection, workspaces: string[], now = D
           title: text(itemPayload.title) || null, startedAt: optionalTimestamp(itemPayload.startedAt),
         }
       })
-      const teamStatus: TeamAgentRow['status'] = openRequest
+      const baseStatus: TeamAgentRow['status'] = openRequest
         ? (/approval|permission|confirm|decision/i.test(requestKind) ? 'waiting_approval' : 'waiting_input')
         : activities.length ? 'running' : running(status) ? 'thinking'
         : terminalFailure.has(text(status)) ? 'failed' : terminalCancelled.has(text(status)) ? 'cancelled'
         : id !== rootId && terminalSuccess.has(text(status)) ? 'done' : 'idle'
+      const shownStatus: TeamAgentRow['status'] = background.length && (baseStatus === 'idle' || baseStatus === 'done') ? 'background' : baseStatus
       teamAgents.push({
         id: nodeForThread.get(id)!, parentId: task ? taskParent(task) ?? null : parentId ? nodeForThread.get(parentId) ?? null : null,
         role: id === rootId ? 'lead' : 'worker', name: text(task && t3Payload(task).title) || text(row.title),
         runtime: runtime(provider?.driver || provider?.provider || row.default_provider) ?? null, model: model ?? null,
-        status: teamStatus, task: capped(task && t3Payload(task).prompt), activities,
+        status: shownStatus, task: capped(task && t3Payload(task).prompt), activities: shownStatus === 'background' ? background : activities,
         requestKind: openRequest ? requestKind || null : null,
         context: usedTokens > 0 && maxTokens > 0 ? { used: usedTokens, max: maxTokens } : null,
         toolCallCount: tools.length, hasThread: true,
@@ -176,7 +194,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[], now = D
       const reported = usedTokens > 0 && maxTokens > 0
       agents.push({ id: nodeForThread.get(`task:${text(task.subagent_id)}`), name: text(p.title) || 'Subagent',
         parentId: taskParent(task), isMain: false, runtime: runtime(task.driver || task.provider),
-        model: text(p.model) || undefined, state: tools.length ? 'tool_calling' : running(task.status) ? 'thinking' : task.status === 'failed' ? 'error' : 'complete',
+        model: text(p.model) || undefined, state: tools.length ? 'tool_calling' : running(task.status) || backgroundActivities(provider).length ? 'thinking' : task.status === 'failed' ? 'error' : 'complete',
         task: text(p.prompt), spawnTime: relative(task.started_at), tools, currentTool: tools.at(-1)?.tool,
         tokensUsed: reported ? usedTokens : 0, tokensMax: reported ? maxTokens : 0, toolCalls: items.length })
       const openRequest = data.requests.filter(request => request.thread_id === task.thread_id && request.node_id === task.parent_node_id
@@ -188,13 +206,15 @@ export function projectT3Teams(data: T3Projection, workspaces: string[], now = D
           title: text(itemPayload.title) || null, startedAt: optionalTimestamp(itemPayload.startedAt) }
       })
       const statusValue = text(task.status)
-      const teamStatus: TeamAgentRow['status'] = openRequest
+      const baseStatus: TeamAgentRow['status'] = openRequest
         ? (/approval|permission|confirm|decision/i.test(requestKind) ? 'waiting_approval' : 'waiting_input')
         : activities.length ? 'running' : running(statusValue) ? 'thinking'
         : terminalFailure.has(statusValue) ? 'failed' : terminalCancelled.has(statusValue) ? 'cancelled' : 'done'
+      const background = backgroundActivities(provider)
+      const teamStatus: TeamAgentRow['status'] = background.length && baseStatus === 'done' ? 'background' : baseStatus
       teamAgents.push({ id: nodeForThread.get(`task:${text(task.subagent_id)}`)!, parentId: taskParent(task) ?? null,
         role: 'worker', name: text(p.title) || 'Subagent', runtime: runtime(task.driver || task.provider) ?? null,
-        model: text(p.model) || null, status: teamStatus, task: capped(p.prompt), activities,
+        model: text(p.model) || null, status: teamStatus, task: capped(p.prompt), activities: teamStatus === 'background' ? background : activities,
         requestKind: openRequest ? requestKind || null : null,
         context: usedTokens > 0 && maxTokens > 0 ? { used: usedTokens, max: maxTokens } : null,
         toolCallCount: items.length, hasThread: false, startedAt: optionalTimestamp(task.started_at),

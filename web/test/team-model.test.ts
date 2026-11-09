@@ -153,3 +153,14 @@ describe('graph scope', () => {
 it('names native context compaction instead of a generic tool', () => {
   assert.equal(plainToolLabel(null, 'compaction'), 'Compacting context')
 })
+
+describe('background commands', () => {
+  it('reads as working and names the number of commands T3 is waiting on', async () => {
+    const { statusText, isWorking } = await import('../lib/team-model')
+    const bg = { id: 'b', type: 'background_command', toolName: null, title: 'Watch run', startedAt: null }
+    const lead = { id: 'lead', parentId: null, role: 'lead' as const, name: 'L', runtime: 'claude' as const, model: null, status: 'background' as const,
+      task: null, activities: [bg, { ...bg, id: 'c' }], requestKind: null, context: null, toolCallCount: 0, hasThread: true, startedAt: 1, updatedAt: 1, completedAt: null }
+    assert.equal(statusText(lead), 'Waiting on 2 background commands')
+    assert.equal(isWorking('background'), true)
+  })
+})
