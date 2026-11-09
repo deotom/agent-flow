@@ -245,6 +245,19 @@ function drawReply(ctx: CanvasRenderingContext2D, reply: TeamReply, alpha: numbe
   ctx.restore()
 }
 
+/**
+ * T3 reported no context counters for this lead: a faint dashed ring holds the gauge's place, so the lens
+ * reads as "no data" rather than "something is missing". Same radius and rhythm as the 28-segment gauge.
+ */
+function drawContextPlaceholder(ctx: CanvasRenderingContext2D) {
+  const radius = 60, segment = (TAU * radius) / 28
+  ctx.save()
+  ctx.strokeStyle = 'rgba(234, 246, 255, 0.2)'; ctx.lineWidth = 5
+  ctx.setLineDash([segment * 0.38, segment * 0.62])
+  ctx.beginPath(); ctx.arc(0, 0, radius, -Math.PI / 2, -Math.PI / 2 + TAU); ctx.stroke()
+  ctx.restore()
+}
+
 function drawHealthTag(ctx: CanvasRenderingContext2D, health: 'stale' | 'offline') {
   const text = health === 'offline' ? 'OFFLINE · last known' : 'T3 UNREADABLE · last known'
   ctx.save()
@@ -346,6 +359,7 @@ export function OrbView() {
         drawBackplate(ctx, idle ? 0.3 + 0.45 * breath : 0.55)
         drawAlert(ctx, health === 'ok' ? current.alert : null, time)
         drawSatellites(ctx, current, motion)
+        if (!current.snapshot.agents.find(agent => agent.role === 'lead')?.context) drawContextPlaceholder(ctx)
         drawMissionAgents(ctx, lead.agents, lead.view, null, null, motion, health === 'ok' && !idle, 1, true, false)
         drawCaption(ctx, current, idle ? 0.45 + 0.55 * breath : 1)
         // A new reply fades in; it rests faint, brightens under the pointer, and fades out once it is old.
@@ -458,7 +472,7 @@ export function OrbView() {
   // The caption stays short; the lead's model and context live in the tooltip.
   const leadAgent = snapshot?.agents.find(agent => agent.role === 'lead')
   const leadDetail = leadAgent ? [leadAgent.runtime && leadAgent.model ? `${leadAgent.runtime}::${leadAgent.model}` : leadAgent.model,
-    leadAgent.context ? `ctx ${Math.round((1 - leadAgent.context.used / leadAgent.context.max) * 100)}% left` : null].filter(Boolean).join(' · ') : ''
+    leadAgent.context ? `ctx ${Math.round((1 - leadAgent.context.used / leadAgent.context.max) * 100)}% left` : 'ctx n/a'].filter(Boolean).join(' · ') : ''
   const title = snapshot ? `${snapshot.title}${leadDetail ? `\n${leadDetail}` : ''}\nClick to prompt · double-click to open Agent Flow · right-click for options` : 'Agent Flow'
   baseTitle.current = title
   useEffect(() => { if (canvas.current && !hoverTitle.current) canvas.current.title = title }, [title])
