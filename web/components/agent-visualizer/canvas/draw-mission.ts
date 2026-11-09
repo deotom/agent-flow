@@ -453,7 +453,7 @@ function drawActivityEffect(ctx: CanvasRenderingContext2D, agent: Agent, node: M
 
 export function drawMissionAgents(
   ctx: CanvasRenderingContext2D, agents: Map<string, Agent>, mission: MissionView,
-  selected: string | null, hovered: string | null, time: number, effectsEnabled = true, viewScale = 1, detailed = true,
+  selected: string | null, hovered: string | null, time: number, effectsEnabled = true, viewScale = 1, detailed = true, showLabels = true,
 ) {
   const stages = new Map(mission.links.map(link => [link.to, link.stage]))
   for (const [id, node] of mission.nodes) {
@@ -533,7 +533,7 @@ export function drawMissionAgents(
       ctx.fillStyle = '#eaf6ff'
       ctx.fillText(subtitle, agent.x, agent.y + 12)
     }
-    drawMissionLabel(ctx, agent, node, radius, color, viewScale)
+    if (showLabels) drawMissionLabel(ctx, agent, node, radius, color, viewScale)
     ctx.restore()
   }
 }

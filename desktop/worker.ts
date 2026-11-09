@@ -2,7 +2,7 @@
  * releasing its watchers, SSE clients and discovery registration together. */
 import * as http from 'node:http'
 import * as fs from 'node:fs'
-import { createRelay, Relay } from '../scripts/relay'
+import { createRelay, Relay, allowLocalRequest } from '../scripts/relay'
 import { serveStatic } from '../app/src/static'
 import { listenOnAvailablePort } from '../app/src/listen'
 
@@ -39,6 +39,7 @@ async function main() {
   const runtime = process.argv[3] === 't3' || process.argv[3] === 'auto' ? process.argv[3] as 't3' | 'auto' : undefined
   relay = await createRelay({ workspace, runtime, onSourceStatus: message => send({ type: 'source-status', message }) })
   server = http.createServer((req, res) => {
+    if (!allowLocalRequest(req, res)) return
     if (req.url === '/events') return relay!.handleSSE(req, res)
     if (req.method === 'GET') return serveStatic(req, res)
     res.writeHead(404).end('Not found')

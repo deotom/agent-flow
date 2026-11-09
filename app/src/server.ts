@@ -7,7 +7,7 @@ import * as os from 'os'
 import * as path from 'path'
 import { exec, execFile } from 'child_process'
 
-import { createRelay } from '../../scripts/relay'
+import { createRelay, allowLocalRequest } from '../../scripts/relay'
 import { createTelemetryClient } from '../../scripts/telemetry'
 import { serveStatic } from './static'
 import { listenOnAvailablePort } from './listen'
@@ -32,6 +32,8 @@ export async function startServer(options: ServerOptions) {
   const relay = await createRelay({ workspace, verbose: options.verbose, telemetry })
 
   const server = http.createServer((req, res) => {
+    // Only this machine's own address: blocks DNS-rebinding pages from reading team data.
+    if (!allowLocalRequest(req, res)) return
     // SSE endpoint
     if (req.url === '/events') {
       return relay.handleSSE(req, res)

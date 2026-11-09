@@ -4,7 +4,7 @@
  * that includes CORS headers for cross-origin dev mode (Next.js on :3000).
  */
 import * as http from 'http'
-import { createRelay } from './relay'
+import { createRelay, allowLocalRequest } from './relay'
 import { DEFAULT_RELAY_PORT, DEV_WEB_ORIGIN_PATTERN } from '../extension/src/constants'
 
 async function main() {
@@ -16,6 +16,7 @@ async function main() {
   const relay = await createRelay({ workspace, verbose: true })
 
   const server = http.createServer((req, res) => {
+    if (!allowLocalRequest(req, res)) return
     // Echo back the request Origin if it matches a localhost pattern, so
     // CORS survives Next.js picking a fallback port when 3000 is busy.
     const origin = req.headers.origin

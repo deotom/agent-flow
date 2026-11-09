@@ -19,7 +19,7 @@ function fixture(options = {}) {
       const child = new EventEmitter()
       child.stdout = new EventEmitter(); child.stderr = new EventEmitter(); child.stdin = new EventEmitter()
       child.stdin.end = text => { child.input = text }
-      child.kill = () => { child.killed = true; child.emit('close', null) }
+      child.kill = () => { child.killed = true; if (!options.delayClose) child.emit('close', null) }
       calls.push({ exe, args, config, child })
       return child
     },
@@ -75,13 +75,50 @@ test('send and start share a busy lock, released after completion', async () => 
   const next = cli.t3Send({ threadId: id, message: 'next' })
   calls[1].child.emit('close', 0); await next
 })
-test('timeout kills the process and releases busy lock', async () => {
-  const { cli, calls } = fixture({ timeoutMs: 5 })
-  await assert.rejects(cli.t3Send({ threadId: id, message: 'hi' }), /timed out/)
-  assert.equal(calls[0].child.killed, true)
+test('timeout reports unknown delivery and holds busy until close or exit', async () => {
+  for (const event of ['close', 'exit']) {
+    const { cli, calls } = fixture({ timeoutMs: 5, delayClose: true })
+    await assert.rejects(cli.t3Send({ threadId: id, message: 'hi' }), {
+      message: 'Delivery unknown: T3 did not answer in time. Check the thread in T3 before sending again.',
+    })
+    assert.equal(calls[0].child.killed, true)
+    await assert.rejects(cli.t3Start({ projectRoot: 'project', message: 'next' }), /Still sending/)
+    calls[0].child.emit(event, null)
+    const next = cli.t3Send({ threadId: id, message: 'next' })
+    calls[1].child.emit('close', 0); await next
+  }
+})
+
+test('timeout lock has a hard ten second cap', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const { cli, calls } = fixture({ timeoutMs: 5, delayClose: true })
+  const pending = cli.t3Send({ threadId: id, message: 'hi' })
+  t.mock.timers.tick(5)
+  await assert.rejects(pending, /Delivery unknown/)
+  t.mock.timers.tick(9999)
+  await assert.rejects(cli.t3Send({ threadId: id, message: 'next' }), /Still sending/)
+  t.mock.timers.tick(1)
   const next = cli.t3Send({ threadId: id, message: 'next' })
+  calls[0].child.emit('close', null)
+  await assert.rejects(cli.t3Send({ threadId: id, message: 'duplicate' }), /Still sending/)
   calls[1].child.emit('close', 0); await next
 })
+
+test('start accepts paired provider/model arguments and rejects invalid identifiers', async () => {
+  const { cli, calls } = fixture()
+  for (const payload of [{ provider: 'codex' }, { model: 'model' },
+    ...[null, 1, '', 'bad name', '../bad', 'x'.repeat(81)].flatMap(value => [
+      { provider: value, model: 'valid' }, { provider: 'valid', model: value },
+    ])]) {
+    await assert.rejects(cli.t3Start({ projectRoot: 'project', message: 'hi', ...payload }), /Provider and model/)
+  }
+  assert.equal(calls.length, 0)
+  const pending = cli.t3Start({ projectRoot: 'project', message: 'hi', provider: 'provider-1', model: 'model._:1' })
+  assert.deepEqual(calls[0].args.slice(1), ['thread', 'start', 'resolved:project', '-', '--json', '--provider', 'provider-1', '--model', 'model._:1'])
+  calls[0].child.stdout.emit('data', JSON.stringify({ id })); calls[0].child.emit('close', 0)
+  await pending
+})
+
 test('missing launcher fallback requires both files and gives install guidance', async () => {
   for (const missing of ['.exe', 'bin.mjs']) {
     const { cli, calls } = fixture({ fs: { readFileSync() { throw new Error('missing') }, existsSync: file => !file.endsWith(missing) } })

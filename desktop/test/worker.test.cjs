@@ -60,6 +60,16 @@ test('isolated workspaces serve UI + matching sessions, and release ports on sto
   for (const message of ready) assert.notEqual(new URL(message.url).port, '3001')
   assert.notEqual(ready[0].url, ready[1].url)
   for (const [index, message] of ready.entries()) {
+    for (const route of ['/', '/events', '/index.js']) {
+      const status = await new Promise((resolve, reject) => {
+        http.get(`${message.url}${route}`, { headers: { Host: `evil.example:${new URL(message.url).port}` } }, res => {
+          res.resume(); resolve(res.statusCode)
+        }).on('error', reject)
+      })
+      assert.equal(status, 403)
+    }
+    const localhost = await fetch(message.url, { headers: { Host: `localhost:${new URL(message.url).port}` } })
+    assert.equal(localhost.status, 200)
     const page = await fetch(message.url)
     assert.equal(page.status, 200)
     assert.match(await page.text(), /id="root"/)

@@ -2,6 +2,7 @@
 const path = require('node:path')
 const MISSING = 'T3 Code CLI not found. Open T3 Code once to install it.'
 const ID = /^[A-Za-z0-9-]{8,80}$/
+const MODEL = /^[A-Za-z0-9._:-]{1,80}$/
 
 function createT3CLI({ spawn = require('node:child_process').spawn, fs = require('node:fs'), env = process.env, timeoutMs = 60000 } = {}) {
   let busy = false
@@ -39,8 +40,16 @@ function createT3CLI({ spawn = require('node:child_process').spawn, fs = require
     if (busy) throw new Error('Still sending the previous prompt.')
     const target = kind === 'send' ? threadId(payload?.threadId) : projectRoot(payload?.projectRoot)
     const prompt = message(payload?.message)
+    const modelArgs = []
+    if (kind === 'start' && (payload?.provider !== undefined || payload?.model !== undefined)) {
+      if (typeof payload.provider !== 'string' || typeof payload.model !== 'string' || !MODEL.test(payload.provider) || !MODEL.test(payload.model)) {
+        throw new Error('Provider and model must both be valid identifiers.')
+      }
+      modelArgs.push('--provider', payload.provider, '--model', payload.model)
+    }
     const { exe, bin, home } = launcher()
     busy = true
+    let timedOut = false
     try {
       const output = await new Promise((resolve, reject) => {
         let child, timer, settled = false, stdout = '', stderr = ''
@@ -52,7 +61,7 @@ function createT3CLI({ spawn = require('node:child_process').spawn, fs = require
           else resolve(stdout)
         }
         try {
-          child = spawn(exe, [bin, 'thread', kind, target, '-', '--json'], {
+          child = spawn(exe, [bin, 'thread', kind, target, '-', '--json', ...modelArgs], {
             env: { ...env, ELECTRON_RUN_AS_NODE: '1', T3CODE_HOME: home },
             windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
           })
@@ -66,8 +75,18 @@ function createT3CLI({ spawn = require('node:child_process').spawn, fs = require
             finish(code === 0 ? undefined : new Error((line || `T3 exited (${code})`).slice(0, 200)))
           })
           timer = setTimeout(() => {
-            finish(new Error('T3 prompt timed out. Please check T3 Code.'))
-            child.kill()
+            timedOut = true
+            const cap = setTimeout(release, 10000)
+            function release() {
+              clearTimeout(cap)
+              child.removeListener('close', release)
+              child.removeListener('exit', release)
+              busy = false
+            }
+            child.once('close', release)
+            child.once('exit', release)
+            finish(new Error('Delivery unknown: T3 did not answer in time. Check the thread in T3 before sending again.'))
+            try { child.kill() } catch { /* Keep the lock until exit or the hard cap. */ }
           }, timeoutMs)
           child.stdin.end(prompt)
         } catch { finish(new Error('Could not run T3 Code CLI.')) }
@@ -80,7 +99,7 @@ function createT3CLI({ spawn = require('node:child_process').spawn, fs = require
         catch { throw new Error('T3 did not return a valid thread id.') }
       }
       return { ok: true, threadId: id }
-    } finally { busy = false }
+    } finally { if (!timedOut) busy = false }
   }
   return { t3Send: payload => run('send', payload), t3Start: payload => run('start', payload), projectRoot }
 }

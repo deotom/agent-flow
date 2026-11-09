@@ -67,7 +67,8 @@ export class T3SessionWatcher {
       .map(row => {
         const root = String(row.workspace_root)
         return { id: String(row.project_id), title: String(row.title || '') || path.basename(root), root,
-          current: this.workspaces.some(workspace => t3WorkspaceMatches(workspace, root) || t3WorkspaceMatches(root, workspace)) }
+          // Exact folder match only: a parent or nested project must be chosen explicitly, never guessed.
+          current: this.workspaces.some(workspace => t3WorkspaceMatches(workspace, root) && t3WorkspaceMatches(root, workspace)) }
       })
       .sort((a, b) => Number(b.current) - Number(a.current) || a.title.localeCompare(b.title))
     const fingerprint = JSON.stringify(list)

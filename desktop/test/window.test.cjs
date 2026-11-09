@@ -142,6 +142,7 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
         send() {}, setWindowOpenHandler: handler => { this.openHandler = handler }, session: { setPermissionRequestHandler: handler => { this.permissionHandler = handler } },
       })
     }
+    hookWindowMessage(id, callback) { this.hooks ??= new Map(); this.hooks.set(id, callback) }
     isDestroyed() { return Boolean(this.destroyed) }
     setAlwaysOnTop(value, level) { this.pin = value; this.level = level }
     setIgnoreMouseEvents(value, options = {}) { this.ignoreMouse = value; this.forward = options.forward }
@@ -151,7 +152,7 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
     show() { this.hidden = false }
     focus() { this.focused = true }
     destroy() { this.destroyed = true; this.emit('closed') }
-    loadURL(url) { this.url = url }
+    loadURL(url) { this.url = url; this.webContents.mainFrame.url = url }
     setPosition(x, y) { Object.assign(this.bounds, { x, y }) }
     getPosition() { return [this.bounds.x, this.bounds.y] }
     loadFile() {}
@@ -166,7 +167,8 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   }
   const electron = {
     app, BrowserWindow: Window,
-    screen: { getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }], getDisplayMatching: () => ({ scaleFactor: 1.5, workArea: { x: 0, y: 0, width: 1920, height: 1080 } }), screenToDipRect: (_w, rect) => ({ x: rect.x / 1.5, y: rect.y / 1.5, width: rect.width / 1.5, height: rect.height / 1.5 }) },
+    screen: Object.assign(new EventEmitter(), { getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }], getDisplayMatching: () => ({ scaleFactor: 1.5, workArea: { x: 0, y: 0, width: 1920, height: 1080 } }), screenToDipRect: (_w, rect) => ({ x: rect.x / 1.5, y: rect.y / 1.5, width: rect.width / 1.5, height: rect.height / 1.5 }) }),
+    powerMonitor: new EventEmitter(),
     dialog: { showOpenDialog: async () => selected || { canceled: true, filePaths: [] }, showErrorBox() {} },
     ipcMain: { handle: (key, handler) => handlers.set(key, handler), on: (key, handler) => listeners.set(key, handler) },
     Menu: { buildFromTemplate: value => { value.popup = options => menus.push({ template: value, ...options }); return value }, setApplicationMenu(value) { this.template = value } },
@@ -196,14 +198,18 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
     t3Send: async payload => { promptCalls.push(['send', payload]); return { ok: true, threadId: 'test-thread' } },
     t3Start: async payload => { promptCalls.push(['start', payload]); return { ok: true, threadId: 'new-thread' } },
   }
+  const resumeTimers = []
+  let now = 10000
+  class Clock extends Date { static now() { return now } }
   vm.runInNewContext(source, {
+    Date: Clock,
     require: id => id === 'electron' ? electron : id === './t3-cli.cjs' ? { createT3CLI: () => t3 } : id === './appbar.cjs' ? appbar : id === './mobile-profile.cjs' ? { configureMobileProfile() {} } : id === './mobile-pairing.cjs' ? { resolveMobileConfig() {}, createPairingQR: async () => ({ dataURL: 'test-qr' }) } : require(id),
-    __dirname: path.resolve(__dirname, '..'), process: Object.create(process, { platform: { value: 'win32' } }), console, setTimeout, clearTimeout,
+    __dirname: path.resolve(__dirname, '..'), process: Object.create(process, { platform: { value: 'win32' } }), console, setTimeout: (callback, delay) => delay === 3000 ? resumeTimers.push(callback) : setTimeout(callback, delay), clearTimeout,
   })
   await new Promise(resolve => setImmediate(resolve))
   const trusted = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
   const invoke = (key, payload) => handlers.get(`desktop:${key}`)(trusted, payload)
-  const sendOrb = (orb, key, payload, sender = orb.webContents) => listeners.get(`orb:${key}`)({ sender }, payload)
+  const sendOrb = (orb, key, payload, sender = orb.webContents) => listeners.get(`orb:${key}`)({ sender, senderFrame: orb.webContents.mainFrame }, payload)
   for (const key of ['t3-send', 't3-start', 'open-project']) {
     assert.equal(typeof handlers.get(`desktop:${key}`), 'function')
     for (const event of [{ ...trusted, sender: {} }, { ...trusted, senderFrame: { url: trusted.senderFrame.url } }]) {
@@ -211,8 +217,13 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
     }
     assert.throws(() => handlers.get(`orb:${key}`)({ sender: window.webContents }, {}), /Untrusted orb request/)
   }
+  for (const key of ['t3-send', 't3-start']) assert.throws(() => invoke(key, {}), /Press Send to send a prompt\./)
+  window.webContents.emit('before-input-event', {}, { type: 'keyDown', key: 'Enter' })
+  now += 5000
   assert.equal((await invoke('t3-send', { message: 'fake' })).threadId, 'test-thread')
   assert.equal((await invoke('t3-start', { message: 'fake' })).threadId, 'new-thread')
+  now += 1
+  for (const key of ['t3-send', 't3-start']) assert.throws(() => invoke(key, {}), /Press Send/)
   assert.throws(() => invoke('open-project', { root: path.join(root, 'missing') }), /existing directory/)
   assert.equal(window.pin, true)
   assert.equal(window.options.webPreferences.nodeIntegration, false)
@@ -259,6 +270,18 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   assert.equal(invoke('toggle-dock').dock, 'right', 'Docking picks the nearest edge')
   assert.deepEqual({ ...window.bounds }, { x: 1540, y: 0, width: 380, height: 1080 })
   assert.deepEqual(edge.calls.at(-1), ['right', 570], 'The edge is reserved in physical pixels')
+  const callsBeforeNotification = edge.calls.length
+  window.hooks.get(0x81AF)(Buffer.from([1, 0, 0, 0]))
+  assert.equal(edge.calls.length, callsBeforeNotification + 1)
+  window.hooks.get(0x81AF)(Buffer.from([2, 0, 0, 0]))
+  assert.equal(edge.calls.length, callsBeforeNotification + 1)
+  electron.screen.emit('display-metrics-changed')
+  assert.equal(edge.calls.length, callsBeforeNotification + 2)
+  electron.powerMonitor.emit('resume')
+  assert.equal(resumeTimers.length, 1)
+  assert.equal(edge.calls.length, callsBeforeNotification + 2)
+  resumeTimers.pop()()
+  assert.equal(edge.calls.length, callsBeforeNotification + 3)
   invoke('set-dock', 'left')
   assert.deepEqual({ ...window.bounds }, { x: 0, y: 0, width: 380, height: 1080 })
   edge.onRect({ x: 0, y: 0, width: 570, height: 1560 })
@@ -266,6 +289,10 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   invoke('resize-widget', { width: 400, height: 10 })
   assert.deepEqual({ ...window.bounds }, { x: 0, y: 0, width: 380, height: 1040 }, 'While reserved, the shell rect decides placement')
   assert.deepEqual(edge.calls.at(-1), ['left', 600])
+  edge.onRect({ x: 0, y: 0, width: 0, height: 1560 })
+  assert.equal(window.bounds.width, 400)
+  edge.onRect({ x: 99999, y: 99999, width: 570, height: 1560 })
+  assert.equal(window.bounds.x, 0)
   edge.onFailure()
   assert.deepEqual({ ...window.bounds }, { x: 0, y: 0, width: 400, height: 1080 }, 'Without a reservation the dock still places the window')
   invoke('resize-widget', { width: 450, height: 10, finished: true })
@@ -325,10 +352,39 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   for (const key of ['t3-send', 't3-start', 'open-project']) {
     assert.throws(() => handlers.get(`orb:${key}`)({ sender: window.webContents }, {}), /Untrusted orb request/)
   }
-  assert.equal((await handlers.get('orb:t3-send')({ sender: orb.webContents }, { message: 'orb fake' })).threadId, 'test-thread')
-  assert.equal((await handlers.get('orb:t3-start')({ sender: orb.webContents }, { message: 'orb fake' })).threadId, 'new-thread')
-  assert.throws(() => handlers.get('orb:open-project')({ sender: orb.webContents }, { root: 'missing-directory' }), /existing directory/)
+  const orbEvent = { sender: orb.webContents, senderFrame: orb.webContents.mainFrame }
+  for (const key of ['t3-send', 't3-start']) {
+    const handler = handlers.get(`orb:${key}`)
+    assert.throws(() => handler(orbEvent, {}), /Press Send/)
+    assert.throws(() => handler({ ...orbEvent, senderFrame: { url: orb.url } }, {}), /Untrusted orb/)
+    orb.webContents.mainFrame.url = 'http://evil.example/'
+    assert.throws(() => handler(orbEvent, {}), /Untrusted orb/)
+    orb.webContents.mainFrame.url = orb.url
+  }
+  orb.webContents.emit('input-event', {}, { type: 'mouseDown' })
+  now += 5000
+  assert.equal((await handlers.get('orb:t3-send')(orbEvent, { message: 'orb fake' })).threadId, 'test-thread')
+  assert.equal((await handlers.get('orb:t3-start')(orbEvent, { message: 'orb fake' })).threadId, 'new-thread')
+  assert.throws(() => handlers.get('orb:open-project')(orbEvent, { root: 'missing-directory' }), /existing directory/)
+  now += 1
+  for (const key of ['t3-send', 't3-start']) assert.throws(() => handlers.get(`orb:${key}`)(orbEvent, {}), /Press Send/)
   assert.equal(promptCalls.length, 4)
+  orb.webContents.mainFrame.url = 'http://evil.example/'
+  sendOrb(orb, 'set-expanded', true)
+  assert.equal(orb.bounds.width, 260)
+  orb.webContents.mainFrame.url = orb.url
+  listeners.get('orb:set-expanded')({ ...orbEvent, senderFrame: { url: orb.url } }, true)
+  assert.equal(orb.bounds.width, 260)
+  orb.setPosition(3000, 2000)
+  electron.screen.emit('display-removed')
+  assert.deepEqual(orb.getPosition(), [1660, 810])
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, 'desktop-settings.json'), 'utf8')).orbPosition, { x: 1660, y: 810 })
+  sendOrb(orb, 'set-expanded', true)
+  orb.setPosition(3000, 2000)
+  electron.screen.emit('display-metrics-changed')
+  assert.deepEqual(orb.getPosition(), [1540, 560])
+  sendOrb(orb, 'set-expanded', false)
+  assert.ok(orb.bounds.x + orb.bounds.width <= 1920)
   // Centre and top edge are preserved where the work area permits it.
   orb.setPosition(500, 100)
   sendOrb(orb, 'set-expanded', true, window.webContents)
@@ -395,6 +451,10 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   assert.equal(invoke('state').orbOpen, false, 'Native closure restores the main window')
   assert.equal(window.hidden, false)
   invoke('set-dock', 'off')
+  window.setPosition(3000, 2000)
+  electron.screen.emit('display-removed')
+  assert.ok(window.bounds.x + window.bounds.width <= 1920)
+  assert.ok(window.bounds.y + window.bounds.height <= 1080)
   invoke('toggle-orb')
   orb = windows.at(-1)
   selected = { canceled: false, filePaths: [folders[1]] }

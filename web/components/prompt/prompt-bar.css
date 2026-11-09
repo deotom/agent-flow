@@ -26,3 +26,6 @@
 .pb-status[data-kind="ok"] { color: #3dff9a; }
 .pb-status[data-kind="error"] { color: #ff8da1; }
 .pb-root[data-compact="true"] { border: 1px solid rgba(95, 225, 255, 0.3); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 18px rgba(95, 225, 255, 0.15); }
+
+.pb-model { flex: none; width: 100%; }
+.pb-status[data-kind="unknown"] { color: #ffcf6b; }

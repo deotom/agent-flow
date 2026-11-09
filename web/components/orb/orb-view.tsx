@@ -15,6 +15,7 @@ import type { TeamAgentStatus } from '@/lib/team-types'
 import { STATUS_LABEL } from '@/lib/team-model'
 import { PromptBar } from '@/components/prompt/prompt-bar'
 import { canSendPrompts } from '@/lib/desktop-actions'
+import { modelChoices } from '@/lib/prompt-model'
 
 interface OrbDesktop {
   setInteractive(value: boolean): void
@@ -130,6 +131,61 @@ function drawSatellites(ctx: CanvasRenderingContext2D, summary: OrbSummary, time
     ctx.restore()
   }
 }
+/**
+ * Dark glass behind the orb so its light rings stay readable on bright wallpapers.
+ * The edge fades out, so on a dark desktop it is barely visible.
+ */
+function drawBackplate(ctx: CanvasRenderingContext2D) {
+  const radius = SAT_ORBIT + SAT_RADIUS + 14
+  const glass = ctx.createRadialGradient(0, 0, radius * 0.35, 0, 0, radius)
+  glass.addColorStop(0, 'rgba(4, 12, 24, 0.82)')
+  glass.addColorStop(0.84, 'rgba(4, 12, 24, 0.7)')
+  glass.addColorStop(1, 'rgba(4, 12, 24, 0)')
+  ctx.fillStyle = glass
+  ctx.beginPath(); ctx.arc(0, 0, radius, 0, TAU); ctx.fill()
+  ctx.strokeStyle = 'rgba(95, 225, 255, 0.16)'; ctx.lineWidth = 1
+  ctx.beginPath(); ctx.arc(0, 0, radius * 0.86, 0, TAU); ctx.stroke()
+}
+
+/** Boxless caption under the reactor: team status in its colour, then the team name. */
+function drawCaption(ctx: CanvasRenderingContext2D, summary: OrbSummary) {
+  const working = summary.dots.some(dot => dot.working) || summary.busy
+  const color = summary.alert === 'waiting' ? MISSION_COLORS.waiting : summary.alert === 'failed' ? MISSION_COLORS.failed
+    : working ? MISSION_COLORS.working : '#9fb6c8'
+  const status = summary.line.replace(/^›\s*/, '')
+  const fit = (text: string, max: number) => {
+    if (ctx.measureText(text).width <= max) return text
+    let cut = text
+    while (cut.length > 1 && ctx.measureText(`${cut}…`).width > max) cut = cut.slice(0, -1)
+    return `${cut}…`
+  }
+  ctx.save()
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.9)'; ctx.shadowBlur = 4
+  ctx.font = '600 11px "Cascadia Mono", Consolas, monospace'
+  const line = fit(status, 190)
+  const dotX = -ctx.measureText(line).width / 2 - 8
+  ctx.fillStyle = color
+  ctx.beginPath(); ctx.arc(dotX, 77, 3, 0, TAU); ctx.fill()
+  ctx.fillText(line, 4, 77)
+  ctx.font = '11px "Segoe UI", system-ui, sans-serif'
+  ctx.fillStyle = 'rgba(220, 236, 248, 0.82)'
+  ctx.fillText(fit(summary.snapshot.title, 190), 0, 93)
+  ctx.restore()
+}
+
+function drawHealthTag(ctx: CanvasRenderingContext2D, health: 'stale' | 'offline') {
+  const text = health === 'offline' ? 'OFFLINE · last known' : 'T3 UNREADABLE · last known'
+  ctx.save()
+  ctx.font = '700 9px "Cascadia Mono", Consolas, monospace'
+  const width = ctx.measureText(text).width + 14
+  ctx.fillStyle = 'rgba(30, 10, 14, 0.9)'; ctx.strokeStyle = health === 'offline' ? MISSION_COLORS.failed : MISSION_COLORS.waiting
+  ctx.beginPath(); ctx.roundRect(-width / 2, -CENTER.y + 4, width, 16, 8); ctx.fill(); ctx.stroke()
+  ctx.fillStyle = ctx.strokeStyle; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+  ctx.fillText(text, 0, -CENTER.y + 12.5)
+  ctx.restore()
+}
+
 function drawAlert(ctx: CanvasRenderingContext2D, alert: OrbSummary['alert'], time: number) {
   if (!alert) return
   ctx.save()
@@ -155,63 +211,79 @@ export function OrbView() {
   const [expanded, setExpanded] = useState(false)
   const expandedRef = useRef(false)
   const baseTitle = useRef('Agent Flow')
+  // A satellite's name stays shown while hovered, even when team data refreshes.
+  const hoverTitle = useRef<string | null>(null)
   // The desktop keeps the orb fixed on screen and says where it sits inside the expanded window.
   const [layout, setLayout] = useState<OrbLayout | null>(null)
-  useEffect(() => window.agentFlowOrb?.onLayout?.(setLayout), [])
+  const interactiveRef = useRef(false)
+  useEffect(() => window.agentFlowOrb?.onLayout?.(next => {
+    // Collapsing returns the window to click-through; the next hover over the orb must ask for input again.
+    if (!next.expanded) interactiveRef.current = false
+    setLayout(next)
+  }), [])
   // A team the user just prompted from the orb takes over until they lock another one.
   const snapshot = pickOrbTeam(feed.snapshots, feed.locked ?? focusTeam)
   const summary = useMemo(() => snapshot ? orbSummary(snapshot) : null, [snapshot])
   const scene = useMemo(() => leadScene(summary), [summary])
-  const latest = useRef({ summary, scene })
-  latest.current = { summary, scene }
+  const latest = useRef({ summary, scene, health: feed.health })
+  latest.current = { summary, scene, health: feed.health }
 
   // Transparent page: only the orb is visible on the desktop.
   useEffect(() => {
     for (const element of [document.documentElement, document.body]) { element.style.background = 'transparent'; element.style.overflow = 'hidden' }
   }, [])
 
-  useEffect(() => {
+    useEffect(() => {
     const element = canvas.current
     if (!element) return
     const context = element.getContext('2d')
     if (!context) return
     const ctx: CanvasRenderingContext2D = context
-    const dpr = window.devicePixelRatio || 1
-    element.width = ORB_SIZE.width * dpr; element.height = ORB_SIZE.height * dpr
-    let frame = 0, last = 0
+    let dpr = 0, timer = 0, frame = 0, stopped = false
     const start = performance.now()
-    function render(now: number) {
-      frame = requestAnimationFrame(render)
-      const { summary: current, scene: lead } = latest.current
-      // Nothing moving: about 10 fps is enough and keeps an all-day orb cheap.
-      if (!current?.busy && now - last < 100) return
-      last = now
-      const time = (now - start) / 1000
+    function render() {
+      if (stopped) return
+      const { summary: current, scene: lead, health } = latest.current
+      // Follow monitor changes so the orb stays sharp on a different DPI.
+      const ratio = window.devicePixelRatio || 1
+      if (ratio !== dpr) { dpr = ratio; element!.width = ORB_SIZE.width * dpr; element!.height = ORB_SIZE.height * dpr }
+      const time = (performance.now() - start) / 1000
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, ORB_SIZE.width, ORB_SIZE.height)
       ctx.translate(CENTER.x, CENTER.y)
       if (!current || !lead) {
+        drawBackplate(ctx)
         ctx.strokeStyle = '#2d5568'; ctx.setLineDash([3, 5]); ctx.lineWidth = 2
         ctx.beginPath(); ctx.arc(0, 0, 40, 0, TAU); ctx.stroke()
         ctx.setLineDash([]); ctx.fillStyle = '#7fa6bb'; ctx.font = '11px Segoe UI, sans-serif'; ctx.textAlign = 'center'
-        ctx.fillText('No T3 team', 0, 4)
-        return
+        ctx.fillText(health === 'offline' ? 'Agent Flow offline' : 'No T3 team', 0, 4)
+      } else {
+        // A picture that may be out of date is dimmed and says so.
+        ctx.globalAlpha = health === 'ok' ? 1 : 0.55
+        drawBackplate(ctx)
+        drawAlert(ctx, health === 'ok' ? current.alert : null, time)
+        drawSatellites(ctx, current, health === 'ok' ? time : 0)
+        drawMissionAgents(ctx, lead.agents, lead.view, null, null, health === 'ok' ? time : 0, health === 'ok', 1, true, false)
+        drawCaption(ctx, current)
+        ctx.globalAlpha = 1
+        if (health !== 'ok') drawHealthTag(ctx, health)
       }
-      drawAlert(ctx, current.alert, time)
-      drawSatellites(ctx, current, time)
-      drawMissionAgents(ctx, lead.agents, lead.view, null, null, time, true, 1, true)
+      // Busy: about 30 fps. Idle or stale: about 8 fps without waking every display frame.
+      const busy = health === 'ok' && current?.busy
+      if (busy) frame = requestAnimationFrame(() => { timer = window.setTimeout(render, 16) })
+      else timer = window.setTimeout(render, 125)
     }
-    frame = requestAnimationFrame(render)
-    return () => cancelAnimationFrame(frame)
+    render()
+    return () => { stopped = true; cancelAnimationFrame(frame); window.clearTimeout(timer) }
   }, [])
 
-  //   // Desktop behaviour: click-through outside the orb, drag to move, click for the prompt panel,
+  // Desktop behaviour: click-through outside the orb, drag to move, click for the prompt panel,
   // double-click to open the full view, right-click for the menu.
   useEffect(() => {
     const desktop = window.agentFlowOrb
     if (!desktop) return
     const api: OrbDesktop = desktop
-    let interactive = false
+    // The hover cache lives in a ref so a collapse (which forces native click-through) can reset it.
     let clickTimer = 0
     let drag: { x: number; y: number; left: number; top: number; moved: boolean } | null = null
     const over = (event: MouseEvent) => {
@@ -235,12 +307,13 @@ export function OrbView() {
         const px = event.clientX - rect.left - CENTER.x, py = event.clientY - rect.top - CENTER.y
         const index = satellitePositions(current.dots.length).findIndex(point => Math.hypot(point.x - px, point.y - py) <= SAT_RADIUS + 5)
         const dot = current.dots[index]
-        canvas.current.title = dot ? `\n${STATUS_LABEL[dot.status]}` : baseTitle.current
+        hoverTitle.current = dot ? `${dot.name}\n${STATUS_LABEL[dot.status]}` : null
+        canvas.current.title = hoverTitle.current ?? baseTitle.current
       }
       // While the panel is open the whole window takes input; only the collapsed orb is click-through.
       if (expandedRef.current) return
       const hit = over(event)
-      if (hit !== interactive) { interactive = hit; api.setInteractive(hit) }
+      if (hit !== interactiveRef.current) { interactiveRef.current = hit; api.setInteractive(hit) }
     }
     const down = (event: PointerEvent) => {
       if (event.button !== 0 || !over(event)) return
@@ -256,7 +329,7 @@ export function OrbView() {
       window.clearTimeout(clickTimer)
       clickTimer = window.setTimeout(() => setExpanded(value => !value), 260)
     }
-    const leave = () => { if (!drag && interactive && !expandedRef.current) { interactive = false; api.setInteractive(false) } }
+    const leave = () => { if (!drag && interactiveRef.current && !expandedRef.current) { interactiveRef.current = false; api.setInteractive(false) } }
     const open = (event: MouseEvent) => { if (over(event)) { window.clearTimeout(clickTimer); api.openFull() } }
     const menu = (event: MouseEvent) => { if (!over(event)) return; event.preventDefault(); api.menu() }
     window.addEventListener('pointermove', move)
@@ -287,23 +360,33 @@ export function OrbView() {
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
     .map(team => ({ id: team.sessionId, label: team.title })), [feed.snapshots])
 
-  const title = snapshot ? `${snapshot.title}\nClick to prompt · double-click to open Agent Flow · right-click for options` : 'Agent Flow'
-    const open = expanded && canSendPrompts()
+  const models = useMemo(() => modelChoices(Object.values(feed.snapshots)), [feed.snapshots])
+  // The caption stays short; the lead's model and context live in the tooltip.
+  const leadAgent = snapshot?.agents.find(agent => agent.role === 'lead')
+  const leadDetail = leadAgent ? [leadAgent.runtime && leadAgent.model ? `${leadAgent.runtime}::${leadAgent.model}` : leadAgent.model,
+    leadAgent.context ? `ctx ${Math.round((1 - leadAgent.context.used / leadAgent.context.max) * 100)}% left` : null].filter(Boolean).join(' · ') : ''
+  const title = snapshot ? `${snapshot.title}${leadDetail ? `\n${leadDetail}` : ''}\nClick to prompt · double-click to open Agent Flow · right-click for options` : 'Agent Flow'
+  baseTitle.current = title
+  useEffect(() => { if (canvas.current && !hoverTitle.current) canvas.current.title = title }, [title])
+  const open = expanded && canSendPrompts()
   // Without a layout (collapsed, or outside the desktop app) the orb sits at the top-left and the panel flows below.
   const place = open && layout?.expanded ? layout : null
+  // Centre the panel under the orb but keep it inside the window when the orb sits at a screen edge.
+  const panelWidth = Math.min(360, window.innerWidth - 8)
+  const panelLeft = place ? Math.max(4, Math.min(place.left + ORB_SIZE.width / 2 - panelWidth / 2, window.innerWidth - panelWidth - 4)) : 0
   const panelStyle: React.CSSProperties = place
     ? place.panel === 'below'
-      ? { position: 'absolute', left: place.left + ORB_SIZE.width / 2 - 180, top: place.top + ORB_SIZE.height - 6, width: 360 }
-      : { position: 'absolute', left: place.left + ORB_SIZE.width / 2 - 180, bottom: `calc(100% - ${place.top + 18}px)`, width: 360 }
-    : { width: 360, marginTop: -6 }
+      ? { position: 'absolute', left: panelLeft, top: place.top + ORB_SIZE.height - 6, width: panelWidth }
+      : { position: 'absolute', left: panelLeft, bottom: `calc(100% - ${place.top + 18}px)`, width: panelWidth }
+    : { width: panelWidth, marginTop: -6 }
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh', background: 'transparent' }}>
-      <canvas ref={canvas} title={title} aria-label={summary ? `${snapshot!.title}: ${summary.line}` : 'No T3 team'}
+      <canvas ref={canvas} aria-label={summary ? `${snapshot!.title}: ${summary.line}` : 'No T3 team'}
         style={{ position: place ? 'absolute' : 'relative', left: place?.left ?? 0, top: place?.top ?? 0,
           width: ORB_SIZE.width, height: ORB_SIZE.height, display: 'block', cursor: 'grab', background: 'transparent' }} />
       {open && (
         <div style={panelStyle}>
-          <PromptBar compact autoFocus projects={feed.projects} threads={threads} selectedThreadId={snapshot?.sessionId ?? null}
+          <PromptBar compact autoFocus projects={feed.projects} threads={threads} models={models} selectedThreadId={snapshot?.sessionId ?? null}
             onClose={() => setExpanded(false)}
             onSent={sessionId => { setFocusTeam(sessionId); window.setTimeout(() => setExpanded(false), 1400) }} />
         </div>

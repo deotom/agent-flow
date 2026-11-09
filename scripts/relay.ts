@@ -65,8 +65,31 @@ function log(...args: unknown[]) {
 const sseClients = new Set<http.ServerResponse>()
 let remoteMirror: RemoteMirror | undefined
 
-interface RelaySink { write(value: string): unknown }
+interface RelaySink { write(value: string): unknown; writableLength?: number; writableEnded?: boolean; end?(): unknown }
 interface MobileSink { ingest(value: string): unknown }
+const MAX_SSE_QUEUE = 4 * 1024 * 1024
+
+/** Local HTTP only; the separately hosted mobile mirror does not use this guard. */
+export function allowLocalRequest(req: http.IncomingMessage, res: http.ServerResponse): boolean {
+  const port = req.socket.localPort
+  if (port && (req.headers.host === `127.0.0.1:${port}` || req.headers.host === `localhost:${port}`)) return true
+  res.writeHead(403).end('Forbidden')
+  return false
+}
+
+function writeSSE(client: RelaySink, value: string, onClientError?: (client: RelaySink) => void): void {
+  if (client.writableEnded) return
+  try {
+    // write() returning false only means the 16 KB high-water mark was passed (normal during a replay);
+    // a client is dropped only when its queue really grows past the cap.
+    if ((client.writableLength ?? 0) <= MAX_SSE_QUEUE) {
+      client.write(value)
+      if ((client.writableLength ?? 0) <= MAX_SSE_QUEUE) return
+    }
+  } catch { /* Drop failed and slow clients; EventSource reconnects for a fresh replay. */ }
+  onClientError?.(client)
+  try { client.end?.() } catch { /* Already closed. */ }
+}
 
 export function distributeRelayMessage(
   data: string,
@@ -77,7 +100,7 @@ export function distributeRelayMessage(
 ): void {
   if (includeRemote) mirror?.ingest(data)
   for (const client of clients) {
-    try { client.write(`data: ${data}\n\n`) } catch { onClientError?.(client) }
+    writeSSE(client, `data: ${data}\n\n`, onClientError)
   }
 }
 
@@ -86,9 +109,7 @@ export function t3ConnectionStatus(health: SourceHealth | null): 'connected' | '
 }
 
 function sendSSE(res: http.ServerResponse, data: unknown) {
-  try { res.write(`data: ${JSON.stringify(data)}\n\n`) } catch {
-    sseClients.delete(res)
-  }
+  writeSSE(res, `data: ${JSON.stringify(data)}\n\n`, () => sseClients.delete(res))
 }
 
 function broadcast(data: string) {
@@ -542,6 +563,7 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
 
   return {
     handleSSE(req: http.IncomingMessage, res: http.ServerResponse) {
+      if (!allowLocalRequest(req, res)) return
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
@@ -579,6 +601,13 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
 
       t3Watcher?.replaySessionStart(undefined, { onSnapshot: event => sendSSE(res, { type: 'agent-event', event }) })
 
+      // Send the complete graph before the history tail. A large tail may trigger
+      // backpressure and close the response; reconnect must still restore the graph.
+      codexWatcher?.replaySessionStart(undefined, { latestOnly: true,
+        onSnapshot: event => sendSSE(res, { type: 'agent-event', event: {
+          ...event, payload: { ...event.payload, preserveHistory: true },
+        } }) })
+
       // Replay buffered events for the most recent active session
       const sorted = [...sessionList].sort((a, b) => {
         const aActive = a.status === 'active' ? 1 : 0
@@ -592,12 +621,7 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
           sendSSE(res, { type: 'agent-event-batch', events: buffered })
         }
       }
-      // The rolling history tail can lose the root spawn and delegation edges.
-      // Reconcile it with the complete current graph, retaining its chat history.
-      codexWatcher?.replaySessionStart(undefined, { latestOnly: true,
-        onSnapshot: event => sendSSE(res, { type: 'agent-event', event: {
-          ...event, payload: { ...event.payload, preserveHistory: true },
-        } }) })
+
     },
 
     dispose() {

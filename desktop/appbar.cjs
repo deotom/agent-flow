@@ -4,6 +4,8 @@
 // The API is reached through the PowerShell that ships with Windows, so no native module is bundled.
 // The helper releases the reservation when told to, when its input closes (Agent Flow exited or crashed),
 // or when the window it serves no longer exists.
+// TaskbarCreated is a dynamically registered shell message, not a fixed callback
+// this console helper can hook. The main process retries on display changes/resume.
 const { spawn } = require('node:child_process')
 const path = require('node:path')
 

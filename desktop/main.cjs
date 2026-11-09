@@ -1,5 +1,5 @@
 'use strict'
-const { app, BrowserWindow, dialog, ipcMain, Menu, utilityProcess, screen } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, Menu, utilityProcess, screen, powerMonitor } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
@@ -21,6 +21,24 @@ let settings = { alwaysOnTop: true, lastFolder: '', widgetMode: true, runtime: '
 let docking = false
 let state = { folder: '', url: '', busy: false, error: '', sourceStatus: '' }
 let quitting = false
+const lastInput = new WeakMap()
+function trackInput(window) {
+  const record = (_event, input) => {
+    if (input.type === 'keyDown' || input.type === 'rawKeyDown' || input.type === 'mouseDown') lastInput.set(window, Date.now())
+  }
+  window.webContents.on('before-input-event', record)
+  // Native WebContents input also covers mouse presses routed to the embedded frame.
+  window.webContents.on('input-event', record)
+}
+function requireGesture(window, channel) {
+  if (!channel.endsWith(':t3-send') && !channel.endsWith(':t3-start')) return
+  const at = lastInput.get(window)
+  if (at === undefined || Date.now() - at > 5000) throw new Error('Press Send to send a prompt.')
+}
+function trustedOrb(event) {
+  return orbWin && event.sender === orbWin.webContents && event.senderFrame === orbWin.webContents.mainFrame
+    && event.senderFrame.url === `${state.url}/?orb=1`
+}
 
 function settingsPath() { return path.join(app.getPath('userData'), 'desktop-settings.json') }
 function loadSettings() {
@@ -189,12 +207,22 @@ function applyDock() {
 }
 function onEdgeReserved(rect) {
   if (orbWin || settings.dock === 'off' || !win || win.isDestroyed()) return
+  const bounds = screen.screenToDipRect(win, rect)
+  if (bounds.width <= 0 || bounds.height <= 0 || !screen.getAllDisplays().some(display => {
+    const area = display.bounds || display.workArea
+    return bounds.x < area.x + area.width && bounds.x + bounds.width > area.x
+      && bounds.y < area.y + area.height && bounds.y + bounds.height > area.y
+  })) { onEdgeUnavailable(); return }
   reserved = true
-  placeDocked(screen.screenToDipRect(win, rect))
+  placeDocked(bounds)
 }
 function onEdgeUnavailable() {
   reserved = false
-  applyDock()
+  // Place the fallback without asking a failed reservation to reserve again.
+  if (orbWin || !win || win.isDestroyed() || settings.dock === 'off') return
+  const area = screen.getDisplayMatching(win.getBounds()).workArea
+  const width = Math.max(260, Math.min(settings.dockWidth, area.width))
+  placeDocked({ x: settings.dock === 'left' ? area.x : area.x + area.width - width, y: area.y, width, height: area.height })
 }
 function setDock(side) {
   if (side !== 'left' && side !== 'right' && side !== 'off') throw new Error('Unknown dock side')
@@ -321,6 +349,7 @@ function toggleOrb() {
     webPreferences: { preload: path.join(__dirname, 'orb-preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   })
   orb.setIgnoreMouseEvents(true, { forward: true })
+  trackInput(orb)
   orb.setAlwaysOnTop(true, 'floating')
   orb.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   orb.webContents.on('will-navigate', (event, url) => { if (url !== `${state.url}/?orb=1`) event.preventDefault() })
@@ -370,6 +399,31 @@ function setOrbExpanded(value) {
 function openProject(payload) {
   return openFolder(t3CLI.projectRoot(payload?.root))
 }
+function reclampWindows() {
+  for (const window of [orbWin, settings.dock === 'off' ? win : undefined]) {
+    if (!window || window.isDestroyed()) continue
+    const bounds = window.getBounds()
+    if (screen.getAllDisplays().some(({ workArea: a }) => bounds.x >= a.x && bounds.y >= a.y
+      && bounds.x + bounds.width <= a.x + a.width && bounds.y + bounds.height <= a.y + a.height)) continue
+    const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }
+    const distance = a => Math.max(a.x - center.x, 0, center.x - a.x - a.width) ** 2
+      + Math.max(a.y - center.y, 0, center.y - a.y - a.height) ** 2
+    const area = screen.getAllDisplays().map(display => display.workArea).reduce((nearest, a) => distance(a) < distance(nearest) ? a : nearest)
+    const next = { ...bounds, x: Math.max(area.x, Math.min(bounds.x, area.x + area.width - bounds.width)),
+      y: Math.max(area.y, Math.min(bounds.y, area.y + area.height - bounds.height)) }
+    const orbAt = { x: next.x + orbLayout.left, y: next.y + orbLayout.top }
+    window.setBounds(next)
+    if (window === orbWin) {
+      const placed = window.getBounds()
+      settings.orbPosition = orbAt
+      // Re-derive the offsets from the orb's new screen position after moving the panel.
+      orbLayout = { ...orbLayout, left: orbAt.x - placed.x, top: orbAt.y - placed.y }
+      window.webContents.send('orb:layout', { expanded: orbExpanded, ...orbLayout })
+      try { saveSettings() } catch { /* Display recovery must still work. */ }
+    }
+  }
+  applyDock()
+}
 function registerIPC() {
   const actions = {
     'desktop:t3-send': t3CLI.t3Send,
@@ -400,6 +454,7 @@ function registerIPC() {
     if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || event.senderFrame.url !== shellURL) {
       throw new Error('Untrusted desktop request')
     }
+    requireGesture(win, channel)
     return handler(payload)
   })
   const orbActions = {
@@ -429,11 +484,12 @@ function registerIPC() {
     ]).popup({ window: orbWin }),
   }
   for (const [channel, handler] of Object.entries(orbActions)) ipcMain.on(channel, (event, payload) => {
-    if (orbWin && event.sender === orbWin.webContents) handler(payload)
+    if (trustedOrb(event)) handler(payload)
   })
   for (const [channel, handler] of Object.entries({ 'orb:t3-send': t3CLI.t3Send, 'orb:t3-start': t3CLI.t3Start, 'orb:open-project': openProject })) {
     ipcMain.handle(channel, (event, payload) => {
-      if (!orbWin || event.sender !== orbWin.webContents) throw new Error('Untrusted orb request')
+      if (!trustedOrb(event)) throw new Error('Untrusted orb request')
+      requireGesture(orbWin, channel)
       return handler(payload)
     })
   }
@@ -451,16 +507,22 @@ function createWindow() {
     },
   })
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  trackInput(win)
   win.webContents.on('will-navigate', (event, url) => { if (url !== shellURL) event.preventDefault() })
   win.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
   win.on('page-title-updated', event => event.preventDefault())
   if (process.platform === 'win32') {
     appBar = require('./appbar.cjs').createAppBar(() => win.getNativeWindowHandle().readBigUInt64LE(0).toString(), onEdgeReserved, onEdgeUnavailable)
+    if (typeof win.hookWindowMessage === 'function') win.hookWindowMessage(0x81AF, wParam => {
+      if (wParam.readUInt32LE(0) === 1) applyDock()
+    })
   }
   win.on('closed', releaseEdge)
   win.on('moved', onMoved)
   win.on('resized', onResized)
-  screen.on?.('display-metrics-changed', applyDock)
+  screen.on?.('display-metrics-changed', reclampWindows)
+  screen.on?.('display-removed', reclampWindows)
+  powerMonitor?.on('resume', () => { setTimeout(() => { if (!quitting) applyDock() }, 3000) })
   applyDock()
   win.on('close', () => {
     rememberSize()

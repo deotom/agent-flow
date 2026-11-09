@@ -27,7 +27,19 @@ export function lockedTeamId(): string | null {
   try { return localStorage.getItem('agent-flow-session-locked') === 'true' ? localStorage.getItem('agent-flow-locked-session') : null } catch { return null }
 }
 
-export function useTeamFeed(): { snapshots: Record<string, TeamSnapshot>; projects: T3ProjectInfo[]; locked: string | null; connected: boolean } {
+/** Whether the orb's picture is current: relay reachable and T3 readable. */
+export type FeedHealth = 'ok' | 'stale' | 'offline'
+
+/** Keep only teams the relay still lists. An explicit empty list clears everything. Exported for tests. */
+export function reconcileSnapshots(snapshots: Record<string, TeamSnapshot>, sessionIds: readonly string[]): Record<string, TeamSnapshot> {
+  const keep = new Set(sessionIds)
+  const ids = Object.keys(snapshots)
+  if (ids.every(id => keep.has(id))) return snapshots
+  return Object.fromEntries(ids.filter(id => keep.has(id)).map(id => [id, snapshots[id]]))
+}
+
+export function useTeamFeed(): { snapshots: Record<string, TeamSnapshot>; projects: T3ProjectInfo[]; locked: string | null; connected: boolean; health: FeedHealth } {
+  const [sourceOk, setSourceOk] = useState(true)
   const [projects, setProjects] = useState<T3ProjectInfo[]>([])
   const [snapshots, setSnapshots] = useState<Record<string, TeamSnapshot>>({})
   const [connected, setConnected] = useState(false)
@@ -45,6 +57,15 @@ export function useTeamFeed(): { snapshots: Record<string, TeamSnapshot>; projec
         if (id) setSnapshots(previous => { if (!(id in previous)) return previous; const next = { ...previous }; delete next[id]; return next })
         return
       }
+      if (kind === 'source-health') { setSourceOk((data as { health?: { state?: string } }).health?.state === 'ok'); return }
+      if (kind === 'session-list') {
+        const sessions = (data as { sessions?: unknown }).sessions
+        if (Array.isArray(sessions)) {
+          const ids = sessions.map(session => (session as { id?: unknown })?.id).filter((id): id is string => typeof id === 'string' && id.startsWith('t3:'))
+          setSnapshots(previous => reconcileSnapshots(previous, ids))
+        }
+        return
+      }
       const list = projectsIn(data)
       if (list) { setProjects(list); return }
       const teams = teamSnapshotsIn(data)
@@ -59,5 +80,5 @@ export function useTeamFeed(): { snapshots: Record<string, TeamSnapshot>; projec
     window.addEventListener('storage', storage)
     return () => { source.close(); window.removeEventListener('storage', storage) }
   }, [])
-  return { snapshots, projects, locked, connected }
+  return { snapshots, projects, locked, connected, health: !connected ? 'offline' : sourceOk ? 'ok' : 'stale' }
 }
