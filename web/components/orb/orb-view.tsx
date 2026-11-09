@@ -131,28 +131,45 @@ function drawSatellites(ctx: CanvasRenderingContext2D, summary: OrbSummary, time
     ctx.restore()
   }
 }
+/** Radius of the lens behind the orb; satellites sit just inside its rim. */
+const LENS_RADIUS = 106
+
 /**
- * Dark glass behind the orb so its light rings stay readable on bright wallpapers.
- * The edge fades out, so on a dark desktop it is barely visible.
+ * A crisp glass lens behind the orb: a deliberate HUD disc with a lit rim and a soft drop shadow,
+ * so the light rings stay readable on bright wallpapers without looking like a smudge.
  */
 function drawBackplate(ctx: CanvasRenderingContext2D) {
-  const radius = SAT_ORBIT + SAT_RADIUS + 14
-  const glass = ctx.createRadialGradient(0, 0, radius * 0.35, 0, 0, radius)
-  glass.addColorStop(0, 'rgba(4, 12, 24, 0.82)')
-  glass.addColorStop(0.84, 'rgba(4, 12, 24, 0.7)')
-  glass.addColorStop(1, 'rgba(4, 12, 24, 0)')
+  ctx.save()
+  ctx.shadowColor = 'rgba(0, 8, 20, 0.45)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 4
+  const glass = ctx.createRadialGradient(-LENS_RADIUS * 0.3, -LENS_RADIUS * 0.35, LENS_RADIUS * 0.1, 0, 0, LENS_RADIUS)
+  glass.addColorStop(0, 'rgba(22, 46, 72, 0.94)')
+  glass.addColorStop(0.65, 'rgba(8, 20, 36, 0.94)')
+  glass.addColorStop(1, 'rgba(4, 11, 22, 0.96)')
   ctx.fillStyle = glass
-  ctx.beginPath(); ctx.arc(0, 0, radius, 0, TAU); ctx.fill()
-  ctx.strokeStyle = 'rgba(95, 225, 255, 0.16)'; ctx.lineWidth = 1
-  ctx.beginPath(); ctx.arc(0, 0, radius * 0.86, 0, TAU); ctx.stroke()
+  ctx.beginPath(); ctx.arc(0, 0, LENS_RADIUS, 0, TAU); ctx.fill()
+  ctx.restore()
+  // Lit rim and a faint inner bezel.
+  ctx.save()
+  ctx.strokeStyle = 'rgba(95, 225, 255, 0.55)'; ctx.lineWidth = 1.4
+  ctx.shadowColor = 'rgba(95, 225, 255, 0.6)'; ctx.shadowBlur = 6
+  ctx.beginPath(); ctx.arc(0, 0, LENS_RADIUS - 0.7, 0, TAU); ctx.stroke()
+  ctx.shadowBlur = 0
+  ctx.strokeStyle = 'rgba(95, 225, 255, 0.12)'; ctx.lineWidth = 1
+  ctx.beginPath(); ctx.arc(0, 0, LENS_RADIUS - 6, 0, TAU); ctx.stroke()
+  // A soft highlight across the top, like light on glass.
+  const shine = ctx.createLinearGradient(0, -LENS_RADIUS, 0, -LENS_RADIUS * 0.2)
+  shine.addColorStop(0, 'rgba(180, 235, 255, 0.10)'); shine.addColorStop(1, 'rgba(180, 235, 255, 0)')
+  ctx.fillStyle = shine
+  ctx.beginPath(); ctx.arc(0, 0, LENS_RADIUS - 2, Math.PI * 1.08, Math.PI * 1.92); ctx.closePath(); ctx.fill()
+  ctx.restore()
 }
 
-/** Boxless caption under the reactor: team status in its colour, then the team name. */
+/** Caption capsule under the lens: team status in its colour, then the team name. */
 function drawCaption(ctx: CanvasRenderingContext2D, summary: OrbSummary) {
   const working = summary.dots.some(dot => dot.working) || summary.busy
   const color = summary.alert === 'waiting' ? MISSION_COLORS.waiting : summary.alert === 'failed' ? MISSION_COLORS.failed
     : working ? MISSION_COLORS.working : '#9fb6c8'
-  const status = summary.line.replace(/^›\s*/, '')
+  const status = summary.line.replace(/^›s*/, '')
   const fit = (text: string, max: number) => {
     if (ctx.measureText(text).width <= max) return text
     let cut = text
@@ -161,16 +178,26 @@ function drawCaption(ctx: CanvasRenderingContext2D, summary: OrbSummary) {
   }
   ctx.save()
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.9)'; ctx.shadowBlur = 4
   ctx.font = '600 11px "Cascadia Mono", Consolas, monospace'
-  const line = fit(status, 190)
-  const dotX = -ctx.measureText(line).width / 2 - 8
-  ctx.fillStyle = color
-  ctx.beginPath(); ctx.arc(dotX, 77, 3, 0, TAU); ctx.fill()
-  ctx.fillText(line, 4, 77)
+  const line = fit(status, 200)
+  const lineWidth = ctx.measureText(line).width + 14
   ctx.font = '11px "Segoe UI", system-ui, sans-serif'
-  ctx.fillStyle = 'rgba(220, 236, 248, 0.82)'
-  ctx.fillText(fit(summary.snapshot.title, 190), 0, 93)
+  const title = fit(summary.snapshot.title, 200)
+  const width = Math.max(lineWidth, ctx.measureText(title).width) + 24
+  const top = LENS_RADIUS + 6, height = 36
+  ctx.shadowColor = 'rgba(0, 8, 20, 0.45)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 2
+  ctx.fillStyle = 'rgba(6, 16, 30, 0.94)'
+  ctx.beginPath(); ctx.roundRect(-width / 2, top, width, height, 10); ctx.fill()
+  ctx.shadowBlur = 0; ctx.shadowOffsetY = 0
+  ctx.strokeStyle = `${color}66`; ctx.lineWidth = 1
+  ctx.stroke()
+  ctx.fillStyle = color
+  ctx.beginPath(); ctx.arc(-lineWidth / 2 + 3, top + 11, 3, 0, TAU); ctx.fill()
+  ctx.font = '600 11px "Cascadia Mono", Consolas, monospace'
+  ctx.fillText(line, 7, top + 11.5)
+  ctx.font = '11px "Segoe UI", system-ui, sans-serif'
+  ctx.fillStyle = 'rgba(220, 236, 248, 0.85)'
+  ctx.fillText(title, 0, top + 26)
   ctx.restore()
 }
 
