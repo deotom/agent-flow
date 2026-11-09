@@ -11,6 +11,7 @@ if (mobileConfig) process.env.AGENT_FLOW_REMOTE_CONFIG = mobileConfig
 require('./mobile-profile.cjs').configureMobileProfile(app)
 const shellURL = pathToFileURL(path.join(__dirname, 'shell.html')).href
 let win
+let orbWin
 let worker
 let pendingWorker
 let settings = { alwaysOnTop: true, lastFolder: '', widgetMode: true, runtime: 'auto', dock: 'off', dockWidth: 380,
@@ -32,8 +33,13 @@ function loadSettings() {
       fullSize: validSize(saved.fullSize, 620, 440, { width: 1120, height: 800 }),
       dock: saved.dock === 'left' || saved.dock === 'right' ? saved.dock : 'off',
       dockWidth: Number.isInteger(saved.dockWidth) && saved.dockWidth >= 260 && saved.dockWidth <= 1600 ? saved.dockWidth : 380,
+      orbPosition: validPosition(saved.orbPosition),
     }
   } catch { /* First launch or invalid settings: use defaults. */ }
+}
+function validPosition(value) {
+  return value && Number.isInteger(value.x) && Number.isInteger(value.y) && Math.abs(value.x) <= 100000 && Math.abs(value.y) <= 100000
+    ? { x: value.x, y: value.y } : undefined
 }
 function validSize(value, minWidth, minHeight, fallback) {
   return value && Number.isInteger(value.width) && Number.isInteger(value.height)
@@ -52,7 +58,7 @@ function saveSettings() {
   fs.writeFileSync(`${file}.tmp`, JSON.stringify(settings, null, 2))
   fs.renameSync(`${file}.tmp`, file)
 }
-function snapshot() { return { ...state, ...settings } }
+function snapshot() { return { ...state, ...settings, orbOpen: Boolean(orbWin) } }
 function publish() {
   if (win && !win.isDestroyed()) win.webContents.send('desktop:state', snapshot())
 }
@@ -112,6 +118,7 @@ async function openFolder(folder, runtime = settings.runtime) {
     pendingWorker = undefined
     state.folder = folder
     state.url = url
+    if (orbWin) orbWin.loadURL(`${url}/?orb=1`)
     state.sourceStatus = sourceStatus
     settings.lastFolder = folder
     settings.runtime = runtime
@@ -119,6 +126,7 @@ async function openFolder(folder, runtime = settings.runtime) {
       if (worker !== candidate || quitting) return
       worker = undefined
       state.url = ''
+      closeOrb()
       state.error = `Workspace service stopped (${code}). Select the folder to reconnect.`
       publish()
     })
@@ -168,7 +176,7 @@ function releaseEdge() {
   appBar?.remove()
 }
 function applyDock() {
-  if (!win || win.isDestroyed() || settings.dock === 'off') return
+  if (orbWin || !win || win.isDestroyed() || settings.dock === 'off') return
   if (win.isMaximized()) win.unmaximize()
   const display = screen.getDisplayMatching(win.getBounds())
   const area = display.workArea
@@ -178,7 +186,7 @@ function applyDock() {
   appBar?.set(settings.dock, width * (display.scaleFactor || 1))
 }
 function onEdgeReserved(rect) {
-  if (settings.dock === 'off' || !win || win.isDestroyed()) return
+  if (orbWin || settings.dock === 'off' || !win || win.isDestroyed()) return
   reserved = true
   placeDocked(screen.screenToDipRect(win, rect))
 }
@@ -277,6 +285,53 @@ function resizeWidget(size) {
     try { saveSettings() } catch { /* Resizing is still available if settings cannot be saved. */ }
   }
 }
+function restoreMain() {
+  if (quitting || !win || win.isDestroyed()) return
+  win.show()
+  win.focus()
+  if (settings.dock !== 'off') applyDock()
+  publish()
+}
+function closeOrb() {
+  if (!orbWin) return
+  const closing = orbWin
+  orbWin = undefined
+  closing.destroy()
+  restoreMain()
+}
+function toggleOrb() {
+  if (orbWin) { closeOrb(); return snapshot() }
+  if (!state.url) {
+    state.error = 'Open a workspace before switching to the orb.'
+    publish()
+    return snapshot()
+  }
+  const area = screen.getDisplayMatching(win.getBounds()).workArea
+  const saved = settings.orbPosition
+  const onScreen = saved && screen.getAllDisplays().some(({ workArea: a }) =>
+    saved.x >= a.x && saved.y >= a.y && saved.x + 260 <= a.x + a.width && saved.y + 270 <= a.y + a.height)
+  const position = onScreen ? saved : { x: Math.max(area.x, area.x + area.width - 284), y: Math.max(area.y, area.y + area.height - 294) }
+  const orb = orbWin = new BrowserWindow({
+    ...position, width: 260, height: 270, resizable: false, maximizable: false, minimizable: false,
+    skipTaskbar: true, hasShadow: false, transparent: true, backgroundColor: '#00000000', frame: false, focusable: true,
+    webPreferences: { preload: path.join(__dirname, 'orb-preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  })
+  orb.setIgnoreMouseEvents(true, { forward: true })
+  orb.setAlwaysOnTop(true, 'floating')
+  orb.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  orb.webContents.on('will-navigate', (event, url) => { if (url !== `${state.url}/?orb=1`) event.preventDefault() })
+  orb.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
+  orb.on('closed', () => {
+    if (orbWin !== orb) return
+    orbWin = undefined
+    restoreMain()
+  })
+  orb.loadURL(`${state.url}/?orb=1`)
+  win.hide()
+  if (settings.dock !== 'off') releaseEdge()
+  publish()
+  return snapshot()
+}
 function registerIPC() {
   const actions = {
     'desktop:state': snapshot,
@@ -285,6 +340,7 @@ function registerIPC() {
     'desktop:toggle-pin': togglePin,
     'desktop:toggle-widget': toggleWidget,
     'desktop:toggle-dock': toggleDock,
+    'desktop:toggle-orb': toggleOrb,
     'desktop:set-dock': setDock,
     'desktop:set-runtime': async value => {
       if (value !== 'auto' && value !== 't3') throw new Error('Unknown source mode')
@@ -304,6 +360,32 @@ function registerIPC() {
       throw new Error('Untrusted desktop request')
     }
     return handler(payload)
+  })
+  const orbActions = {
+    'orb:set-interactive': value => {
+      if (typeof value === 'boolean') orbWin.setIgnoreMouseEvents(!value, { forward: true })
+    },
+    'orb:move-to': value => {
+      if (!value || !Number.isFinite(value.x) || !Number.isFinite(value.y) || (value.done !== undefined && typeof value.done !== 'boolean')) return
+      const area = screen.getDisplayMatching({ x: Math.round(value.x), y: Math.round(value.y), width: 260, height: 270 }).workArea
+      const x = Math.max(area.x, Math.min(Math.round(value.x), area.x + area.width - 260))
+      const y = Math.max(area.y, Math.min(Math.round(value.y), area.y + area.height - 270))
+      orbWin.setPosition(x, y)
+      if (value.done === true) {
+        settings.orbPosition = { x, y }
+        try { saveSettings() } catch (error) { state.error = `Could not remember preferences: ${error.message}` }
+        publish()
+      }
+    },
+    'orb:open-full': closeOrb,
+    'orb:menu': () => Menu.buildFromTemplate([
+      { label: 'Open Agent Flow', click: closeOrb },
+      { type: 'separator' },
+      { label: 'Quit Agent Flow', click: () => app.quit() },
+    ]).popup({ window: orbWin }),
+  }
+  for (const [channel, handler] of Object.entries(orbActions)) ipcMain.on(channel, (event, payload) => {
+    if (orbWin && event.sender === orbWin.webContents) handler(payload)
   })
 }
 function createWindow() {
@@ -339,6 +421,7 @@ function createWindow() {
       { label: 'Choose folder…', accelerator: 'CmdOrCtrl+O', click: chooseFolder },
       { label: 'Toggle always on top', accelerator: 'CmdOrCtrl+Shift+T', click: togglePin },
       { label: 'Toggle widget', accelerator: 'CmdOrCtrl+Shift+W', click: toggleWidget },
+      { label: 'Orb mode', accelerator: 'CmdOrCtrl+Shift+O', click: toggleOrb },
       { label: 'Dock left', accelerator: 'CmdOrCtrl+Shift+Left', click: () => setDock('left') },
       { label: 'Dock right', accelerator: 'CmdOrCtrl+Shift+Right', click: () => setDock('right') },
       { label: 'Undock', accelerator: 'CmdOrCtrl+Shift+D', click: () => setDock('off') },
@@ -361,6 +444,7 @@ else {
     if (quitting) return
     event.preventDefault()
     quitting = true
+    closeOrb()
     releaseEdge()
     Promise.all([retire(worker), retire(pendingWorker)]).finally(() => app.quit())
   })

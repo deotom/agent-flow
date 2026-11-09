@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import { useEffect, useState } from 'react'
 import { AgentVisualizer } from './components/agent-visualizer'
+import { OrbView } from './components/orb/orb-view'
 import './app/globals.css'
 
 // Standalone CLI entry — no VS Code API, connects to relay via SSE
@@ -21,4 +22,6 @@ function StandaloneApp() {
   }, [desktop])
   return <AgentVisualizer desktopWidget={widget} />
 }
-root.render(<StandaloneApp />)
+// The desktop orb window loads ?orb=1: only the floating reactor, on a transparent page.
+const orb = new URLSearchParams(window.location.search).get('orb') === '1'
+root.render(orb ? <OrbView /> : <StandaloneApp />)

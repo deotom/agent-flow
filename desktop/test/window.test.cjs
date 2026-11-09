@@ -8,12 +8,60 @@ const path = require('node:path')
 const vm = require('node:vm')
 const { pathToFileURL } = require('node:url')
 
+test('orb preload exposes only fire-and-forget actions in the main frame', () => {
+  const calls = []
+  let api
+  const source = fs.readFileSync(path.resolve(__dirname, '../orb-preload.cjs'), 'utf8')
+  const run = isMainFrame => vm.runInNewContext(source, {
+    process: { isMainFrame },
+    require: () => ({
+      contextBridge: { exposeInMainWorld(name, value) { assert.equal(name, 'agentFlowOrb'); api = value } },
+      ipcRenderer: { send: (...args) => calls.push(args) },
+    }),
+  })
+  run(false)
+  assert.equal(api, undefined)
+  run(true)
+  api.setInteractive(true)
+  api.moveTo({ x: 10, y: 20, done: true })
+  api.openFull()
+  api.menu()
+  assert.deepEqual(calls, [
+    ['orb:set-interactive', true], ['orb:move-to', { x: 10, y: 20, done: true }], ['orb:open-full'], ['orb:menu'],
+  ])
+})
+
+test('orb settings accept bounded integer coordinates and never restore open mode', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-flow-orb-settings-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const context = vm.createContext({
+    require: id => id === 'electron' ? { app: { setName() {}, getPath: () => root, requestSingleInstanceLock: () => false, quit() {} } }
+      : id === './mobile-profile.cjs' ? { configureMobileProfile() {} }
+        : id === './mobile-pairing.cjs' ? { resolveMobileConfig() {} } : require(id),
+    __dirname: path.resolve(__dirname, '..'), process,
+  })
+  vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../main.cjs'), 'utf8'), context)
+  for (const position of [{ x: -100000, y: 100000 }, { x: 0, y: 42 }]) {
+    fs.writeFileSync(path.join(root, 'desktop-settings.json'), JSON.stringify({ orbPosition: position, orbOpen: true }))
+    const state = vm.runInContext('loadSettings(); snapshot()', context)
+    assert.deepEqual({ ...state.orbPosition }, position)
+    assert.equal(state.orbOpen, false)
+  }
+  for (const position of [null, { x: 100001, y: 0 }, { x: 0, y: -100001 }, { x: 1.5, y: 0 }, { x: '1', y: 0 }, { x: 1 }]) {
+    fs.writeFileSync(path.join(root, 'desktop-settings.json'), JSON.stringify({ orbPosition: position }))
+    assert.equal(vm.runInContext('loadSettings(); snapshot().orbPosition', context), undefined)
+  }
+})
+
 test('window actions persist pin/folder, cancel safely, isolate IPC and retire old workers', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-flow-window-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const folders = [path.join(root, 'project A'), path.join(root, 'project B')]
   folders.forEach(folder => fs.mkdirSync(folder))
   const handlers = new Map()
+  const listeners = new Map()
+  const windows = []
+  const menus = []
   const children = []
   let window
   let selected
@@ -24,15 +72,24 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   })
   class Window extends EventEmitter {
     constructor(options) {
-      super(); window = this; this.options = options; this.pin = options.alwaysOnTop
-      this.bounds = { x: 1700, y: 900, width: options.width, height: options.height }
+      super(); if (!window) window = this
+      windows.push(this); this.options = options; this.pin = options.alwaysOnTop
+      this.bounds = { x: options.x ?? 1700, y: options.y ?? 900, width: options.width, height: options.height }
       this.webContents = Object.assign(new EventEmitter(), {
         mainFrame: { url: pathToFileURL(path.resolve(__dirname, '../shell.html')).href },
-        send() {}, setWindowOpenHandler() {}, session: { setPermissionRequestHandler() {} },
+        send() {}, setWindowOpenHandler: handler => { this.openHandler = handler }, session: { setPermissionRequestHandler: handler => { this.permissionHandler = handler } },
       })
     }
-    isDestroyed() { return false }
-    setAlwaysOnTop(value) { this.pin = value }
+    isDestroyed() { return Boolean(this.destroyed) }
+    setAlwaysOnTop(value, level) { this.pin = value; this.level = level }
+    setIgnoreMouseEvents(value, options) { this.ignoreMouse = value; this.forward = options.forward }
+    hide() { this.hidden = true }
+    show() { this.hidden = false }
+    focus() { this.focused = true }
+    destroy() { this.destroyed = true; this.emit('closed') }
+    loadURL(url) { this.url = url }
+    setPosition(x, y) { Object.assign(this.bounds, { x, y }) }
+    getPosition() { return [this.bounds.x, this.bounds.y] }
     loadFile() {}
     isMaximized() { return false }
     isMinimized() { return false }
@@ -45,10 +102,10 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   }
   const electron = {
     app, BrowserWindow: Window,
-    screen: { getDisplayMatching: () => ({ scaleFactor: 1.5, workArea: { x: 0, y: 0, width: 1920, height: 1080 } }), screenToDipRect: (_w, rect) => ({ x: rect.x / 1.5, y: rect.y / 1.5, width: rect.width / 1.5, height: rect.height / 1.5 }) },
+    screen: { getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }], getDisplayMatching: () => ({ scaleFactor: 1.5, workArea: { x: 0, y: 0, width: 1920, height: 1080 } }), screenToDipRect: (_w, rect) => ({ x: rect.x / 1.5, y: rect.y / 1.5, width: rect.width / 1.5, height: rect.height / 1.5 }) },
     dialog: { showOpenDialog: async () => selected || { canceled: true, filePaths: [] }, showErrorBox() {} },
-    ipcMain: { handle: (key, handler) => handlers.set(key, handler) },
-    Menu: { buildFromTemplate: value => value, setApplicationMenu() {} },
+    ipcMain: { handle: (key, handler) => handlers.set(key, handler), on: (key, handler) => listeners.set(key, handler) },
+    Menu: { buildFromTemplate: value => { value.popup = options => menus.push({ template: value, ...options }); return value }, setApplicationMenu(value) { this.template = value } },
     utilityProcess: { fork(_file, args, options) {
       assert.equal(options.cwd, args[0])
       const child = new EventEmitter()
@@ -76,6 +133,7 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   await new Promise(resolve => setImmediate(resolve))
   const trusted = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
   const invoke = (key, payload) => handlers.get(`desktop:${key}`)(trusted, payload)
+  const sendOrb = (orb, key, payload, sender = orb.webContents) => listeners.get(`orb:${key}`)({ sender }, payload)
   assert.equal(window.pin, true)
   assert.equal(window.options.webPreferences.nodeIntegration, false)
   assert.equal(window.options.webPreferences.contextIsolation, true)
@@ -84,6 +142,11 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   assert.equal(window.options.minWidth, 260)
   assert.equal(window.options.width, 360)
   assert.equal(children.length, 0, 'Opening the app must wait for a chosen folder')
+  assert.equal(invoke('toggle-orb').error, 'Open a workspace before switching to the orb.')
+  assert.equal(invoke('state').orbOpen, false)
+  assert.equal(windows.length, 1)
+  const orbMenu = electron.Menu.template[0].submenu.find(item => item.label === 'Orb mode')
+  assert.equal(orbMenu.accelerator, 'CmdOrCtrl+Shift+O')
   await invoke('choose-folder')
   assert.equal(children.length, 0, 'Canceling the picker must not start a watcher')
   assert.throws(() => handlers.get('desktop:toggle-pin')({ ...trusted, senderFrame: { url: 'http://127.0.0.1:42001' } }), /Untrusted/)
@@ -140,16 +203,98 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   invoke('toggle-dock')
   assert.equal(invoke('state').dock, 'off')
   assert.equal(window.bounds.width, 300, 'Undocking restores the pre-dock widget size')
+  invoke('set-dock', 'right')
+  assert.equal(invoke('toggle-orb').orbOpen, true)
+  let orb = windows.at(-1)
+  assert.equal(orb.url, `${activeURL}/?orb=1`)
+  for (const key of ['transparent', 'skipTaskbar', 'focusable']) assert.equal(orb.options[key], true, key)
+  for (const key of ['frame', 'resizable', 'maximizable', 'minimizable', 'hasShadow']) assert.equal(orb.options[key], false, key)
+  assert.equal(orb.options.backgroundColor, '#00000000')
+  assert.equal(orb.options.width, 260)
+  assert.equal(orb.options.height, 270)
+  assert.equal(orb.options.webPreferences.preload, path.resolve(__dirname, '../orb-preload.cjs'))
+  assert.equal(orb.options.webPreferences.contextIsolation, true)
+  assert.equal(orb.options.webPreferences.nodeIntegration, false)
+  assert.equal(orb.options.webPreferences.sandbox, true)
+  assert.equal(orb.pin, true)
+  assert.equal(orb.level, 'floating')
+  assert.equal(orb.ignoreMouse, true)
+  assert.equal(orb.forward, true)
+  assert.deepEqual(orb.getPosition(), [1636, 786])
+  assert.equal(window.hidden, true)
+  assert.deepEqual(edge.calls.at(-1), ['off'])
+  const releasedCalls = edge.calls.length
+  edge.onFailure()
+  edge.onRect({ x: 0, y: 0, width: 570, height: 1560 })
+  assert.equal(edge.calls.length, releasedCalls, 'Late AppBar callbacks must not reserve a hidden window')
+  assert.equal(orb.openHandler().action, 'deny')
+  let prevented = false
+  orb.webContents.emit('will-navigate', { preventDefault() { prevented = true } }, 'https://example.com')
+  assert.equal(prevented, true)
+  prevented = false
+  orb.webContents.emit('will-navigate', { preventDefault() { prevented = true } }, orb.url)
+  assert.equal(prevented, false)
+  orb.permissionHandler(null, 'camera', allowed => assert.equal(allowed, false))
+  for (const [key, payload] of [['set-interactive', true], ['move-to', { x: 1, y: 2, done: true }], ['menu'], ['open-full']]) {
+    sendOrb(orb, key, payload, window.webContents)
+  }
+  assert.equal(orb.ignoreMouse, true)
+  assert.deepEqual(orb.getPosition(), [1636, 786])
+  assert.equal(menus.length, 0)
+  assert.equal(orb.destroyed, undefined)
+  sendOrb(orb, 'set-interactive', true)
+  assert.equal(orb.ignoreMouse, false)
+  sendOrb(orb, 'set-interactive', 'false')
+  assert.equal(orb.ignoreMouse, false)
+  sendOrb(orb, 'set-interactive', false)
+  assert.equal(orb.ignoreMouse, true)
+  for (const payload of [null, { x: NaN, y: 1 }, { x: 1, y: Infinity }, { x: '1', y: 2 }, { x: 1, y: 2, done: 'yes' }]) sendOrb(orb, 'move-to', payload)
+  assert.deepEqual(orb.getPosition(), [1636, 786])
+  sendOrb(orb, 'move-to', { x: -100.2, y: 2000.7, done: true })
+  assert.deepEqual(orb.getPosition(), [0, 810])
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, 'desktop-settings.json'), 'utf8')).orbPosition, { x: 0, y: 810 })
+  sendOrb(orb, 'move-to', { x: 5000, y: -20 })
+  assert.deepEqual(orb.getPosition(), [1660, 0])
+  sendOrb(orb, 'move-to', { x: 120.6, y: 30.4 })
+  assert.deepEqual(orb.getPosition(), [121, 30])
+  sendOrb(orb, 'menu')
+  assert.equal(menus[0].window, orb)
+  assert.deepEqual(Array.from(menus[0].template, item => item.label || item.type), ['Open Agent Flow', 'separator', 'Quit Agent Flow'])
+  sendOrb(orb, 'open-full')
+  assert.equal(orb.destroyed, true)
+  assert.equal(invoke('state').orbOpen, false)
+  assert.equal(window.hidden, false)
+  assert.equal(window.focused, true)
+  assert.deepEqual(edge.calls.at(-1), ['right', 675])
+  invoke('toggle-orb')
+  orb = windows.at(-1)
+  assert.deepEqual(orb.getPosition(), [0, 810], 'Reopening uses the saved position')
+  assert.equal(invoke('toggle-orb').orbOpen, false)
+  assert.equal(orb.destroyed, true)
+  invoke('toggle-orb')
+  orb = windows.at(-1)
+  orb.destroy()
+  assert.equal(invoke('state').orbOpen, false, 'Native closure restores the main window')
+  assert.equal(window.hidden, false)
+  invoke('set-dock', 'off')
+  invoke('toggle-orb')
+  orb = windows.at(-1)
   selected = { canceled: false, filePaths: [folders[1]] }
   await invoke('choose-folder')
   assert.equal(children[0].stopped, true)
   assert.equal(children[1].stopped, undefined)
   assert.equal(invoke('state').folder, fs.realpathSync(folders[1]))
+  assert.equal(orb.url, 'http://127.0.0.1:42002/?orb=1', 'Workspace switches reload the orb directly')
+  children[1].emit('exit', 1)
+  assert.equal(orb.destroyed, true, 'Worker exit closes the orb')
+  assert.equal(window.hidden, false)
+  assert.equal(invoke('state').url, '')
+  await invoke('choose-folder')
   failNext = true
   await invoke('choose-folder')
-  assert.equal(children[2].stopped, true)
-  assert.equal(children[1].stopped, undefined, 'Failed switch must keep the current workspace alive')
-  assert.equal(invoke('state').url, 'http://127.0.0.1:42002')
+  assert.equal(children[3].stopped, true)
+  assert.equal(children[2].stopped, undefined, 'Failed switch must keep the current workspace alive')
+  assert.equal(invoke('state').url, 'http://127.0.0.1:42003')
   assert.match(invoke('state').error, /Cannot open workspace/)
   const saved = JSON.parse(fs.readFileSync(path.join(root, 'desktop-settings.json'), 'utf8'))
   assert.equal(saved.alwaysOnTop, false)
@@ -166,7 +311,11 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   const failedMode = await invoke('set-runtime', 'auto')
   assert.equal(failedMode.runtime, 't3', 'Failed mode change keeps the old source and worker')
   assert.equal(children.at(-2).stopped, undefined)
+  invoke('toggle-orb')
+  orb = windows.at(-1)
   app.emit('before-quit', { preventDefault() {} })
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(children.at(-2).stopped, true)
+  assert.equal(orb.destroyed, true)
+  assert.equal(window.hidden, true, 'Quitting must not restore the main window')
 })

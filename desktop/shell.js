@@ -8,6 +8,7 @@ function sendMode() {
   if (currentURL) element('graph').contentWindow.postMessage({ type: 'desktop:widget', widget: widgetMode }, currentURL)
 }
 function render(state) {
+  element('orb-button').disabled = !state.url
   element('source-mode').value = state.runtime || 'auto'
   element('source-mode').disabled = state.busy
   widgetMode = state.widgetMode
@@ -58,6 +59,7 @@ element('open-last').addEventListener('click', () => act(api.openLast))
 element('pin-button').addEventListener('click', () => act(api.togglePin))
 element('widget-button').addEventListener('click', () => act(api.toggleWidget))
 element('dock-button').addEventListener('click', () => act(api.toggleDock))
+element('orb-button').addEventListener('click', () => act(api.toggleOrb))
 element('dock-button').addEventListener('contextmenu', event => {
   // Right-click moves a docked window to the other edge.
   event.preventDefault()
