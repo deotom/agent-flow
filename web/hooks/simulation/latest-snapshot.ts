@@ -25,7 +25,7 @@ export function restoreLatestSnapshot(event: SimulationEvent, prev: SimulationSt
       tokensUsed: Number(row.tokensUsed) || 0, tokensMax: Number(row.tokensMax) >= 0 ? Number(row.tokensMax) : agent.tokensMax,
       toolCalls: Number(row.toolCalls) || 0, timeAlive: Number(row.timeAlive) || 0, spawnTime: Number(row.spawnTime) || 0,
       round: state.round, currentTool: typeof row.currentTool === 'string' ? row.currentTool : undefined,
-      contextRecharge: row.compacting === true ? { progress: 0 } : undefined,
+      contextRecharge: row.compacting === true ? agent.contextRecharge ?? { progress: 0 } : undefined,
       waitingForInput: row.waitingForInput === true, opacity: row.state === 'complete' && !row.isMain ? 0 : 1, scale: 1,
       task: typeof row.task === 'string' ? row.task : undefined,
       contextBreakdown: emptyContextBreakdown(), messageBubbles: [] }

@@ -91,3 +91,17 @@ test('attributes native worker tools to that worker rather than to its lead', ()
   assert.equal(agents.at(-1)!.toolCalls, 1)
   assert.equal(agents.at(-1)!.state, 'tool_calling')
 })
+
+test('shows native context compaction instead of generic thinking', () => {
+  const data = fixture()
+  data.items = [row({ turn_item_id: 'c1', thread_id: 'lead', run_id: 'r-lead', type: 'compaction', status: 'running' })]
+  const team = projectT3Teams(data, ['d:/project/th']).find(t => t.session.id === 't3:lead')!
+  assert.equal((team.event.payload.agents as T3Row[])[0].compacting, true)
+  const lead = (team.event.payload.team as TeamSnapshot).agents[0]
+  assert.equal(lead.status, 'running')
+  assert.equal(lead.activities[0].type, 'compaction')
+  data.items = [row({ turn_item_id: 'c1', thread_id: 'lead', run_id: 'r-lead', type: 'compaction', status: 'completed' })]
+  const after = projectT3Teams(data, ['d:/project/th']).find(t => t.session.id === 't3:lead')!
+  assert.equal((after.event.payload.agents as T3Row[])[0].compacting, false)
+  assert.equal((after.event.payload.team as TeamSnapshot).agents[0].status, 'thinking')
+})

@@ -95,7 +95,7 @@ export class T3SessionWatcher {
         json_object('toolName', json_extract(payload_json, '$.toolName'), 'title', json_extract(payload_json, '$.title')) AS payload_json
         FROM orchestration_v2_projection_turn_items i
         WHERE thread_id IN (${placeholders}) AND run_id = (SELECT run_id FROM orchestration_v2_projection_runs r WHERE r.thread_id = i.thread_id ORDER BY ordinal DESC LIMIT 1)
-        AND type IN ('command_execution','dynamic_tool','file_change','web_search','mcp_tool_call')`).all(...selected)
+        AND type IN ('command_execution','dynamic_tool','file_change','web_search','mcp_tool_call','compaction')`).all(...selected)
       db.exec('COMMIT')
       const projection: T3Projection = { projects, threads, subagents, runs, providerThreads, requests, items, nodes }
       const next = new Map(projectT3Teams(projection, this.workspaces).map(team => [team.session.id, team]))

@@ -36,6 +36,8 @@ interface CanvasProps {
   restoring?: boolean
   visible?: boolean
   showAllAgents?: boolean
+  /** Agents another view scoped out, such as the team board's finished work. */
+  hiddenAgentIds?: ReadonlySet<string>
   currentRoundOnly?: boolean
   animationMode?: AnimationMode
   animationSpeed?: number
@@ -60,7 +62,7 @@ interface CanvasProps {
 }
 
 export function AgentCanvas({
-  topInset = 132, visible = true, restoring = false, currentRoundOnly = true, showAllAgents = false,
+  topInset = 132, visible = true, restoring = false, currentRoundOnly = true, showAllAgents = false, hiddenAgentIds,
   animationMode = 'full', animationSpeed = 1,
   compact = false,
   simulationRef,
@@ -108,9 +110,9 @@ export function AgentCanvas({
   // at the top of each draw frame, so it's always fresh even without re-renders.
   const projectGraphRef = useRef<ReturnType<typeof createGraphProjector> | null>(null)
   if (!projectGraphRef.current) projectGraphRef.current = createGraphProjector()
-  const sim = projectGraphRef.current(simulationRef.current, currentRoundOnly, compact, showAllAgents)
+  const sim = projectGraphRef.current(simulationRef.current, currentRoundOnly, compact, showAllAgents, hiddenAgentIds)
   const makeDrawProps = (prev?: { isDragging: boolean }) => ({
-    animationMode, animationSpeed, currentRoundOnly, showAllAgents, topInset,
+    animationMode, animationSpeed, currentRoundOnly, showAllAgents, hiddenAgentIds, topInset,
     compact,
     agents: sim.agents, toolCalls: sim.toolCalls,
     particles: sim.particles, edges: sim.edges, discoveries: sim.discoveries,
@@ -200,7 +202,7 @@ export function AgentCanvas({
     try {
       // Sync simulation data from ref — always fresh, independent of React renders
       {
-        const s = projectGraphRef.current!(simulationRef.current, drawPropsRef.current.currentRoundOnly, compactRef.current, drawPropsRef.current.showAllAgents)
+        const s = projectGraphRef.current!(simulationRef.current, drawPropsRef.current.currentRoundOnly, compactRef.current, drawPropsRef.current.showAllAgents, drawPropsRef.current.hiddenAgentIds)
         const p = drawPropsRef.current
         p.agents = s.agents
         p.toolCalls = s.toolCalls

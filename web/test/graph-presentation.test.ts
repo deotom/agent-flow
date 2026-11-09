@@ -114,3 +114,8 @@ it('reconstructs the inactive catalog on historical restore without retaining me
     assert.equal('task' in entry.agentSummary, false)
   }
 })
+
+it('opens small teams at a comfortable zoom instead of filling the screen', () => {
+  const fit = graphFit({ minX: -120, maxX: 120, minY: -120, maxY: 120 }, 1600, 1000, false, 2)
+  assert.ok(fit.scale <= 1.25, `scale ${fit.scale}`)
+})

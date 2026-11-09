@@ -25,7 +25,7 @@ it('labels each lifecycle state, including running tools and permission waits', 
 
 it('moves amber dashes around active nodes and stops them for idle and completed nodes', () => {
   const strokes: { color: string; offset: number; dash: number[] }[] = []
-  const canvas = { save() {}, restore() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {},
+  const canvas = { save() {}, restore() {}, beginPath() {}, arc() {}, moveTo() {}, lineTo() {}, closePath() {},
     strokeStyle: '', lineDashOffset: 0, dash: [] as number[], setLineDash(dash: number[]) { this.dash = dash },
     stroke() { strokes.push({ color: this.strokeStyle, offset: this.lineDashOffset, dash: this.dash }) } }
   for (const state of ['thinking', 'tool_calling', 'idle', 'complete'] as const) {
@@ -68,33 +68,30 @@ it('rebuilds timeline markers for equal-length sessions and rolling conversation
 })
 
 function captureLampHud(agent: Parameters<typeof drawContextHud>[1], time: number, enabled: boolean) {
-  const fills: { color: string; alpha: number; rectangles: number[][][] }[] = []
-  let rectangles: number[][][] = [], points: number[][] = []
-  const canvas = { globalAlpha: 1, fillStyle: '', save() {}, restore() {}, beginPath() { rectangles = [] },
-    moveTo(x: number, y: number) { points = [[x, y]] }, lineTo(x: number, y: number) { points.push([x, y]) },
-    closePath() { rectangles.push(points) }, fill() { fills.push({ color: this.fillStyle, alpha: this.globalAlpha, rectangles: [...rectangles] }) } }
+  const strokes: { color: string; alpha: number; arcs: number[][] }[] = []
+  let arcs: number[][] = []
+  const canvas = { globalAlpha: 1, strokeStyle: '', save() {}, restore() {}, beginPath() { arcs = [] },
+    moveTo() {}, arc(...args: number[]) { arcs.push(args) },
+    stroke() { strokes.push({ color: this.strokeStyle, alpha: this.globalAlpha, arcs: [...arcs] }) } }
   drawContextHud(canvas as unknown as CanvasRenderingContext2D, agent, 48, time, enabled)
-  return fills
+  return strokes
 }
 
-it('keeps used LED lamps black and lights remaining capacity, clamped to a full ring', () => {
+it('keeps used arc lamps dark and lights clamped remaining capacity in cyan', () => {
   const state = processEvent({ time: 0, type: 'agent_spawn', payload: { name: 'root', isMain: true } }, createEmptyState(), ctx)
-  for (const [tokensUsed, lit] of [[14000, 31], [150000, 0], [0, 36]] as const) {
-    const fills = captureLampHud({ ...state.agents.get('root')!, tokensUsed, tokensMax: 100000 }, 0, false)
-    assert.equal(fills[0].rectangles.length, 36)
-    assert.equal(fills[1].color, '#010408')
-    assert.equal(fills[1].rectangles.length, 36)
-    const blue = fills.filter(fill => fill.color === COLORS.holoBase)
-    assert.equal(blue.reduce((count, fill) => count + fill.rectangles.length, 0), lit)
-    for (const fill of blue) for (const rectangle of fill.rectangles) {
-      assert.equal(rectangle.length, 4)
-      const [a, b, c] = rectangle
-      const width = [b[0] - a[0], b[1] - a[1]], height = [c[0] - b[0], c[1] - b[1]]
-      assert.ok(Math.abs(width[0] * height[0] + width[1] * height[1]) < 0.0001)
-      assert.ok(Math.hypot(...width) > Math.hypot(...height) * 2)
+  for (const [tokensUsed, lit] of [[14000, 21], [150000, 0], [0, 24], [-1, 24]] as const) {
+    const strokes = captureLampHud({ ...state.agents.get('root')!, tokensUsed, tokensMax: 100000 }, 0, false)
+    assert.equal(strokes[0].arcs.length, 24)
+    assert.equal(strokes[1].color, '#010408')
+    assert.equal(strokes[1].arcs.length, 24)
+    const blue = strokes.filter(stroke => stroke.color === '#5fe1ff')
+    assert.equal(blue.reduce((count, stroke) => count + stroke.arcs.length, 0), lit)
+    for (const stroke of blue) for (const arc of stroke.arcs) {
+      assert.equal(arc[2], 58)
+      assert.ok(arc[4] > arc[3] && arc[4] - arc[3] < Math.PI * 2 / 24)
     }
-    if (lit) assert.equal(blue.at(-1)!.rectangles.length, 1)
-    else assert.equal(fills.length, 2)
+    if (lit) assert.equal(blue.at(-1)!.arcs.length, 1)
+    else assert.equal(strokes.length, 2)
   }
 })
 
@@ -102,8 +99,8 @@ it('blinks only the latest blue LED while previous and unlit lamps stay steady, 
   const state = processEvent({ time: 0, type: 'agent_spawn', payload: { name: 'root', isMain: true } }, createEmptyState(), ctx)
   const agent = { ...state.agents.get('root')!, tokensUsed: 14000, tokensMax: 100000 }
   const dim = captureLampHud(agent, 0, true), bright = captureLampHud(agent, Math.PI / 2.2, true)
-  assert.deepEqual(dim.map(fill => fill.rectangles), bright.map(fill => fill.rectangles))
-  assert.deepEqual(dim.slice(0, -2), bright.slice(0, -2))
+  assert.deepEqual(dim.map(fill => fill.arcs), bright.map(fill => fill.arcs))
+  assert.deepEqual(dim.slice(0, -3), bright.slice(0, -3))
   assert.ok(bright.at(-2)!.alpha > dim.at(-2)!.alpha)
   assert.deepEqual(captureLampHud(agent, 0, false), captureLampHud(agent, 10, false))
 })
@@ -189,7 +186,7 @@ it('pulses amber only during live compaction, persists beyond 1.6s and stops on 
   apply('context_compaction', { active: true })
   assert.match(agentStatusLabel(state.agents.get('root')!, 0), /Compacting/)
   const amber = (enabled = true) => captureLampHud(state.agents.get('root')!, 0, enabled).filter(fill => fill.color === COLORS.tool)
-  assert.equal(amber()[0].rectangles.length, 36)
+  assert.equal(amber()[0].arcs.length, 24)
   const dim = amber()[0].alpha
   const frame = (delta: number, animationMode: 'full' | 'off' = 'full') => {
     state = computeNextFrame(state, delta, state.currentTime + delta, state.currentTime + delta, state,
@@ -204,7 +201,7 @@ it('pulses amber only during live compaction, persists beyond 1.6s and stops on 
   assert.equal(state.agents.get('root')!.contextRecharge!.progress, progress)
   frame(0.2, 'off')
   assert.equal(state.agents.get('root')!.contextRecharge!.progress, progress)
-  assert.equal(amber(false)[0].rectangles.length, 36)
+  assert.equal(amber(false)[0].arcs.length, 24)
   apply('context_update', { tokens: 20000, compacted: true })
   apply('context_compaction', { active: false })
   assert.equal(state.agents.get('root')!.contextRecharge, undefined)

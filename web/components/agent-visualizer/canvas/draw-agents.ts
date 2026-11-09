@@ -6,7 +6,7 @@ import {
   AGENT_DRAW, STATS_OVERLAY,
 } from '@/lib/canvas-constants'
 import { alphaHex, formatModelName } from '@/lib/utils'
-import { truncateText, drawHexagon, CLAUDE_SPARK_D, OPENAI_LOGO_D, OPENAI_LOGO_VIEWBOX } from './draw-misc'
+import { truncateText, CLAUDE_SPARK_D, OPENAI_LOGO_D, OPENAI_LOGO_VIEWBOX } from './draw-misc'
 import { getAgentGlowSprite, measureTextCached } from './render-cache'
 
 let _claudeSparkPath: Path2D | null = null
@@ -76,67 +76,107 @@ export function drawAgentBrand(
   else drawClaudeSpark(ctx, cx, cy, r, color)
 }
 
-const hudLampDirections = [24, 36].map(count => Array.from({ length: count }, (_, index) => {
-  const angle = -Math.PI / 2 + index * Math.PI * 2 / count
-  return { x: Math.cos(angle), y: Math.sin(angle) }
-}))
+const REACTOR_CYAN = '#5fe1ff'
+const TAU = Math.PI * 2
 
+function circle(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number) {
+  ctx.beginPath()
+  ctx.arc(x, y, radius, 0, TAU)
+}
+
+/** Batched arc lamps: dark used capacity, cyan remaining, amber compaction. */
 export function drawContextHud(ctx: CanvasRenderingContext2D, agent: Agent, radius: number, time = 0, effectsEnabled = false) {
   if (agent.state === 'complete' && !agent.isMain) return
-  // No reported context window: draw nothing rather than a full "unused" ring.
-  if (!(agent.tokensMax > 0)) return
-  const usage = Math.min(1, Math.max(0, agent.tokensUsed / agent.tokensMax))
-  const directions = hudLampDirections[agent.isMain ? 1 : 0]
-  const recharge = agent.contextRecharge
-  const lit = Math.ceil((1 - usage) * directions.length)
+  // T3 reports compaction without token counters; the amber pulse still applies.
+  if (!(agent.tokensMax > 0) && !agent.contextRecharge) return
+  const usage = agent.tokensMax > 0 ? Math.min(1, Math.max(0, agent.tokensUsed / agent.tokensMax)) : 0
+  const count = reactorSegments(agent)
+  const lit = Math.ceil((1 - usage) * count)
   const ringRadius = radius + 10
-  const halfLength = ringRadius * Math.PI / directions.length * 0.64
-  const halfThickness = agent.isMain ? 1.5 : 1.1
+  const thickness = reactorThickness(agent)
   ctx.save()
   const opacity = ctx.globalAlpha
   ctx.shadowBlur = 0
-  const lamps = (start: number, count: number, inset: number, color: string, alpha: number, core = false) => {
-    if (!count) return
+  const lamps = (start: number, length: number, width: number, color: string, alpha: number) => {
+    if (!length) return
     ctx.globalAlpha = opacity * alpha
-    ctx.fillStyle = color
-    ctx.beginPath()
-    for (let index = start; index < start + count; index++) {
-      const direction = directions[index]
-      const x = agent.x + direction.x * ringRadius
-      const y = agent.y + direction.y * ringRadius
-      const length = core ? halfLength * 0.7 : halfLength + inset
-      const thickness = core ? halfThickness * 0.22 : halfThickness + inset
-      const tx = -direction.y * length, ty = direction.x * length
-      const nx = direction.x * thickness, ny = direction.y * thickness
-      ctx.moveTo(x - tx - nx, y - ty - ny)
-      ctx.lineTo(x + tx - nx, y + ty - ny)
-      ctx.lineTo(x + tx + nx, y + ty + ny)
-      ctx.lineTo(x - tx + nx, y - ty + ny)
-      ctx.closePath()
+    ctx.strokeStyle = color
+    ctx.lineWidth = width
+    segmentPath(ctx, agent.x, agent.y, ringRadius, count, start, length)
+    // A wider translucent stroke supplies a soft segment glow without shadows.
+    if (width === thickness && (color === REACTOR_CYAN || color === COLORS.tool)) {
+      ctx.strokeStyle = color + '30'
+      ctx.lineWidth = width + 3
+      ctx.stroke()
+      ctx.strokeStyle = color
+      ctx.lineWidth = width
     }
-    ctx.fill()
+    ctx.stroke()
   }
-  // Used capacity is dark; remaining capacity stays blue.
-  lamps(0, directions.length, 0.5, '#22313e', 0.65)
-  lamps(0, directions.length, 0, '#010408', 1)
-  if (recharge) {
-    // Repeat the amber pulse while the native compaction item is in progress.
-    const brightness = 0.25 + (1 - Math.cos((effectsEnabled ? recharge.progress : 0.25) * Math.PI * 8)) * 0.35
-    lamps(0, directions.length, 0, COLORS.tool, brightness)
-    lamps(0, directions.length, 0, '#fff1bd', brightness * 0.85, true)
-    ctx.restore()
-    return
+  lamps(0, count, thickness + 1, '#22313e', 0.65)
+  lamps(0, count, thickness, '#010408', 1)
+  if (agent.contextRecharge) {
+    const brightness = 0.25 + (1 - Math.cos((effectsEnabled ? agent.contextRecharge.progress : 0.25) * Math.PI * 8)) * 0.35
+    lamps(0, count, thickness, COLORS.tool, brightness)
+    lamps(0, count, 0.8, '#fff1bd', brightness * 0.85)
+  } else {
+    lamps(0, Math.max(0, lit - 1), thickness, REACTOR_CYAN, 0.9)
+    lamps(0, Math.max(0, lit - 1), 0.8, '#d9faff', 0.8)
+    if (lit) {
+      const brightness = effectsEnabled && usage > 0 && usage < 1 ? 0.06 + (1 - Math.cos(time * 2.2)) * 0.47 : 1
+      lamps(lit - 1, 1, thickness, REACTOR_CYAN, brightness * 0.95)
+      lamps(lit - 1, 1, 0.8, '#d9faff', brightness * 0.9)
+    }
   }
-  // Only the remaining boundary lamp blinks, without animated shadows.
-  if (lit > 1) {
-    lamps(0, lit - 1, 0, COLORS.holoBase, 0.9)
-    lamps(0, lit - 1, 0, '#d9faff', 0.8, true)
+  ctx.restore()
+}
+
+function segmentPath(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, count: number, start = 0, length = count) {
+  const step = TAU / count
+  ctx.beginPath()
+  for (let index = start; index < start + length; index++) {
+    const angle = -Math.PI / 2 + (index + 0.16) * step
+    ctx.moveTo(x + Math.cos(angle) * radius, y + Math.sin(angle) * radius)
+    ctx.arc(x, y, radius, angle, angle + step * 0.74)
   }
-  if (lit) {
-    const brightness = effectsEnabled && usage > 0 && usage < 1 ? 0.06 + (1 - Math.cos(time * 2.2)) * 0.47 : 1
-    lamps(lit - 1, 1, 0, COLORS.holoBase, brightness * 0.95)
-    lamps(lit - 1, 1, 0, '#d9faff', brightness * 0.9, true)
+}
+
+/** Fewer, bolder segments read as the Board reactor badge at graph zoom levels. */
+const reactorSegments = (agent: Pick<Agent, 'isMain'>) => agent.isMain ? 24 : 16
+const reactorThickness = (agent: Pick<Agent, 'isMain'>) => agent.isMain ? 7 : 5.5
+
+function drawReactorRings(ctx: CanvasRenderingContext2D, agent: Agent, r: number, color: string, time: number, moving: boolean, detailed = true) {
+  ctx.save()
+  ctx.shadowBlur = 0
+  if (detailed) {
+    // Decorative tick ring: skipped under the render budget for large teams.
+    circle(ctx, agent.x, agent.y, r + 15)
+    ctx.strokeStyle = REACTOR_CYAN + '2e'
+    ctx.lineWidth = 0.7
+    ctx.stroke()
+    segmentPath(ctx, agent.x, agent.y, r + 15, agent.isMain ? 72 : 48)
+    ctx.strokeStyle = REACTOR_CYAN + '45'
+    ctx.lineWidth = 0.9
+    ctx.stroke()
   }
+  // Missing context is a calm state ornament, never a remaining-capacity gauge.
+  if (agent.contextRecharge && !agent.archived) { /* drawContextHud draws the amber compaction ring */ }
+  else if (!(agent.tokensMax > 0) || agent.archived || (agent.state === 'complete' && !agent.isMain)) {
+    const calm = agent.archived || agent.state === 'complete' || agent.state === 'idle'
+    segmentPath(ctx, agent.x, agent.y, r + 10, reactorSegments(agent))
+    ctx.strokeStyle = color + (calm ? '14' : '2e')
+    ctx.lineWidth = reactorThickness(agent) + 4
+    ctx.stroke()
+    ctx.strokeStyle = color + (calm ? '55' : 'c0')
+    ctx.lineWidth = reactorThickness(agent)
+    ctx.stroke()
+  }
+  circle(ctx, agent.x, agent.y, r + 4)
+  ctx.strokeStyle = color + '80'
+  ctx.lineWidth = 1
+  ctx.setLineDash([3, 3])
+  ctx.lineDashOffset = moving ? time * 3 : 0
+  ctx.stroke()
   ctx.restore()
 }
 
@@ -170,32 +210,29 @@ export function drawContextComposition(ctx: CanvasRenderingContext2D, agent: Age
 
 function drawDepthShadow(ctx: CanvasRenderingContext2D, agent: Agent, r: number) {
   ctx.save()
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.5)'
-  ctx.shadowBlur = AGENT_DRAW.shadowBlur
-  ctx.shadowOffsetX = AGENT_DRAW.shadowOffsetX
-  ctx.shadowOffsetY = AGENT_DRAW.shadowOffsetY
-  drawHexagon(ctx, agent.x, agent.y, r * 0.9)
+  ctx.shadowBlur = 0
+  circle(ctx, agent.x, agent.y, r * 0.9)
   ctx.fillStyle = COLORS.cardBgFaintOverlay
   ctx.fill()
   ctx.restore()
 }
 
 function drawAgentGlow(ctx: CanvasRenderingContext2D, agent: Agent, r: number, color: string, isHovered: boolean, isSelected: boolean, isWaiting: boolean) {
-  const glowR = r + AGENT_DRAW.glowPadding
+  const glowR = r + (agent.isMain ? AGENT_DRAW.glowPadding : 16)
   const glowAlpha = isHovered || isSelected ? 0.18 : isWaiting ? 0.12 : agent.state === 'thinking' ? 0.09 : 0.04
   // Pre-rendered glow sprite instead of per-frame gradient creation
   const sprite = getAgentGlowSprite(color, Math.round(r * 0.5), Math.ceil(glowR), alphaHex(glowAlpha))
   ctx.drawImage(sprite, agent.x - Math.ceil(glowR), agent.y - Math.ceil(glowR))
 
-  // Ambient outer hex ring
-  drawHexagon(ctx, agent.x, agent.y, r + AGENT_DRAW.outerRingOffset)
+  // Ambient circular core rim
+  circle(ctx, agent.x, agent.y, r + AGENT_DRAW.outerRingOffset)
   ctx.strokeStyle = color + '25'
   ctx.lineWidth = 1
   ctx.stroke()
 
-  // Inner hex fill
-  drawHexagon(ctx, agent.x, agent.y, r)
-  ctx.fillStyle = COLORS.nodeInterior
+  // Navy reactor core
+  circle(ctx, agent.x, agent.y, r)
+  ctx.fillStyle = 'rgba(6, 30, 50, 0.95)'
   ctx.fill()
 }
 
@@ -203,28 +240,26 @@ function drawScanline(ctx: CanvasRenderingContext2D, agent: Agent, r: number, co
   const scanSpeed = agent.state === 'thinking' || isHovered || isWaiting ? ANIM.scanline.thinking : ANIM.scanline.normal
   const scanY = agent.y - r + ((time * scanSpeed) % (r * 2))
   ctx.save()
-  drawHexagon(ctx, agent.x, agent.y, r)
+  circle(ctx, agent.x, agent.y, r)
   ctx.clip()
-  const scanGrad = ctx.createLinearGradient(agent.x, scanY - AGENT_DRAW.scanlineHalfH, agent.x, scanY + AGENT_DRAW.scanlineHalfH)
-  const scanAlpha = isHovered ? '35' : '20'
-  scanGrad.addColorStop(0, color + '00')
-  scanGrad.addColorStop(0.5, color + scanAlpha)
-  scanGrad.addColorStop(1, color + '00')
-  ctx.fillStyle = scanGrad
-  ctx.fillRect(agent.x - r, scanY - AGENT_DRAW.scanlineHalfH, r * 2, AGENT_DRAW.scanlineWidth)
+  // Layered translucent bands avoid allocating a gradient every frame.
+  ctx.fillStyle = color + (isHovered ? '18' : '0c')
+  ctx.fillRect(agent.x - r, scanY - 4, r * 2, 8)
+  ctx.fillStyle = color + (isHovered ? '28' : '18')
+  ctx.fillRect(agent.x - r, scanY - 1, r * 2, 2)
   ctx.restore()
 }
 
 function drawStateRing(ctx: CanvasRenderingContext2D, agent: Agent, r: number, color: string, isHovered: boolean, isSelected: boolean, isWaiting: boolean, time: number, effectsEnabled: boolean) {
-  drawHexagon(ctx, agent.x, agent.y, r)
-  ctx.strokeStyle = color
-  ctx.lineWidth = (isSelected || isHovered) ? 2.5 : 2
+  circle(ctx, agent.x, agent.y, r)
+  ctx.strokeStyle = color + (isSelected || isHovered ? 'd0' : '70')
+  ctx.lineWidth = (isSelected || isHovered) ? 2 : 1
   if (agent.state === 'complete') {
     ctx.setLineDash([4, 4])
     ctx.strokeStyle = color + '60'
   } else if (isWaiting) {
     ctx.setLineDash([6, 4])
-    ctx.lineDashOffset = -time * AGENT_DRAW.waitingDashSpeed
+    ctx.lineDashOffset = effectsEnabled ? -time * AGENT_DRAW.waitingDashSpeed : 0
     ctx.lineWidth = 2.5
   }
   ctx.stroke()
@@ -237,13 +272,12 @@ function drawStateRing(ctx: CanvasRenderingContext2D, agent: Agent, r: number, c
 export function drawActivityOutline(ctx: CanvasRenderingContext2D, agent: Pick<Agent, 'state' | 'x' | 'y'>, radius: number, time: number) {
   if (agent.state !== 'thinking' && agent.state !== 'tool_calling') return
   ctx.save()
-  drawHexagon(ctx, agent.x, agent.y, radius + 4)
+  circle(ctx, agent.x, agent.y, radius + 4)
   ctx.strokeStyle = COLORS.tool
   ctx.lineWidth = 1.5
   ctx.setLineDash([6, 7])
   ctx.lineDashOffset = -time * 26
-  ctx.shadowColor = COLORS.tool
-  ctx.shadowBlur = 5
+  ctx.shadowBlur = 0
   ctx.stroke()
   ctx.restore()
 }
@@ -334,8 +368,7 @@ function drawMainInstrument(ctx: CanvasRenderingContext2D, agent: Agent, r: numb
     }
     const flare = rotation * 1.4
     ctx.fillStyle = COLORS.holoBright
-    ctx.shadowColor = COLORS.holoBase
-    ctx.shadowBlur = 8
+    ctx.shadowBlur = 0
     ctx.beginPath()
     ctx.arc(agent.x + Math.cos(flare) * (r + 19), agent.y + Math.sin(flare) * (r + 19), 2, 0, Math.PI * 2)
     ctx.fill()
@@ -347,10 +380,10 @@ function drawWaitingRipples(ctx: CanvasRenderingContext2D, agent: Agent, r: numb
   // Radar ripples — 2 concentric rings expanding outward, staggered
   for (let i = 0; i < 2; i++) {
     const ripplePhase = ((time * 0.65 + i * 0.5) % 1.0)
-    const rippleR = r + AGENT_DRAW.rippleInnerOffset + ripplePhase * AGENT_DRAW.rippleMaxExpand
+    const rippleR = r + 5 + ripplePhase * (agent.isMain ? 30 : 10)
     const rippleAlpha = (1 - ripplePhase) * AGENT_DRAW.rippleMaxAlpha
     ctx.beginPath()
-    drawHexagon(ctx, agent.x, agent.y, rippleR)
+    circle(ctx, agent.x, agent.y, rippleR)
     ctx.strokeStyle = color + alphaHex(rippleAlpha)
     ctx.lineWidth = 1.5 * (1 - ripplePhase)
     ctx.stroke()
@@ -487,10 +520,15 @@ export function drawAgents(
     ctx.globalAlpha = agent.opacity
 
     if (agent.archived) {
-      drawHexagon(ctx, agent.x, agent.y, r)
-      ctx.strokeStyle = COLORS.idle
+      circle(ctx, agent.x, agent.y, r)
+      ctx.fillStyle = 'rgba(6, 30, 50, 0.95)'
+      ctx.fill()
+      ctx.strokeStyle = color + '60'
+      ctx.setLineDash([4, 4])
       ctx.lineWidth = 1.2
       ctx.stroke()
+      ctx.setLineDash([])
+      drawReactorRings(ctx, agent, r, color, time, false, detailed)
       drawCenterIcon(ctx, agent, r, COLORS.idle, false)
       drawAgentLabel(ctx, agent, r, isHovered, time, compact, viewScale)
       ctx.restore()
@@ -521,6 +559,7 @@ export function drawAgents(
     }
     if (activeEffects && detailed) drawScanline(ctx, agent, r, color, isHovered, isWaiting, time)
     drawStateRing(ctx, agent, r, color, isHovered, isSelected, isWaiting, time, effectsEnabled)
+    drawReactorRings(ctx, agent, r, color, time, activeEffects, detailed)
     drawContextHud(ctx, agent, r, time, effectsEnabled)
     drawCenterIcon(ctx, agent, r, color, isWaiting)
     if (activeEffects && detailed && !compact && agent.state === 'thinking') {

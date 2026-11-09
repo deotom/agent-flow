@@ -34,7 +34,7 @@ export function graphFit(bounds: { minX: number; maxX: number; minY: number; max
   const bottom = compact ? 30 : 72
   const availableW = Math.max(1, width - side * 2)
   const availableH = Math.max(1, height - top - bottom)
-  const scale = Math.min(availableW / Math.max(1, bounds.maxX - bounds.minX), availableH / Math.max(1, bounds.maxY - bounds.minY), compact ? 1.1 : count <= 3 ? 2.4 : 1.8)
+  const scale = Math.min(availableW / Math.max(1, bounds.maxX - bounds.minX), availableH / Math.max(1, bounds.maxY - bounds.minY), compact ? 1.1 : count <= 3 ? 1.25 : 1.15)
   return { scale, x: width / 2 - (bounds.minX + bounds.maxX) / 2 * scale,
     y: top + availableH / 2 - (bounds.minY + bounds.maxY) / 2 * scale }
 }
@@ -66,19 +66,31 @@ export function sessionGraphPresentation(state: SimulationState): SimulationStat
   return { ...state, agents, edges }
 }
 
+/** Drops agents another view has already scoped out, with their tools, links and particles. */
+export function withoutAgents(state: SimulationState, hidden?: ReadonlySet<string>): SimulationState {
+  if (!hidden?.size) return state
+  const agents = new Map([...state.agents].filter(([id]) => !hidden.has(id)))
+  const edges = state.edges.filter(edge => agents.has(edge.from) && agents.has(edge.to))
+  const edgeIds = new Set(edges.map(edge => edge.id))
+  return { ...state, agents, edges,
+    toolCalls: new Map([...state.toolCalls].filter(([, tool]) => agents.has(tool.agentId))),
+    particles: state.particles.filter(particle => edgeIds.has(particle.edgeId)),
+    discoveries: state.discoveries.filter(discovery => agents.has(discovery.agentId)) }
+}
+
 type GraphCollections = Pick<SimulationState, 'agents' | 'toolCalls' | 'edges' | 'particles' | 'discoveries'>
 /** Cache only graph collections, never transcript history or the simulation clock. */
 export function createGraphProjector() {
   const layoutTools = createToolCaptionLayout()
   const layoutCaptions = createCaptionPlacement()
-  let previous: (GraphCollections & { round: number; roundStart: number; currentOnly: boolean; compact: boolean; showAll: boolean; timelineEntries: SimulationState['timelineEntries'] }) | undefined
+  let previous: (GraphCollections & { round: number; roundStart: number; currentOnly: boolean; compact: boolean; showAll: boolean; hidden?: ReadonlySet<string>; timelineEntries: SimulationState['timelineEntries'] }) | undefined
   let graph: GraphCollections | undefined
-  return (state: SimulationState, currentOnly: boolean, compact: boolean, showAll = false): GraphCollections => {
+  return (state: SimulationState, currentOnly: boolean, compact: boolean, showAll = false, hidden?: ReadonlySet<string>): GraphCollections => {
     if (graph && previous && previous.agents === state.agents && previous.toolCalls === state.toolCalls
       && previous.edges === state.edges && previous.particles === state.particles && previous.discoveries === state.discoveries
-      && previous.round === state.round && previous.roundStart === state.roundStart && previous.currentOnly === currentOnly && previous.compact === compact && previous.showAll === showAll
+      && previous.round === state.round && previous.roundStart === state.roundStart && previous.currentOnly === currentOnly && previous.compact === compact && previous.showAll === showAll && previous.hidden === hidden
       && (!showAll || previous.timelineEntries === state.timelineEntries)) return graph
-    const scoped = showAll ? sessionGraphPresentation(state) : visibleRoundGraph(state, currentOnly)
+    const scoped = withoutAgents(showAll ? sessionGraphPresentation(state) : visibleRoundGraph(state, currentOnly), hidden)
     const projected = compact ? compactGraphPresentation(scoped) : scoped
     const agents = layoutCaptions(projected.agents, projected.toolCalls, projected.edges, compact)
     graph = { agents, toolCalls: compact ? new Map() : layoutTools(agents, projected.toolCalls),
@@ -86,7 +98,7 @@ export function createGraphProjector() {
       particles: compact ? projected.particles.filter(particle => ['dispatch', 'return', 'message'].includes(particle.type)) : projected.particles,
       discoveries: compact ? [] : projected.discoveries }
     previous = { agents: state.agents, toolCalls: state.toolCalls, edges: state.edges, particles: state.particles, discoveries: state.discoveries,
-      round: state.round, roundStart: state.roundStart, currentOnly, compact, showAll, timelineEntries: state.timelineEntries }
+      round: state.round, roundStart: state.roundStart, currentOnly, compact, showAll, hidden, timelineEntries: state.timelineEntries }
     return graph
   }
 }

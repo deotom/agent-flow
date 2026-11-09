@@ -259,12 +259,13 @@ export function AgentVisualizer({ desktopWidget = false }: { desktopWidget?: boo
           pane={teamPane}
           onPane={pane => { setTeamPane(pane); setZoomToFitTrigger(value => value + 1) }}
           viewerControls={<FlowControls bridge={bridge} />}
-          renderGraph={(selectedId, onSelect) => (
+          renderGraph={(selectedId, onSelect, hiddenIds) => (
             <AgentCanvas
               topInset={12}
               visible={bridge.viewVisible && !bridge.restoring}
               restoring={bridge.restoring}
               showAllAgents={showAllAgents}
+              hiddenAgentIds={hiddenIds}
               currentRoundOnly={false}
               animationMode={bridge.animationMode}
               animationSpeed={bridge.animationSpeed}

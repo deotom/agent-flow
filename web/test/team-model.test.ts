@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { withoutAgents } from '../lib/graph-presentation'
 import { ageLabel, buildTeamView, connectionView, deliverySteps, plainToolLabel, statusText } from '../lib/team-model'
 import type { SourceHealth, TeamAgentRow, TeamSnapshot, TeamTaskRow } from '../lib/team-types'
 
@@ -89,11 +90,23 @@ describe('team view', () => {
     assert.ok(!view.attention.some(item => item.agentId === 'quiet'), 'Time passing is not a problem')
     assert.equal(buildTeamView(team(agents, tasks), 'active', new Set([view.attention[1].id])).attention.length, 2)
   })
+  it('closes a finished worker whose result T3 discarded, but keeps the alert', () => {
+    const view = buildTeamView(team([lead(), agent('lost', { status: 'done' })], [task('lost', { delivery: 'discarded' })]), 'active')
+    assert.deepEqual(view.rows.map(row => row.agent.id), ['lead'])
+    assert.deepEqual(view.attention.map(item => item.kind), ['discarded'])
+  })
   it('treats a cancelled worker as history, without alarming about its discarded result', () => {
     const view = buildTeamView(team([lead(), agent('stopped', { status: 'cancelled' }), agent('now')], [task('stopped', { status: 'cancelled', delivery: 'discarded' })]), 'active')
     assert.deepEqual(view.rows.map(row => row.agent.id), ['lead', 'now'])
     assert.equal(view.attention.length, 0)
     assert.equal(view.counts.issues, 0)
+  })
+  it('keeps a failure open until its report reaches the lead', () => {
+    const agents = [lead(), agent('unsent', { status: 'failed' }), agent('reported', { status: 'failed' })]
+    const tasks = [task('unsent', { status: 'failed' }), task('reported', { status: 'failed', delivery: 'delivered' })]
+    const view = buildTeamView(team(agents, tasks), 'active')
+    assert.deepEqual(view.rows.map(row => row.agent.id), ['lead', 'unsent'])
+    assert.deepEqual(view.attention.map(item => item.agentId), ['unsent'])
   })
   it('does not loop on corrupt cycles', () => {
     const view = buildTeamView(team([agent('a', { parentId: 'b' }), agent('b', { parentId: 'a' })]), 'active')
@@ -123,4 +136,20 @@ describe('connection', () => {
     assert.equal(ageLabel(1000, 3000), 'just now')
     assert.equal(ageLabel(0 + 1, 601_000), '10m ago')
   })
+})
+
+describe('graph scope', () => {
+  it('drops hidden agents with their links, tools and particles', () => {
+    const node = (id: string) => [id, { id }] as [string, never]
+    const state = { agents: new Map([node('lead'), node('gone')]), edges: [{ id: 'e', from: 'lead', to: 'gone' }],
+      toolCalls: new Map([['t', { agentId: 'gone' }]]), particles: [{ edgeId: 'e' }], discoveries: [{ agentId: 'gone' }] } as never
+    const scoped = withoutAgents(state, new Set(['gone'])) as unknown as { agents: Map<string, unknown>; edges: unknown[]; toolCalls: Map<string, unknown>; particles: unknown[]; discoveries: unknown[] }
+    assert.deepEqual([...scoped.agents.keys()], ['lead'])
+    assert.deepEqual([scoped.edges.length, scoped.toolCalls.size, scoped.particles.length, scoped.discoveries.length], [0, 0, 0, 0])
+    assert.equal(withoutAgents(state, new Set()), state)
+  })
+})
+
+it('names native context compaction instead of a generic tool', () => {
+  assert.equal(plainToolLabel(null, 'compaction'), 'Compacting context')
 })

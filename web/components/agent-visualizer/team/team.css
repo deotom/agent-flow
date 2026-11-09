@@ -364,7 +364,7 @@
 @container jv (max-width: 899px) {
   .jv-detail { position: absolute; inset: 0 0 0 auto; width: min(420px, 100%); z-index: 20; }
 }
-@container jv (max-width: 640px) {
+@container jv (max-width: 820px) {
   .jv-bar { grid-template-columns: auto minmax(0, 1fr); }
   .jv-bar-tools { grid-column: 1 / -1; align-items: stretch; }
   .jv-end { justify-content: flex-start; }

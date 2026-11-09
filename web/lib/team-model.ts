@@ -13,6 +13,7 @@ const ACTIVITY_BY_TYPE: Record<string, string> = {
   web_search: 'Searching the web',
   subagent: 'Delegating to a worker',
   reasoning: 'Thinking',
+  compaction: 'Compacting context',
 }
 const ACTIVITY_BY_TOOL: Record<string, string> = {
   bash: 'Running a command', powershell: 'Running a command', shell: 'Running a command', exec: 'Running a command', exec_command: 'Running a command', write_stdin: 'Running a command', command_execution: 'Running a command',
@@ -127,8 +128,15 @@ function isOpen(agent: TeamAgentRow, task: TeamTaskRow | undefined): boolean {
   if (agent.role === 'lead' || !isTerminal(agent.status)) return true
   // A cancelled worker was stopped on purpose; it is history, not open work.
   if (agent.status === 'cancelled') return false
-  if (agent.status !== 'done') return task?.delivery !== 'received'
-  return !task || task.delivery === 'none' || task.delivery === 'pending' || task.delivery === 'unknown'
+  // A finished result T3 discarded is history; the discarded alert still reports it.
+  if (agent.status === 'done' && task?.delivery === 'discarded') return false
+  // Done or failed: open until T3 shows the outcome reached the lead.
+  return !reachedLead(task)
+}
+
+/** A delivered or received outcome (including a failure report) is with the lead. */
+function reachedLead(task: TeamTaskRow | undefined): boolean {
+  return task?.delivery === 'delivered' || task?.delivery === 'received'
 }
 
 function urgency(agent: TeamAgentRow, task: TeamTaskRow | undefined): number {
@@ -144,7 +152,7 @@ function attentionFor(agents: TeamAgentRow[], latest: Map<string, TeamTaskRow>):
     const task = latest.get(agent.id)
     if (isWaiting(agent.status)) items.push({ id: `wait:${agent.id}`, agentId: agent.id, kind: 'waiting', title: agent.name,
       detail: agent.status === 'waiting_approval' ? 'Needs your approval in T3' : 'Needs your answer in T3' })
-    else if (agent.status === 'failed' && task?.delivery !== 'received') items.push({ id: `failed:${agent.id}`, agentId: agent.id, kind: 'failed', title: agent.name, detail: 'Worker failed' })
+    else if (agent.status === 'failed' && !reachedLead(task)) items.push({ id: `failed:${agent.id}`, agentId: agent.id, kind: 'failed', title: agent.name, detail: 'Worker failed' })
     // Discarding a cancelled worker's result is the expected outcome of the cancel, not a new problem.
     if (task?.delivery === 'discarded' && agent.status !== 'cancelled') items.push({ id: `discarded:${task.id}`, agentId: agent.id, kind: 'discarded', title: agent.name, detail: 'Result discarded. The Lead will not get it' })
     else if (task?.delivery === 'unknown') items.push({ id: `unknown:${task.id}`, agentId: agent.id, kind: 'unknown', title: agent.name, detail: 'Delivery state not recognized' })

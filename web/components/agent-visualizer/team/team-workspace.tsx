@@ -25,7 +25,7 @@ interface TeamWorkspaceProps {
   pane: TeamPane
   onPane: (pane: TeamPane) => void
   viewerControls?: ReactNode
-  renderGraph: (selectedId: string | null, onSelect: (id: string | null) => void) => ReactNode
+  renderGraph: (selectedId: string | null, onSelect: (id: string | null) => void, hiddenIds: ReadonlySet<string>) => ReactNode
 }
 
 const providerName = (runtime: TeamAgentRow['runtime']) => runtime === 'claude' ? 'Claude' : runtime === 'codex' ? 'Codex' : null
@@ -282,6 +282,12 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
   const live = connection.live
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set())
   const view = useMemo(() => snapshot ? buildTeamView(snapshot, scope, dismissed) : null, [snapshot, scope, dismissed])
+  // The graph shows the same agents as the board, so a scope rule holds in both views.
+  const hiddenIds = useMemo<ReadonlySet<string>>(() => {
+    if (!snapshot || !view) return new Set()
+    const shown = new Set(view.rows.map(row => row.agent.id))
+    return new Set(snapshot.agents.filter(agent => !shown.has(agent.id)).map(agent => agent.id))
+  }, [snapshot, view])
 
   // Selection and reading position belong to each team, and survive poll refreshes.
   const selections = useRef(new Map<string, string | null>())
@@ -336,7 +342,7 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
       {view && <AttentionPanel items={view.attention} onOpen={select} onDismiss={dismiss} limit={widget ? 1 : 3} />}
 
       <main className="jv-main" data-detail={selectedExists}>
-        {showGraph ? <div className="jv-graph">{renderGraph(selectedAgentId, select)}</div> : (
+        {showGraph ? <div className="jv-graph">{renderGraph(selectedAgentId, select, hiddenIds)}</div> : (
           <div className="jv-board" ref={list} onScroll={event => { if (selectedSessionId) scrolls.current.set(selectedSessionId, event.currentTarget.scrollTop) }}>
             {view ? (
               <>

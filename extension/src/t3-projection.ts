@@ -114,6 +114,8 @@ export function projectT3Teams(data: T3Projection, workspaces: string[], now = D
         const p = t3Payload(item)
         return { callId: text(item.turn_item_id), tool: text(p.toolName) || text(item.type), args: text(p.title) }
       })
+      // T3 records native context compaction as a turn item; surface it instead of a generic "Thinking".
+      const compactions = items.filter(item => text(item.type) === 'compaction' && running(item.status) && (!latest || running(latest.status)))
       const blocked = data.requests.some(request => request.thread_id === id && ['pending', 'open', 'requested'].includes(text(request.status)))
       const openRequest = data.requests.filter(request => request.thread_id === id && ['pending', 'open', 'requested'].includes(text(request.status)))
         .sort((a, b) => (optionalTimestamp(b.created_at) ?? 0) - (optionalTimestamp(a.created_at) ?? 0))[0]
@@ -128,13 +130,13 @@ export function projectT3Teams(data: T3Projection, workspaces: string[], now = D
         spawnTime: relative(row.created_at), timeAlive: Math.max(0, (now - timestamp(row.created_at)) / 1000),
         tools: pending, currentTool: pending.at(-1)?.tool, toolCalls: tools.length,
         // T3 does not guarantee token counters in these projections. Do not estimate them.
-        tokensUsed: 0, tokensMax: 0, task: text(task && t3Payload(task).prompt),
+        tokensUsed: 0, tokensMax: 0, task: text(task && t3Payload(task).prompt), compacting: compactions.length > 0,
       })
       const providerPayload = t3Payload(provider || {})
       const contextUsage = object(providerPayload.contextUsage)
       const usedTokens = Number(contextUsage.usedTokens), maxTokens = Number(contextUsage.maxTokens)
       const requestKind = text(openRequest?.kind) || text(t3Payload(openRequest || {}).kind)
-      const activities: TeamActivity[] = tools.filter(item => running(item.status) && (!latest || running(latest.status))).map(item => {
+      const activities: TeamActivity[] = [...compactions, ...tools.filter(item => running(item.status) && (!latest || running(latest.status)))].map(item => {
         const itemPayload = t3Payload(item)
         return {
           id: text(item.turn_item_id), type: text(item.type), toolName: text(itemPayload.toolName) || null,
