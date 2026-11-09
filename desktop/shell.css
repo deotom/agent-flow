@@ -42,3 +42,23 @@ body { overflow: hidden; border: 1px solid #244457; }
 .widget #mobile-dialog p{font-size:10px;margin:8px 0}
 .widget #mobile-qr{width:min(200px,100%)}
 .widget #resize-grip { display: block; position: fixed; right: 2px; bottom: 2px; width: 17px; height: 17px; z-index: 10; cursor: nwse-resize; touch-action: none; background: repeating-linear-gradient(135deg, transparent 0 3px, #467587 3px 4px, transparent 4px 6px); clip-path: polygon(100% 0, 100% 100%, 0 100%); }
+
+/* Docked: a tall, narrow strip at a screen edge uses icon buttons so the toolbar fits. */
+.docked .desktop-tag, .docked .button-label { display: none; }
+.docked .button-icon { display: inline; }
+.docked .toolbar { padding: 8px 10px; gap: 6px; }
+.docked .toolbar-actions { gap: 4px; }
+.docked .toolbar button { width: 30px; height: 28px; padding: 0; display: grid; place-items: center; border-radius: 5px; font-size: 16px; }
+.docked #widget-icon { margin: 0; }
+.docked #resize-grip { display: none; }
+/* Very narrow window (a thin docked strip): keep every window control on screen. */
+@media (max-width: 420px) {
+  .toolbar { padding: 6px 8px; gap: 6px; }
+  .brand-name { display: none; }
+  .toolbar-actions { gap: 3px; }
+  .docked .toolbar button { width: 27px; height: 26px; font-size: 15px; }
+  .workspace-bar { padding: 0 8px; gap: 6px; }
+  #source-mode { max-width: 84px; }
+  footer > span:last-child { display: none; }
+  footer { padding: 0 8px; }
+}

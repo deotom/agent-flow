@@ -370,6 +370,46 @@
   .jv-end { justify-content: flex-start; }
 }
 
+/* Narrow full view (a docked strip or a small screen): same content, tighter, nothing cut off. */
+@container jv (max-width: 480px) {
+  .jv-root:not([data-widget="true"]) .jv-bar { gap: 8px 10px; padding: 8px 10px; }
+  .jv-root:not([data-widget="true"]) .jv-reactor { zoom: 0.68; }
+  .jv-root:not([data-widget="true"]) .jv-bar-main { gap: 6px; }
+  .jv-root:not([data-widget="true"]) .jv-picker-button .jv-eyebrow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .jv-root:not([data-widget="true"]) .jv-picker-title { font-size: 14px; }
+  .jv-root:not([data-widget="true"]) .jv-pipeline { grid-column: 1 / -1; width: 100%; }
+  .jv-root:not([data-widget="true"]) .jv-stage { flex: 1 1 0; min-width: 0; justify-content: center; gap: 4px; padding: 2px 10px 2px 8px; }
+  .jv-root:not([data-widget="true"]) .jv-stage:last-child { margin-right: 0; }
+  .jv-root:not([data-widget="true"]) .jv-stage strong { font-size: 12px; }
+  .jv-root:not([data-widget="true"]) .jv-stage span { font-size: 8.5px; letter-spacing: 0.06em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .jv-root:not([data-widget="true"]) .jv-bar-tools { gap: 6px; }
+  .jv-root:not([data-widget="true"]) .jv-end { gap: 6px; }
+  .jv-root:not([data-widget="true"]) .jv-seg button { padding: 3px 9px; font-size: 11px; }
+  .jv-root:not([data-widget="true"]) .jv-link { flex-wrap: wrap; row-gap: 2px; white-space: normal; font-size: 10px; }
+  .jv-root:not([data-widget="true"]) .jv-link-age { white-space: nowrap; }
+  .jv-root:not([data-widget="true"]) .jv-attention { padding: 6px 10px 0; }
+  .jv-root:not([data-widget="true"]) .jv-board { padding: 8px 10px 10px; }
+  .jv-root:not([data-widget="true"]) .jv-row-wrap { padding-left: calc(var(--jv-depth, 0) * 12px); }
+  .jv-root:not([data-widget="true"]) .jv-row-wrap::before { left: calc(var(--jv-depth, 0) * 12px - 8px); width: 6px; }
+  .jv-root:not([data-widget="true"]) .jv-detail { width: 100%; }
+  .jv-root:not([data-widget="true"]) .jv-row { gap: 10px; padding: 8px 10px; }
+  .jv-root:not([data-widget="true"]) .jv-row-head { flex-wrap: wrap; row-gap: 2px; }
+  .jv-root:not([data-widget="true"]) .jv-row-name { flex-basis: 100%; -webkit-line-clamp: 2; }
+}
+/* Narrow header (full view or widget): popovers drop below the whole header and span its width,
+   instead of hanging off their buttons and running past the window edge. */
+@container jv (max-width: 480px) {
+  .jv-bar .jv-picker, .jv-bar .jv-legend, .jv-bar-tools .relative { position: static !important; }
+  .jv-bar .jv-popover, .jv-bar-tools [role="dialog"] {
+    top: 100% !important; left: 8px !important; right: 8px !important; width: auto !important; max-width: none !important;
+    margin-top: 4px; max-height: 70vh;
+  }
+}
+@container jv (max-width: 340px) {
+  .jv-root:not([data-widget="true"]) .jv-stage span { display: none; }
+  .jv-root:not([data-widget="true"]) .jv-row-side { display: none; }
+}
+
 /* Widget: status at a glance, nothing overflows. */
 .jv-root[data-widget="true"] { font-size: 12px; }
 .jv-root[data-widget="true"] .jv-bar { gap: 10px; padding: 8px 10px; }

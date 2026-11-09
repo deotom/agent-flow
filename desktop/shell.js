@@ -3,6 +3,7 @@ const api = window.agentFlowDesktop
 const element = id => document.getElementById(id)
 let currentURL = ''
 let widgetMode = true
+let dockSide = 'off'
 function sendMode() {
   if (currentURL) element('graph').contentWindow.postMessage({ type: 'desktop:widget', widget: widgetMode }, currentURL)
 }
@@ -17,6 +18,12 @@ function render(state) {
   element('widget-button').setAttribute('aria-label', widgetMode ? 'Expand to full view' : 'Switch to widget')
   element('widget-icon').textContent = widgetMode ? '⤢' : '⊡'
   element('widget-text').textContent = widgetMode ? 'Full view' : 'Widget'
+  const dock = dockSide = state.dock || 'off'
+  document.body.classList.toggle('docked', dock !== 'off')
+  element('dock-button').setAttribute('aria-pressed', String(dock !== 'off'))
+  element('dock-button').setAttribute('aria-label', dock === 'off' ? 'Dock to screen edge' : 'Undock')
+  element('dock-icon').textContent = dock === 'left' ? '▌' : '▐'
+  element('dock-text').textContent = dock === 'off' ? 'Dock' : 'Undock'
   for (const id of ['folder-button', 'welcome-choose', 'open-last']) element(id).disabled = state.busy
   element('folder-text').textContent = state.busy ? 'Opening…' : state.folder ? 'Change folder' : 'Choose folder'
   element('workspace-label').textContent = widgetMode && state.folder ? state.folder.split(/[\\/]/).filter(Boolean).pop() : state.folder || 'No workspace selected'
@@ -50,6 +57,12 @@ element('welcome-choose').addEventListener('click', () => act(api.chooseFolder))
 element('open-last').addEventListener('click', () => act(api.openLast))
 element('pin-button').addEventListener('click', () => act(api.togglePin))
 element('widget-button').addEventListener('click', () => act(api.toggleWidget))
+element('dock-button').addEventListener('click', () => act(api.toggleDock))
+element('dock-button').addEventListener('contextmenu', event => {
+  // Right-click moves a docked window to the other edge.
+  event.preventDefault()
+  act(() => api.setDock(dockSide === 'left' ? 'right' : 'left'))
+})
 element('minimize-button').addEventListener('click', () => api.minimize())
 element('close-button').addEventListener('click', () => api.close())
 let pairingRequest = 0

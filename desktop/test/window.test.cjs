@@ -45,7 +45,7 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   }
   const electron = {
     app, BrowserWindow: Window,
-    screen: { getDisplayMatching: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }) },
+    screen: { getDisplayMatching: () => ({ scaleFactor: 1.5, workArea: { x: 0, y: 0, width: 1920, height: 1080 } }), screenToDipRect: (_w, rect) => ({ x: rect.x / 1.5, y: rect.y / 1.5, width: rect.width / 1.5, height: rect.height / 1.5 }) },
     dialog: { showOpenDialog: async () => selected || { canceled: true, filePaths: [] }, showErrorBox() {} },
     ipcMain: { handle: (key, handler) => handlers.set(key, handler) },
     Menu: { buildFromTemplate: value => value, setApplicationMenu() {} },
@@ -63,10 +63,15 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
       return child
     } },
   }
+  const edge = { calls: [] }
+  const appbar = { createAppBar(_handle, onRect, onFailure) {
+    Object.assign(edge, { onRect, onFailure })
+    return { set: (side, width) => edge.calls.push([side, width]), remove: () => edge.calls.push(['off']) }
+  } }
   const source = fs.readFileSync(path.resolve(__dirname, '../main.cjs'), 'utf8')
   vm.runInNewContext(source, {
-    require: id => id === 'electron' ? electron : id === './mobile-profile.cjs' ? { configureMobileProfile() {} } : id === './mobile-pairing.cjs' ? { resolveMobileConfig() {}, createPairingQR: async () => ({ dataURL: 'test-qr' }) } : require(id),
-    __dirname: path.resolve(__dirname, '..'), process, console, setTimeout, clearTimeout,
+    require: id => id === 'electron' ? electron : id === './appbar.cjs' ? appbar : id === './mobile-profile.cjs' ? { configureMobileProfile() {} } : id === './mobile-pairing.cjs' ? { resolveMobileConfig() {}, createPairingQR: async () => ({ dataURL: 'test-qr' }) } : require(id),
+    __dirname: path.resolve(__dirname, '..'), process: Object.create(process, { platform: { value: 'win32' } }), console, setTimeout, clearTimeout,
   })
   await new Promise(resolve => setImmediate(resolve))
   const trusted = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
@@ -107,6 +112,34 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   assert.equal(children.length, 1)
   invoke('resize-widget', { width: NaN, height: 300 })
   assert.equal(window.bounds.width, 260)
+  window.bounds = { x: 1500, y: 300, width: 300, height: 300 }
+  assert.equal(invoke('toggle-dock').dock, 'right', 'Docking picks the nearest edge')
+  assert.deepEqual({ ...window.bounds }, { x: 1540, y: 0, width: 380, height: 1080 })
+  assert.deepEqual(edge.calls.at(-1), ['right', 570], 'The edge is reserved in physical pixels')
+  invoke('set-dock', 'left')
+  assert.deepEqual({ ...window.bounds }, { x: 0, y: 0, width: 380, height: 1080 })
+  edge.onRect({ x: 0, y: 0, width: 570, height: 1560 })
+  assert.deepEqual({ ...window.bounds }, { x: 0, y: 0, width: 380, height: 1040 }, 'The reserved rect from the shell places the window')
+  invoke('resize-widget', { width: 400, height: 10 })
+  assert.deepEqual({ ...window.bounds }, { x: 0, y: 0, width: 380, height: 1040 }, 'While reserved, the shell rect decides placement')
+  assert.deepEqual(edge.calls.at(-1), ['left', 600])
+  edge.onFailure()
+  assert.deepEqual({ ...window.bounds }, { x: 0, y: 0, width: 400, height: 1080 }, 'Without a reservation the dock still places the window')
+  invoke('resize-widget', { width: 450, height: 10, finished: true })
+  assert.deepEqual({ ...window.bounds }, { x: 0, y: 0, width: 450, height: 1080 }, 'Docked resize changes width only')
+  invoke('toggle-widget')
+  assert.deepEqual({ ...window.bounds }, { x: 0, y: 0, width: 450, height: 1080 }, 'Switching view keeps the dock')
+  invoke('toggle-widget')
+  assert.throws(() => invoke('set-dock', 'top'), /Unknown dock side/)
+  window.bounds = { x: 600, y: 0, width: 450, height: 1080 }
+  window.emit('moved')
+  assert.equal(invoke('state').dock, 'off', 'Dragging away from the edge undocks')
+  assert.deepEqual(edge.calls.at(-1), ['off'], 'Undocking releases the reserved edge')
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'desktop-settings.json'), 'utf8')).dockWidth, 450)
+  invoke('set-dock', 'right')
+  invoke('toggle-dock')
+  assert.equal(invoke('state').dock, 'off')
+  assert.equal(window.bounds.width, 300, 'Undocking restores the pre-dock widget size')
   selected = { canceled: false, filePaths: [folders[1]] }
   await invoke('choose-folder')
   assert.equal(children[0].stopped, true)
