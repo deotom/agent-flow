@@ -310,6 +310,7 @@ function toggleOrb() {
   }
   const area = screen.getDisplayMatching(win.getBounds()).workArea
   orbExpanded = false
+  orbLayout = { left: 0, top: 0, panel: 'below' }
   const saved = settings.orbPosition
   const onScreen = saved && screen.getAllDisplays().some(({ workArea: a }) =>
     saved.x >= a.x && saved.y >= a.y && saved.x + 260 <= a.x + a.width && saved.y + 270 <= a.y + a.height)
@@ -335,17 +336,32 @@ function toggleOrb() {
   publish()
   return snapshot()
 }
+// Where the orb canvas sits inside the expanded window, so the orb itself never moves on screen.
+let orbLayout = { left: 0, top: 0, panel: 'below' }
 function setOrbExpanded(value) {
   if (typeof value !== 'boolean' || value === orbExpanded) return
   const bounds = orbWin.getBounds()
-  const width = value ? 380 : 260
-  const height = value ? 520 : 270
+  // The orb's own top-left on screen (also correct after the expanded window was dragged).
+  const orbAt = orbExpanded ? { x: bounds.x + orbLayout.left, y: bounds.y + orbLayout.top } : { x: bounds.x, y: bounds.y }
   const area = screen.getDisplayMatching(bounds).workArea
-  const x = Math.max(area.x, Math.min(bounds.x + (bounds.width - width) / 2, area.x + area.width - width))
-  const y = Math.max(area.y, Math.min(bounds.y, area.y + area.height - height))
+  const clamp = (v, low, high) => Math.round(Math.max(low, Math.min(v, high)))
+  let next
+  if (value) {
+    const width = 380, height = 520
+    // Open the panel below when it fits, otherwise above, so the orb stays where the user put it.
+    const panel = orbAt.y + height <= area.y + area.height ? 'below' : 'above'
+    const x = clamp(orbAt.x - (width - 260) / 2, area.x, area.x + area.width - width)
+    const y = clamp(panel === 'below' ? orbAt.y : orbAt.y - (height - 270), area.y, area.y + area.height - height)
+    orbLayout = { left: orbAt.x - x, top: orbAt.y - y, panel }
+    next = { x, y, width, height }
+  } else {
+    orbLayout = { left: 0, top: 0, panel: 'below' }
+    next = { x: clamp(orbAt.x, area.x, area.x + area.width - 260), y: clamp(orbAt.y, area.y, area.y + area.height - 270), width: 260, height: 270 }
+  }
   orbWin.setResizable(true)
-  try { orbWin.setBounds({ x: Math.round(x), y, width, height }) }
+  try { orbWin.setBounds(next) }
   finally { orbWin.setResizable(false) }
+  orbWin.webContents.send('orb:layout', { expanded: value, ...orbLayout })
   orbExpanded = value
   orbWin.setIgnoreMouseEvents(!value, { forward: true })
   orbWin.setFocusable(value)
@@ -399,7 +415,8 @@ function registerIPC() {
       const y = Math.max(area.y, Math.min(Math.round(value.y), area.y + area.height - height))
       orbWin.setPosition(x, y)
       if (value.done === true) {
-        settings.orbPosition = { x, y }
+        // Remember the orb itself, not the larger expanded window around it.
+        settings.orbPosition = { x: x + orbLayout.left, y: y + orbLayout.top }
         try { saveSettings() } catch (error) { state.error = `Could not remember preferences: ${error.message}` }
         publish()
       }

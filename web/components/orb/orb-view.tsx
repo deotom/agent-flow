@@ -22,7 +22,9 @@ interface OrbDesktop {
   openFull(): void
   menu(): void
   setExpanded?(value: boolean): void
+  onLayout?(callback: (layout: OrbLayout) => void): () => void
 }
+interface OrbLayout { expanded: boolean; left: number; top: number; panel: 'below' | 'above' }
 declare global { interface Window { agentFlowOrb?: OrbDesktop } }
 
 export const ORB_SIZE = { width: 260, height: 270 }
@@ -153,6 +155,9 @@ export function OrbView() {
   const [expanded, setExpanded] = useState(false)
   const expandedRef = useRef(false)
   const baseTitle = useRef('Agent Flow')
+  // The desktop keeps the orb fixed on screen and says where it sits inside the expanded window.
+  const [layout, setLayout] = useState<OrbLayout | null>(null)
+  useEffect(() => window.agentFlowOrb?.onLayout?.(setLayout), [])
   // A team the user just prompted from the orb takes over until they lock another one.
   const snapshot = pickOrbTeam(feed.snapshots, feed.locked ?? focusTeam)
   const summary = useMemo(() => snapshot ? orbSummary(snapshot) : null, [snapshot])
@@ -283,12 +288,21 @@ export function OrbView() {
     .map(team => ({ id: team.sessionId, label: team.title })), [feed.snapshots])
 
   const title = snapshot ? `${snapshot.title}\nClick to prompt · double-click to open Agent Flow · right-click for options` : 'Agent Flow'
+    const open = expanded && canSendPrompts()
+  // Without a layout (collapsed, or outside the desktop app) the orb sits at the top-left and the panel flows below.
+  const place = open && layout?.expanded ? layout : null
+  const panelStyle: React.CSSProperties = place
+    ? place.panel === 'below'
+      ? { position: 'absolute', left: place.left + ORB_SIZE.width / 2 - 180, top: place.top + ORB_SIZE.height - 6, width: 360 }
+      : { position: 'absolute', left: place.left + ORB_SIZE.width / 2 - 180, bottom: `calc(100% - ${place.top + 18}px)`, width: 360 }
+    : { width: 360, marginTop: -6 }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', background: 'transparent' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100vh', background: 'transparent' }}>
       <canvas ref={canvas} title={title} aria-label={summary ? `${snapshot!.title}: ${summary.line}` : 'No T3 team'}
-        style={{ width: ORB_SIZE.width, height: ORB_SIZE.height, display: 'block', cursor: 'grab', background: 'transparent', flexShrink: 0 }} />
-      {expanded && canSendPrompts() && (
-        <div style={{ width: 360, marginTop: -6 }}>
+        style={{ position: place ? 'absolute' : 'relative', left: place?.left ?? 0, top: place?.top ?? 0,
+          width: ORB_SIZE.width, height: ORB_SIZE.height, display: 'block', cursor: 'grab', background: 'transparent' }} />
+      {open && (
+        <div style={panelStyle}>
           <PromptBar compact autoFocus projects={feed.projects} threads={threads} selectedThreadId={snapshot?.sessionId ?? null}
             onClose={() => setExpanded(false)}
             onSent={sessionId => { setFocusTeam(sessionId); window.setTimeout(() => setExpanded(false), 1400) }} />
