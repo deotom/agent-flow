@@ -3,6 +3,7 @@ import { createToolCaptionLayout } from './tool-caption-layout'
 import { visibleRoundGraph } from '@/hooks/simulation/work-rounds'
 import { emptyContextBreakdown, type Agent } from './agent-types'
 import type { SimulationState } from '@/hooks/simulation/types'
+import type { MissionNode, MissionView } from './mission-model'
 
 /** Explorer uses a vertical reading order without changing the shared graph positions. */
 export function compactGraphPresentation(state: SimulationState): SimulationState {
@@ -80,17 +81,49 @@ export function withoutAgents(state: SimulationState, hidden?: ReadonlySet<strin
 
 type GraphCollections = Pick<SimulationState, 'agents' | 'toolCalls' | 'edges' | 'particles' | 'discoveries'>
 /** Cache only graph collections, never transcript history or the simulation clock. */
+/**
+ * T3 Mission Map: positions come from the radial tree, links from delivery stages.
+ * Tool cards, particles and discoveries are dropped; the links carry the work path.
+ */
+export function missionPresentation(state: SimulationState, mission: MissionView): SimulationState {
+  const agents = new Map<string, Agent>()
+  for (const [id, node] of mission.nodes) {
+    // The simulation drops finished agents; the team snapshot still knows them, so keep the chain drawable.
+    const agent = state.agents.get(id) ?? missionStandIn(node)
+    agents.set(id, { ...agent, x: node.x, y: node.y, vx: 0, vy: 0, pinned: true, opacity: Math.max(agent.opacity, 0.55), scale: Math.max(agent.scale, 1) })
+  }
+  const edges = mission.links.filter(link => agents.has(link.from) && agents.has(link.to))
+    .map(link => ({ id: `mission:${link.from}:${link.to}`, from: link.from, to: link.to, type: 'parent-child' as const, opacity: 1 }))
+  return { ...state, agents, edges, toolCalls: new Map(), particles: [], discoveries: [] }
+}
+
+const STAND_IN_STATE: Record<MissionNode['status'], Agent['state']> = {
+  running: 'tool_calling', thinking: 'thinking', waiting_approval: 'waiting_permission', waiting_input: 'waiting_permission',
+  done: 'complete', failed: 'error', cancelled: 'complete', idle: 'idle',
+}
+
+function missionStandIn(node: MissionNode): Agent {
+  return {
+    id: node.id, name: node.name, state: STAND_IN_STATE[node.status], parentId: node.parentId, isMain: node.role === 'lead',
+    tokensUsed: node.context?.used ?? 0, tokensMax: node.context?.max ?? 0, contextBreakdown: emptyContextBreakdown(),
+    toolCalls: 0, timeAlive: 0, x: node.x, y: node.y, vx: 0, vy: 0, pinned: true,
+    ...(node.runtime ? { runtime: node.runtime } : {}), ...(node.model ? { model: node.model } : {}),
+    spawnTime: 0, opacity: 1, scale: 1, messageBubbles: [],
+  }
+}
+
 export function createGraphProjector() {
   const layoutTools = createToolCaptionLayout()
   const layoutCaptions = createCaptionPlacement()
-  let previous: (GraphCollections & { round: number; roundStart: number; currentOnly: boolean; compact: boolean; showAll: boolean; hidden?: ReadonlySet<string>; timelineEntries: SimulationState['timelineEntries'] }) | undefined
+  let previous: (GraphCollections & { round: number; roundStart: number; currentOnly: boolean; compact: boolean; showAll: boolean; hidden?: ReadonlySet<string>; mission?: MissionView; timelineEntries: SimulationState['timelineEntries'] }) | undefined
   let graph: GraphCollections | undefined
-  return (state: SimulationState, currentOnly: boolean, compact: boolean, showAll = false, hidden?: ReadonlySet<string>): GraphCollections => {
+  return (state: SimulationState, currentOnly: boolean, compact: boolean, showAll = false, hidden?: ReadonlySet<string>, mission?: MissionView): GraphCollections => {
     if (graph && previous && previous.agents === state.agents && previous.toolCalls === state.toolCalls
       && previous.edges === state.edges && previous.particles === state.particles && previous.discoveries === state.discoveries
-      && previous.round === state.round && previous.roundStart === state.roundStart && previous.currentOnly === currentOnly && previous.compact === compact && previous.showAll === showAll && previous.hidden === hidden
+      && previous.round === state.round && previous.roundStart === state.roundStart && previous.currentOnly === currentOnly && previous.compact === compact && previous.showAll === showAll && previous.hidden === hidden && previous.mission === mission
       && (!showAll || previous.timelineEntries === state.timelineEntries)) return graph
-    const scoped = withoutAgents(showAll ? sessionGraphPresentation(state) : visibleRoundGraph(state, currentOnly), hidden)
+    const scoped = mission && !compact ? missionPresentation(state, mission)
+      : withoutAgents(showAll ? sessionGraphPresentation(state) : visibleRoundGraph(state, currentOnly), hidden)
     const projected = compact ? compactGraphPresentation(scoped) : scoped
     const agents = layoutCaptions(projected.agents, projected.toolCalls, projected.edges, compact)
     graph = { agents, toolCalls: compact ? new Map() : layoutTools(agents, projected.toolCalls),
@@ -98,7 +131,7 @@ export function createGraphProjector() {
       particles: compact ? projected.particles.filter(particle => ['dispatch', 'return', 'message'].includes(particle.type)) : projected.particles,
       discoveries: compact ? [] : projected.discoveries }
     previous = { agents: state.agents, toolCalls: state.toolCalls, edges: state.edges, particles: state.particles, discoveries: state.discoveries,
-      round: state.round, roundStart: state.roundStart, currentOnly, compact, showAll, hidden, timelineEntries: state.timelineEntries }
+      round: state.round, roundStart: state.roundStart, currentOnly, compact, showAll, hidden, mission, timelineEntries: state.timelineEntries }
     return graph
   }
 }

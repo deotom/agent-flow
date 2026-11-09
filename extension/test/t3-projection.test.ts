@@ -33,7 +33,9 @@ test('groups cross-provider children, keeps forks independent, filters workspace
   assert.equal(agents[1].runtime, 'codex')
   assert.equal(agents[1].parentId, 't3-agent:lead')
   assert.equal(agents[1].model, 'gpt-test')
-  assert.equal(agents[1].tokensMax, 0)
+  assert.equal(agents[1].tokensMax, 8000, 'Reported context counters reach the graph gauge')
+  assert.equal(agents[1].tokensUsed, 1200)
+  assert.equal(agents[0].tokensMax, 0, 'Absent counters are not estimated')
   assert.equal((team.event.payload.delegations as T3Row[])[0].stage, 'completed', 'Claiming delivery does not prove receipt')
   const detail = team.event.payload.team as TeamSnapshot
   assert.equal(detail.sessionId, 't3:lead')

@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import type { SessionInfo } from '@/lib/bridge-types'
 import type { SourceHealth, TeamAgentRow, TeamSnapshot, TeamTaskRow, TransportState } from '@/lib/team-types'
 import { LEGEND, STATUS_LABEL, ageLabel, buildTeamView, connectionView, deliverySteps, describeActivity, teamTitle, type AttentionItem, type ConnectionView, type TeamRow, type TeamScope, type TeamView } from '@/lib/team-model'
+import { buildMissionView, type MissionView } from '@/lib/mission-model'
 import { formatModelName } from '@/lib/utils'
 import type { AnimationMode } from '@/lib/viewer-preferences'
 import { AgentLamp, ContextMeter, DeliveryTrack, TeamReactor } from './team-visuals'
@@ -25,7 +26,7 @@ interface TeamWorkspaceProps {
   pane: TeamPane
   onPane: (pane: TeamPane) => void
   viewerControls?: ReactNode
-  renderGraph: (selectedId: string | null, onSelect: (id: string | null) => void, hiddenIds: ReadonlySet<string>) => ReactNode
+  renderGraph: (selectedId: string | null, onSelect: (id: string | null) => void, hiddenIds: ReadonlySet<string>, mission: MissionView | undefined) => ReactNode
 }
 
 const providerName = (runtime: TeamAgentRow['runtime']) => runtime === 'claude' ? 'Claude' : runtime === 'codex' ? 'Codex' : null
@@ -288,17 +289,30 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
     const shown = new Set(view.rows.map(row => row.agent.id))
     return new Set(snapshot.agents.filter(agent => !shown.has(agent.id)).map(agent => agent.id))
   }, [snapshot, view])
+  // Settled sub-teams fold into their sub-lead; selecting a folded sub-lead unfolds it.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
 
   // Selection and reading position belong to each team, and survive poll refreshes.
   const selections = useRef(new Map<string, string | null>())
   const scrolls = useRef(new Map<string, number>())
   const list = useRef<HTMLDivElement>(null)
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+  const mission = useMemo(() => {
+    if (!snapshot) return undefined
+    const visible = new Set(snapshot.agents.filter(agent => !hiddenIds.has(agent.id)).map(agent => agent.id))
+    // Never fold away the selected agent: its sub-teams stay open.
+    const open = new Set(expanded)
+    const parents = new Map(snapshot.agents.map(agent => [agent.id, agent.parentId]))
+    for (let id = selectedAgentId ? parents.get(selectedAgentId) : null; id && !open.has(id); id = parents.get(id)) open.add(id)
+    return buildMissionView(snapshot, visible, open) ?? undefined
+  }, [snapshot, hiddenIds, expanded, selectedAgentId])
   const select = (id: string | null) => {
+    if (id && mission?.nodes.get(id)?.collapsed) setExpanded(previous => new Set(previous).add(id))
     setSelectedAgentId(id)
     if (selectedSessionId) selections.current.set(selectedSessionId, id)
   }
   useLayoutEffect(() => {
+    setExpanded(new Set())
     setSelectedAgentId(selectedSessionId ? selections.current.get(selectedSessionId) ?? null : null)
     if (list.current) list.current.scrollTop = selectedSessionId ? scrolls.current.get(selectedSessionId) ?? 0 : 0
   }, [selectedSessionId])
@@ -342,7 +356,7 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
       {view && <AttentionPanel items={view.attention} onOpen={select} onDismiss={dismiss} limit={widget ? 1 : 3} />}
 
       <main className="jv-main" data-detail={selectedExists}>
-        {showGraph ? <div className="jv-graph">{renderGraph(selectedAgentId, select, hiddenIds)}</div> : (
+        {showGraph ? <div className="jv-graph">{renderGraph(selectedAgentId, select, hiddenIds, mission)}</div> : (
           <div className="jv-board" ref={list} onScroll={event => { if (selectedSessionId) scrolls.current.set(selectedSessionId, event.currentTarget.scrollTop) }}>
             {view ? (
               <>

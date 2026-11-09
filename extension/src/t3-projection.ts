@@ -124,17 +124,19 @@ export function projectT3Teams(data: T3Projection, workspaces: string[], now = D
       const state = blocked ? 'waiting_permission' : pending.length ? 'tool_calling' : running(status) ? 'thinking'
         : ['failed', 'error'].includes(text(status)) ? 'error' : id !== rootId && ['completed', 'cancelled', 'interrupted'].includes(text(status)) ? 'complete' : 'idle'
       const parentId = parents.get(id)
+      const providerPayload = t3Payload(provider || {})
+      const contextUsage = object(providerPayload.contextUsage)
+      const usedTokens = Number(contextUsage.usedTokens), maxTokens = Number(contextUsage.maxTokens)
+      // Only counters T3 reported reach the graph gauge; absent counters stay 0 (no gauge).
+      const reported = usedTokens > 0 && maxTokens > 0
       agents.push({ id: nodeForThread.get(id), name: text(task && t3Payload(task).title) || text(row.title),
         parentId: task ? taskParent(task) : parentId ? nodeForThread.get(parentId) : null, isMain: id === rootId,
         runtime: runtime(provider?.driver || provider?.provider || row.default_provider), model, state,
         spawnTime: relative(row.created_at), timeAlive: Math.max(0, (now - timestamp(row.created_at)) / 1000),
         tools: pending, currentTool: pending.at(-1)?.tool, toolCalls: tools.length,
-        // T3 does not guarantee token counters in these projections. Do not estimate them.
-        tokensUsed: 0, tokensMax: 0, task: text(task && t3Payload(task).prompt), compacting: compactions.length > 0,
+        tokensUsed: reported ? usedTokens : 0, tokensMax: reported ? maxTokens : 0,
+        task: text(task && t3Payload(task).prompt), compacting: compactions.length > 0,
       })
-      const providerPayload = t3Payload(provider || {})
-      const contextUsage = object(providerPayload.contextUsage)
-      const usedTokens = Number(contextUsage.usedTokens), maxTokens = Number(contextUsage.maxTokens)
       const requestKind = text(openRequest?.kind) || text(t3Payload(openRequest || {}).kind)
       const activities: TeamActivity[] = [...compactions, ...tools.filter(item => running(item.status) && (!latest || running(latest.status)))].map(item => {
         const itemPayload = t3Payload(item)
@@ -168,14 +170,15 @@ export function projectT3Teams(data: T3Projection, workspaces: string[], now = D
       const tools = items.filter(item => running(item.status) && running(task.status)).map(item => ({
         callId: text(item.turn_item_id), tool: text(t3Payload(item).toolName) || text(item.type), args: text(t3Payload(item).title),
       }))
+      const provider = data.providerThreads.find(row => row.provider_thread_id === task.provider_thread_id)
+      const contextUsage = object(t3Payload(provider || {}).contextUsage)
+      const usedTokens = Number(contextUsage.usedTokens), maxTokens = Number(contextUsage.maxTokens)
+      const reported = usedTokens > 0 && maxTokens > 0
       agents.push({ id: nodeForThread.get(`task:${text(task.subagent_id)}`), name: text(p.title) || 'Subagent',
         parentId: taskParent(task), isMain: false, runtime: runtime(task.driver || task.provider),
         model: text(p.model) || undefined, state: tools.length ? 'tool_calling' : running(task.status) ? 'thinking' : task.status === 'failed' ? 'error' : 'complete',
         task: text(p.prompt), spawnTime: relative(task.started_at), tools, currentTool: tools.at(-1)?.tool,
-        tokensUsed: 0, tokensMax: 0, toolCalls: items.length })
-      const provider = data.providerThreads.find(row => row.provider_thread_id === task.provider_thread_id)
-      const contextUsage = object(t3Payload(provider || {}).contextUsage)
-      const usedTokens = Number(contextUsage.usedTokens), maxTokens = Number(contextUsage.maxTokens)
+        tokensUsed: reported ? usedTokens : 0, tokensMax: reported ? maxTokens : 0, toolCalls: items.length })
       const openRequest = data.requests.filter(request => request.thread_id === task.thread_id && request.node_id === task.parent_node_id
         && ['pending', 'open', 'requested'].includes(text(request.status)))[0]
       const requestKind = text(openRequest?.kind) || text(t3Payload(openRequest || {}).kind)

@@ -47,7 +47,7 @@ it('draws navy circular cores and a calm state ring without inventing context ca
   const node = agent({ state: 'error' })
   const records = render(node, 0, false)
   assert.ok(records.some(r => r.kind === 'fill' && r.color === 'rgba(6, 30, 50, 0.95)' && r.path[0]?.[2] === 32))
-  assert.ok(records.some(r => r.color === getStateColor('error') + 'c0' && r.path.length === 16))
+  assert.ok(records.some(r => r.color === getStateColor('error') + '70' && r.path.length === 16))
   const gauge = recorder()
   drawContextHud(gauge.ctx, node, 32)
   assert.equal(gauge.records.length, 0)

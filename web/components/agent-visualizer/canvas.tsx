@@ -12,6 +12,7 @@ import {
   drawTetherLine,
   drawEffects,
   drawAgents,
+  drawMissionLinks,
   drawMessageBubblesWorld,
   drawEdges, getActiveEdgeIds,
   drawParticles, buildEdgeMap,
@@ -24,6 +25,7 @@ import { useCanvasCamera } from '@/hooks/use-canvas-camera'
 import { drawAgentTooltip } from './canvas/agent-tooltip'
 import { useCanvasInteraction } from '@/hooks/use-canvas-interaction'
 import { type AnimationMode } from '@/lib/viewer-preferences'
+import type { MissionView } from '@/lib/mission-model'
 import { createGraphProjector } from '@/lib/graph-presentation'
 import { renderBudget, hasVisualMotion, limitVisualParticles } from '@/lib/render-budget'
 import { findCaptionAgentAt } from '@/lib/agent-caption'
@@ -38,6 +40,8 @@ interface CanvasProps {
   showAllAgents?: boolean
   /** Agents another view scoped out, such as the team board's finished work. */
   hiddenAgentIds?: ReadonlySet<string>
+  /** T3 Mission Map view; replaces the force layout and edges when present. */
+  mission?: MissionView
   currentRoundOnly?: boolean
   animationMode?: AnimationMode
   animationSpeed?: number
@@ -62,7 +66,7 @@ interface CanvasProps {
 }
 
 export function AgentCanvas({
-  topInset = 132, visible = true, restoring = false, currentRoundOnly = true, showAllAgents = false, hiddenAgentIds,
+  topInset = 132, visible = true, restoring = false, currentRoundOnly = true, showAllAgents = false, hiddenAgentIds, mission,
   animationMode = 'full', animationSpeed = 1,
   compact = false,
   simulationRef,
@@ -110,9 +114,9 @@ export function AgentCanvas({
   // at the top of each draw frame, so it's always fresh even without re-renders.
   const projectGraphRef = useRef<ReturnType<typeof createGraphProjector> | null>(null)
   if (!projectGraphRef.current) projectGraphRef.current = createGraphProjector()
-  const sim = projectGraphRef.current(simulationRef.current, currentRoundOnly, compact, showAllAgents, hiddenAgentIds)
+  const sim = projectGraphRef.current(simulationRef.current, currentRoundOnly, compact, showAllAgents, hiddenAgentIds, mission)
   const makeDrawProps = (prev?: { isDragging: boolean }) => ({
-    animationMode, animationSpeed, currentRoundOnly, showAllAgents, hiddenAgentIds, topInset,
+    animationMode, animationSpeed, currentRoundOnly, showAllAgents, hiddenAgentIds, mission, topInset,
     compact,
     agents: sim.agents, toolCalls: sim.toolCalls,
     particles: sim.particles, edges: sim.edges, discoveries: sim.discoveries,
@@ -202,7 +206,7 @@ export function AgentCanvas({
     try {
       // Sync simulation data from ref — always fresh, independent of React renders
       {
-        const s = projectGraphRef.current!(simulationRef.current, drawPropsRef.current.currentRoundOnly, compactRef.current, drawPropsRef.current.showAllAgents, drawPropsRef.current.hiddenAgentIds)
+        const s = projectGraphRef.current!(simulationRef.current, drawPropsRef.current.currentRoundOnly, compactRef.current, drawPropsRef.current.showAllAgents, drawPropsRef.current.hiddenAgentIds, drawPropsRef.current.mission)
         const p = drawPropsRef.current
         p.agents = s.agents
         p.toolCalls = s.toolCalls
@@ -299,14 +303,19 @@ export function AgentCanvas({
         edgeLookupCacheRef.current = { particles, edges, activeEdgeIds, edgeMap }
       }
 
-      drawDiscoveryConnections(ctx, discoveries, agents)
-      drawEdges(ctx, edges, agents, toolCalls, activeEdgeIds, timeRef.current, mode !== 'off', compactRef.current, !budget.detailed, simTimeRef.current)
-      drawToolCalls(ctx, toolCalls, timeRef.current, selectedToolCallId)
-      drawDiscoveries(ctx, discoveries, agents, selectedDiscoveryId)
-      drawAgents(ctx, agents, selectedAgentId, hoveredAgentId, showStats, timeRef.current, mode !== 'off', compactRef.current, transform.scale, budget.detailed)
-      if (!compactRef.current) drawMessageBubblesWorld(ctx, agents, simTimeRef.current)
-      if (showCostOverlay) drawCostLabels(ctx, agents, toolCalls)
-      if (mode !== 'off') {
+      const mission = compactRef.current ? undefined : drawPropsRef.current.mission
+      if (mission) {
+        drawMissionLinks(ctx, mission, agents, selectedAgentId, timeRef.current, mode !== 'off', transform.scale, budget.detailed)
+      } else {
+        drawDiscoveryConnections(ctx, discoveries, agents)
+        drawEdges(ctx, edges, agents, toolCalls, activeEdgeIds, timeRef.current, mode !== 'off', compactRef.current, !budget.detailed, simTimeRef.current)
+        drawToolCalls(ctx, toolCalls, timeRef.current, selectedToolCallId)
+        drawDiscoveries(ctx, discoveries, agents, selectedDiscoveryId)
+      }
+      drawAgents(ctx, agents, selectedAgentId, hoveredAgentId, showStats, timeRef.current, mode !== 'off', compactRef.current, transform.scale, budget.detailed, mission)
+      if (!mission && !compactRef.current) drawMessageBubblesWorld(ctx, agents, simTimeRef.current)
+      if (!mission && showCostOverlay) drawCostLabels(ctx, agents, toolCalls)
+      if (!mission && mode !== 'off') {
         drawParticles(ctx, limitVisualParticles(particles, budget.particles), edgeMap, agents, toolCalls, timeRef.current)
         drawEffects(ctx, effectsRef.current)
       }

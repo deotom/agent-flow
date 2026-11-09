@@ -8,6 +8,8 @@ import {
 import { alphaHex, formatModelName } from '@/lib/utils'
 import { truncateText, CLAUDE_SPARK_D, OPENAI_LOGO_D, OPENAI_LOGO_VIEWBOX } from './draw-misc'
 import { getAgentGlowSprite, measureTextCached } from './render-cache'
+import type { MissionView } from '@/lib/mission-model'
+import { drawMissionAgents } from './draw-mission'
 
 let _claudeSparkPath: Path2D | null = null
 export function contextGaugeColor(used: number, capacity: number): string {
@@ -167,7 +169,7 @@ function drawReactorRings(ctx: CanvasRenderingContext2D, agent: Agent, r: number
     ctx.strokeStyle = color + (calm ? '14' : '2e')
     ctx.lineWidth = reactorThickness(agent) + 4
     ctx.stroke()
-    ctx.strokeStyle = color + (calm ? '55' : 'c0')
+    ctx.strokeStyle = color + (calm ? '45' : '70')
     ctx.lineWidth = reactorThickness(agent)
     ctx.stroke()
   }
@@ -504,7 +506,12 @@ export function drawAgents(
   compact = false,
   viewScale = 1,
   detailed = true,
+  mission?: MissionView,
 ) {
+  if (mission) {
+    drawMissionAgents(ctx, agents, mission, selectedAgentId, hoveredAgentId, time, effectsEnabled, viewScale, detailed)
+    return
+  }
   for (const [id, agent] of agents) {
     const radius = agent.isMain ? NODE.radiusMain : NODE.radiusSub
     const color = getStateColor(agent.state)
