@@ -30,6 +30,18 @@ export function lockedTeamId(): string | null {
 /** Whether the orb's picture is current: relay reachable and T3 readable. */
 export type FeedHealth = 'ok' | 'stale' | 'offline'
 
+/** The lead's latest reply per team (local only, never mirrored to mobile). */
+export interface TeamReply { sessionId: string; text: string; at: number | null; streaming: boolean }
+
+/** Replies in a relay message, or null when it is not a reply list. Exported for tests. */
+export function repliesIn(message: unknown): TeamReply[] | null {
+  const data = message as { type?: string; replies?: unknown } | null
+  if (data?.type !== 't3-replies' || !Array.isArray(data.replies)) return null
+  return data.replies.filter((item): item is TeamReply => Boolean(item) && typeof item.sessionId === 'string'
+    && typeof item.text === 'string' && (item.at === null || typeof item.at === 'number'))
+    .map(item => ({ sessionId: item.sessionId, text: item.text.slice(0, 400), at: item.at, streaming: item.streaming === true }))
+}
+
 /** Keep only teams the relay still lists. An explicit empty list clears everything. Exported for tests. */
 export function reconcileSnapshots(snapshots: Record<string, TeamSnapshot>, sessionIds: readonly string[]): Record<string, TeamSnapshot> {
   const keep = new Set(sessionIds)
@@ -38,7 +50,8 @@ export function reconcileSnapshots(snapshots: Record<string, TeamSnapshot>, sess
   return Object.fromEntries(ids.filter(id => keep.has(id)).map(id => [id, snapshots[id]]))
 }
 
-export function useTeamFeed(): { snapshots: Record<string, TeamSnapshot>; projects: T3ProjectInfo[]; locked: string | null; connected: boolean; health: FeedHealth } {
+export function useTeamFeed(): { snapshots: Record<string, TeamSnapshot>; projects: T3ProjectInfo[]; replies: Record<string, TeamReply>; locked: string | null; connected: boolean; health: FeedHealth } {
+  const [replies, setReplies] = useState<Record<string, TeamReply>>({})
   const [sourceOk, setSourceOk] = useState(true)
   const [projects, setProjects] = useState<T3ProjectInfo[]>([])
   const [snapshots, setSnapshots] = useState<Record<string, TeamSnapshot>>({})
@@ -66,6 +79,8 @@ export function useTeamFeed(): { snapshots: Record<string, TeamSnapshot>; projec
         }
         return
       }
+      const answers = repliesIn(data)
+      if (answers) { setReplies(Object.fromEntries(answers.map(reply => [reply.sessionId, reply]))); return }
       const list = projectsIn(data)
       if (list) { setProjects(list); return }
       const teams = teamSnapshotsIn(data)
@@ -80,5 +95,5 @@ export function useTeamFeed(): { snapshots: Record<string, TeamSnapshot>; projec
     window.addEventListener('storage', storage)
     return () => { source.close(); window.removeEventListener('storage', storage) }
   }, [])
-  return { snapshots, projects, locked, connected, health: !connected ? 'offline' : sourceOk ? 'ok' : 'stale' }
+  return { snapshots, projects, replies, locked, connected, health: !connected ? 'offline' : sourceOk ? 'ok' : 'stale' }
 }

@@ -14,6 +14,14 @@ const shellURL = pathToFileURL(path.join(__dirname, 'shell.html')).href
 let win
 let orbWin
 let orbExpanded = false
+// Orb sizes: small (status light), medium (default), large (the original size).
+const ORB_SCALES = [0.65, 0.8, 1]
+// 60px above the lens holds the lead's latest reply.
+const ORB_BASE = { width: 260, height: 330 }
+const orbSize = () => {
+  const scale = ORB_SCALES.includes(settings.orbScale) ? settings.orbScale : 0.8
+  return { width: Math.round(ORB_BASE.width * scale), height: Math.round(ORB_BASE.height * scale), scale }
+}
 let worker
 let pendingWorker
 let settings = { alwaysOnTop: true, lastFolder: '', widgetMode: true, runtime: 'auto', dock: 'off', dockWidth: 380,
@@ -54,6 +62,7 @@ function loadSettings() {
       dock: saved.dock === 'left' || saved.dock === 'right' ? saved.dock : 'off',
       dockWidth: Number.isInteger(saved.dockWidth) && saved.dockWidth >= 260 && saved.dockWidth <= 1600 ? saved.dockWidth : 380,
       orbPosition: validPosition(saved.orbPosition),
+      orbScale: ORB_SCALES.includes(saved.orbScale) ? saved.orbScale : 0.8,
     }
   } catch { /* First launch or invalid settings: use defaults. */ }
 }
@@ -341,10 +350,10 @@ function toggleOrb() {
   orbLayout = { left: 0, top: 0, panel: 'below' }
   const saved = settings.orbPosition
   const onScreen = saved && screen.getAllDisplays().some(({ workArea: a }) =>
-    saved.x >= a.x && saved.y >= a.y && saved.x + 260 <= a.x + a.width && saved.y + 270 <= a.y + a.height)
-  const position = onScreen ? saved : { x: Math.max(area.x, area.x + area.width - 284), y: Math.max(area.y, area.y + area.height - 294) }
+    saved.x >= a.x && saved.y >= a.y && saved.x + orbSize().width <= a.x + a.width && saved.y + orbSize().height <= a.y + a.height)
+  const position = onScreen ? saved : { x: Math.max(area.x, area.x + area.width - orbSize().width - 24), y: Math.max(area.y, area.y + area.height - orbSize().height - 24) }
   const orb = orbWin = new BrowserWindow({
-    ...position, width: 260, height: 270, resizable: false, maximizable: false, minimizable: false,
+    ...position, width: orbSize().width, height: orbSize().height, resizable: false, maximizable: false, minimizable: false,
     skipTaskbar: true, hasShadow: false, transparent: true, backgroundColor: '#00000000', frame: false, focusable: true,
     webPreferences: { preload: path.join(__dirname, 'orb-preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   })
@@ -359,6 +368,8 @@ function toggleOrb() {
     orbWin = undefined
     restoreMain()
   })
+  // The page learns its size and layout once loaded and after every change.
+  orb.webContents.on('did-finish-load', () => sendOrbLayout(orbExpanded))
   orb.loadURL(`${state.url}/?orb=1`)
   win.hide()
   if (settings.dock !== 'off') releaseEdge()
@@ -376,25 +387,48 @@ function setOrbExpanded(value) {
   const clamp = (v, low, high) => Math.round(Math.max(low, Math.min(v, high)))
   let next
   if (value) {
-    const width = 380, height = 520
+    const { width: orbWidth, height: orbHeight } = orbSize()
+    const width = 380, height = orbHeight + 250
     // Open the panel below when it fits, otherwise above, so the orb stays where the user put it.
     const panel = orbAt.y + height <= area.y + area.height ? 'below' : 'above'
-    const x = clamp(orbAt.x - (width - 260) / 2, area.x, area.x + area.width - width)
-    const y = clamp(panel === 'below' ? orbAt.y : orbAt.y - (height - 270), area.y, area.y + area.height - height)
+    const x = clamp(orbAt.x - (width - orbWidth) / 2, area.x, area.x + area.width - width)
+    const y = clamp(panel === 'below' ? orbAt.y : orbAt.y - (height - orbHeight), area.y, area.y + area.height - height)
     orbLayout = { left: orbAt.x - x, top: orbAt.y - y, panel }
     next = { x, y, width, height }
   } else {
     orbLayout = { left: 0, top: 0, panel: 'below' }
-    next = { x: clamp(orbAt.x, area.x, area.x + area.width - 260), y: clamp(orbAt.y, area.y, area.y + area.height - 270), width: 260, height: 270 }
+    const { width, height } = orbSize()
+    next = { x: clamp(orbAt.x, area.x, area.x + area.width - width), y: clamp(orbAt.y, area.y, area.y + area.height - height), width, height }
   }
   orbWin.setResizable(true)
   try { orbWin.setBounds(next) }
   finally { orbWin.setResizable(false) }
-  orbWin.webContents.send('orb:layout', { expanded: value, ...orbLayout })
   orbExpanded = value
+  sendOrbLayout(value)
   orbWin.setIgnoreMouseEvents(!value, { forward: true })
   orbWin.setFocusable(value)
   if (value) orbWin.focus()
+}
+function sendOrbLayout(expanded) {
+  if (orbWin && !orbWin.isDestroyed()) orbWin.webContents.send('orb:layout', { expanded, ...orbLayout, scale: orbSize().scale })
+}
+/** Resize the orb around its centre and remember the choice. */
+function setOrbScale(scale) {
+  if (!orbWin || !ORB_SCALES.includes(scale) || scale === settings.orbScale) return
+  if (orbExpanded) setOrbExpanded(false)
+  const before = orbWin.getBounds()
+  const centre = { x: before.x + before.width / 2, y: before.y + before.height / 2 }
+  settings.orbScale = scale
+  const { width, height } = orbSize()
+  const area = screen.getDisplayMatching(before).workArea
+  const x = Math.round(Math.max(area.x, Math.min(centre.x - width / 2, area.x + area.width - width)))
+  const y = Math.round(Math.max(area.y, Math.min(centre.y - height / 2, area.y + area.height - height)))
+  orbWin.setResizable(true)
+  try { orbWin.setBounds({ x, y, width, height }) }
+  finally { orbWin.setResizable(false) }
+  settings.orbPosition = { x, y }
+  try { saveSettings() } catch (error) { state.error = `Could not remember preferences: ${error.message}` }
+  sendOrbLayout(false)
 }
 function openProject(payload) {
   return openFolder(t3CLI.projectRoot(payload?.root))
@@ -479,6 +513,8 @@ function registerIPC() {
     'orb:open-full': closeOrb,
     'orb:menu': () => Menu.buildFromTemplate([
       { label: 'Open Agent Flow', click: closeOrb },
+      { label: 'Size', submenu: [['Small', 0.65], ['Medium', 0.8], ['Large', 1]].map(([label, scale]) => ({
+        label, type: 'radio', checked: orbSize().scale === scale, click: () => setOrbScale(scale) })) },
       { type: 'separator' },
       { label: 'Quit Agent Flow', click: () => app.quit() },
     ]).popup({ window: orbWin }),

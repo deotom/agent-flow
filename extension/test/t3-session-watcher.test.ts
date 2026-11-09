@@ -79,3 +79,39 @@ test('does not create a missing database or fall back to native session logs', (
   assert.deepEqual(watcher.getActiveSessions(), [])
   watcher.dispose()
 })
+
+test('reads only the lead\'s latest reply text, cleaned and capped, for the local orb caption', async t => {
+  const { replyText } = await import('../src/t3-session-watcher')
+  assert.equal(replyText('**Done.** See [the PR](https://x/y) and run `npm test`.\n\n```sh\nsecret --token\n```'), 'Done. See the PR and run npm test.')
+  assert.equal(replyText(null), '')
+  const long = replyText('word '.repeat(200))
+  assert.ok(long.length <= 280 && long.endsWith('…'))
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't3-reply-'))
+  const file = path.join(dir, 'statev2.sqlite')
+  const db = new DatabaseSync(file)
+  t.after(() => { db.close(); fs.rmSync(dir, { recursive: true, force: true }) })
+  db.exec(`CREATE TABLE projection_projects(project_id TEXT, workspace_root TEXT, deleted_at TEXT);
+    INSERT INTO projection_projects VALUES('p','D:/Project/TH',NULL);
+    CREATE TABLE orchestration_v2_projection_threads(thread_id TEXT,project_id TEXT,title TEXT,default_provider TEXT,active_provider_thread_id TEXT,created_at TEXT,updated_at TEXT,archived_at TEXT,deleted_at TEXT,payload_json TEXT);
+    INSERT INTO orchestration_v2_projection_threads VALUES('root','p','Team','claudeAgent',NULL,'2026-11-06T01:00:00Z','2026-11-06T01:01:00Z',NULL,NULL,'{}');
+    CREATE TABLE orchestration_v2_projection_subagents(subagent_id TEXT,thread_id TEXT,run_id TEXT,parent_node_id TEXT,provider TEXT,child_thread_id TEXT,provider_thread_id TEXT,status TEXT,driver TEXT,started_at TEXT,completed_at TEXT,updated_at TEXT,completion_delivery_state TEXT,payload_json TEXT);
+    CREATE TABLE orchestration_v2_projection_runs(run_id TEXT,thread_id TEXT,ordinal INTEGER,provider TEXT,status TEXT,provider_thread_id TEXT,completed_at TEXT,payload_json TEXT);
+    INSERT INTO orchestration_v2_projection_runs VALUES('r','root',1,'claude','completed',NULL,NULL,'{}');
+    CREATE TABLE orchestration_v2_projection_provider_threads(provider_thread_id TEXT,thread_id TEXT,provider TEXT,driver TEXT,updated_at TEXT,payload_json TEXT);
+    CREATE TABLE orchestration_v2_projection_runtime_requests(runtime_request_id TEXT,thread_id TEXT,node_id TEXT,kind TEXT,status TEXT,created_at TEXT,resolved_at TEXT,payload_json TEXT);
+    CREATE TABLE orchestration_v2_projection_nodes(node_id TEXT,thread_id TEXT,parent_node_id TEXT,provider_thread_id TEXT,started_at TEXT,completed_at TEXT,payload_json TEXT);
+    CREATE TABLE orchestration_v2_projection_turn_items(turn_item_id TEXT,thread_id TEXT,run_id TEXT,provider_thread_id TEXT,type TEXT,status TEXT,updated_at TEXT,payload_json TEXT);
+    INSERT INTO orchestration_v2_projection_turn_items VALUES('a1','root','r',NULL,'assistant_message','completed','2026-11-06T01:00:30Z','{"text":"Old reply"}');
+    INSERT INTO orchestration_v2_projection_turn_items VALUES('a2','root','r',NULL,'assistant_message','completed','2026-11-06T01:01:00Z','{"text":"Shipped the **fix**."}');
+    INSERT INTO orchestration_v2_projection_turn_items VALUES('u1','root','r',NULL,'user_message','completed','2026-11-06T01:02:00Z','{"text":"PRIVATE_USER_TEXT"}');
+    INSERT INTO orchestration_v2_projection_turn_items VALUES('c1','root','r',NULL,'command_execution','completed','2026-11-06T01:02:00Z','{"output":"PRIVATE_TOOL_OUTPUT"}');`)
+  const watcher = new T3SessionWatcher(['D:/Project/TH'], file)
+  t.after(() => watcher.dispose())
+  const fired: unknown[] = []
+  watcher.onRepliesChanged(list => fired.push(list))
+  watcher.poll()
+  assert.deepEqual(watcher.replies.map(({ sessionId, text }) => [sessionId, text]), [['t3:root', 'Shipped the fix.']])
+  assert.ok(!JSON.stringify(watcher.replies).includes('PRIVATE'))
+  watcher.poll()
+  assert.equal(fired.length, 1, 'An unchanged reply is not sent again')
+})

@@ -5,7 +5,7 @@
  * Desktop hooks (drag, click-through, open full view, menu) come from the orb preload when present.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useTeamFeed } from '@/hooks/use-team-feed'
+import { useTeamFeed, type TeamReply } from '@/hooks/use-team-feed'
 import { buildMissionView, type MissionView } from '@/lib/mission-model'
 import { missionPresentation } from '@/lib/graph-presentation'
 import { createEmptyState } from '@/hooks/simulation/types'
@@ -25,11 +25,15 @@ interface OrbDesktop {
   setExpanded?(value: boolean): void
   onLayout?(callback: (layout: OrbLayout) => void): () => void
 }
-interface OrbLayout { expanded: boolean; left: number; top: number; panel: 'below' | 'above' }
+interface OrbLayout { expanded: boolean; left: number; top: number; panel: 'below' | 'above'; scale?: number }
 declare global { interface Window { agentFlowOrb?: OrbDesktop } }
 
-export const ORB_SIZE = { width: 260, height: 270 }
-const CENTER = { x: 130, y: 112 }
+export const ORB_SIZE = { width: 260, height: 330 }
+/** The top 60px hold the lead's latest reply; the lens sits below it. */
+const REPLY_SPACE = 60
+const CENTER = { x: 130, y: 112 + REPLY_SPACE }
+/** A reply stays readable for 10 minutes, then fades out so the orb does not show stale news. */
+const REPLY_MAX_AGE = 10 * 60_000
 const ORBIT = 84
 const HIT_RADIUS = 104
 const TAU = Math.PI * 2
@@ -138,7 +142,8 @@ const LENS_RADIUS = 106
  * A crisp glass lens behind the orb: a deliberate HUD disc with a lit rim and a soft drop shadow,
  * so the light rings stay readable on bright wallpapers without looking like a smudge.
  */
-function drawBackplate(ctx: CanvasRenderingContext2D) {
+/** `glow` 0..1 brightens the rim; idle orbs breathe it slowly instead of spinning. */
+function drawBackplate(ctx: CanvasRenderingContext2D, glow = 0.55) {
   ctx.save()
   ctx.shadowColor = 'rgba(0, 8, 20, 0.45)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 4
   const glass = ctx.createRadialGradient(-LENS_RADIUS * 0.3, -LENS_RADIUS * 0.35, LENS_RADIUS * 0.1, 0, 0, LENS_RADIUS)
@@ -150,8 +155,8 @@ function drawBackplate(ctx: CanvasRenderingContext2D) {
   ctx.restore()
   // Lit rim and a faint inner bezel.
   ctx.save()
-  ctx.strokeStyle = 'rgba(95, 225, 255, 0.55)'; ctx.lineWidth = 1.4
-  ctx.shadowColor = 'rgba(95, 225, 255, 0.6)'; ctx.shadowBlur = 6
+  ctx.strokeStyle = `rgba(95, 225, 255, ${glow.toFixed(3)})`; ctx.lineWidth = 1.4
+  ctx.shadowColor = 'rgba(95, 225, 255, 0.6)'; ctx.shadowBlur = 4 + glow * 8
   ctx.beginPath(); ctx.arc(0, 0, LENS_RADIUS - 0.7, 0, TAU); ctx.stroke()
   ctx.shadowBlur = 0
   ctx.strokeStyle = 'rgba(95, 225, 255, 0.12)'; ctx.lineWidth = 1
@@ -165,7 +170,7 @@ function drawBackplate(ctx: CanvasRenderingContext2D) {
 }
 
 /** Caption capsule under the lens: team status in its colour, then the team name. */
-function drawCaption(ctx: CanvasRenderingContext2D, summary: OrbSummary) {
+function drawCaption(ctx: CanvasRenderingContext2D, summary: OrbSummary, pulse = 1) {
   const working = summary.dots.some(dot => dot.working) || summary.busy
   const color = summary.alert === 'waiting' ? MISSION_COLORS.waiting : summary.alert === 'failed' ? MISSION_COLORS.failed
     : working ? MISSION_COLORS.working : '#9fb6c8'
@@ -192,12 +197,51 @@ function drawCaption(ctx: CanvasRenderingContext2D, summary: OrbSummary) {
   ctx.strokeStyle = `${color}66`; ctx.lineWidth = 1
   ctx.stroke()
   ctx.fillStyle = color
+  ctx.globalAlpha = pulse
   ctx.beginPath(); ctx.arc(-lineWidth / 2 + 3, top + 11, 3, 0, TAU); ctx.fill()
+  ctx.globalAlpha = 1
   ctx.font = '600 11px "Cascadia Mono", Consolas, monospace'
   ctx.fillText(line, 7, top + 11.5)
   ctx.font = '11px "Segoe UI", system-ui, sans-serif'
   ctx.fillStyle = 'rgba(220, 236, 248, 0.85)'
   ctx.fillText(title, 0, top + 26)
+  ctx.restore()
+}
+
+/** Wrap text into at most `lines` lines of `width` px, ending with … when cut. */
+function wrapText(ctx: CanvasRenderingContext2D, text: string, width: number, lines: number): string[] {
+  const out: string[] = []
+  let rest = text.trim()
+  while (rest && out.length < lines) {
+    if (ctx.measureText(rest).width <= width) { out.push(rest); rest = ''; break }
+    let cut = rest.length
+    while (cut > 1 && ctx.measureText(rest.slice(0, cut)).width > width) cut--
+    const space = rest.lastIndexOf(' ', cut)
+    if (space > cut * 0.5) cut = space
+    out.push(rest.slice(0, cut).trim())
+    rest = rest.slice(cut).trim()
+  }
+  if (rest && out.length) {
+    let last = out[out.length - 1]
+    while (last.length > 1 && ctx.measureText(`${last}…`).width > width) last = last.slice(0, -1)
+    out[out.length - 1] = `${last.trimEnd()}…`
+  }
+  return out
+}
+
+/** The lead's latest reply, faint above the lens; `alpha` rises on hover. */
+function drawReply(ctx: CanvasRenderingContext2D, reply: TeamReply, alpha: number) {
+  if (alpha <= 0.01) return
+  ctx.save()
+  ctx.font = '11px "Segoe UI", system-ui, sans-serif'
+  const lines = wrapText(ctx, reply.text, 228, 3)
+  const height = lines.length * 14 + 12, top = -CENTER.y + Math.max(2, REPLY_SPACE + 4 - height), width = 244
+  ctx.globalAlpha = alpha
+  ctx.fillStyle = 'rgba(6, 16, 30, 0.9)'
+  ctx.beginPath(); ctx.roundRect(-width / 2, top, width, height, 9); ctx.fill()
+  ctx.strokeStyle = 'rgba(95, 225, 255, 0.35)'; ctx.lineWidth = 1; ctx.stroke()
+  ctx.fillStyle = '#dcecf8'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+  lines.forEach((line, index) => ctx.fillText(line, -width / 2 + 9, top + 13 + index * 14))
   ctx.restore()
 }
 
@@ -243,17 +287,24 @@ export function OrbView() {
   // The desktop keeps the orb fixed on screen and says where it sits inside the expanded window.
   const [layout, setLayout] = useState<OrbLayout | null>(null)
   const interactiveRef = useRef(false)
+  // Orb size from the desktop's Size menu (1 = the original 260×270).
+  const [scale, setScale] = useState(1)
+  const scaleRef = useRef(1)
   useEffect(() => window.agentFlowOrb?.onLayout?.(next => {
     // Collapsing returns the window to click-through; the next hover over the orb must ask for input again.
     if (!next.expanded) interactiveRef.current = false
+    if (typeof next.scale === 'number' && next.scale > 0) { scaleRef.current = next.scale; setScale(next.scale) }
     setLayout(next)
   }), [])
   // A team the user just prompted from the orb takes over until they lock another one.
   const snapshot = pickOrbTeam(feed.snapshots, feed.locked ?? focusTeam)
   const summary = useMemo(() => snapshot ? orbSummary(snapshot) : null, [snapshot])
   const scene = useMemo(() => leadScene(summary), [summary])
-  const latest = useRef({ summary, scene, health: feed.health })
-  latest.current = { summary, scene, health: feed.health }
+  const reply = snapshot ? feed.replies[snapshot.sessionId] ?? null : null
+  const latest = useRef({ summary, scene, health: feed.health, reply })
+  latest.current = { summary, scene, health: feed.health, reply }
+  // Reply opacity eases toward faint, or strong while hovered.
+  const replyHover = useRef(false)
 
   // Transparent page: only the orb is visible on the desktop.
   useEffect(() => {
@@ -266,14 +317,15 @@ export function OrbView() {
     const context = element.getContext('2d')
     if (!context) return
     const ctx: CanvasRenderingContext2D = context
-    let dpr = 0, timer = 0, frame = 0, stopped = false
+    let dpr = 0, timer = 0, frame = 0, stopped = false, replyAlpha = 0, replyKey = ''
     const start = performance.now()
     function render() {
       if (stopped) return
-      const { summary: current, scene: lead, health } = latest.current
+      const { summary: current, scene: lead, health, reply: answer } = latest.current
       // Follow monitor changes so the orb stays sharp on a different DPI.
       const ratio = window.devicePixelRatio || 1
-      if (ratio !== dpr) { dpr = ratio; element!.width = ORB_SIZE.width * dpr; element!.height = ORB_SIZE.height * dpr }
+      const zoom = scaleRef.current
+      if (ratio * zoom !== dpr) { dpr = ratio * zoom; element!.width = Math.round(ORB_SIZE.width * dpr); element!.height = Math.round(ORB_SIZE.height * dpr) }
       const time = (performance.now() - start) / 1000
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, ORB_SIZE.width, ORB_SIZE.height)
@@ -287,18 +339,31 @@ export function OrbView() {
       } else {
         // A picture that may be out of date is dimmed and says so.
         ctx.globalAlpha = health === 'ok' ? 1 : 0.55
-        drawBackplate(ctx)
+        // Idle: everything holds still and only the rim breathes, so a waiting team never looks frozen or jittery.
+        const idle = health === 'ok' && !current.busy
+        const breath = 0.5 + 0.5 * Math.sin(time * (TAU / 4))
+        const motion = health === 'ok' && !idle ? time : 0
+        drawBackplate(ctx, idle ? 0.3 + 0.45 * breath : 0.55)
         drawAlert(ctx, health === 'ok' ? current.alert : null, time)
-        drawSatellites(ctx, current, health === 'ok' ? time : 0)
-        drawMissionAgents(ctx, lead.agents, lead.view, null, null, health === 'ok' ? time : 0, health === 'ok', 1, true, false)
-        drawCaption(ctx, current)
+        drawSatellites(ctx, current, motion)
+        drawMissionAgents(ctx, lead.agents, lead.view, null, null, motion, health === 'ok' && !idle, 1, true, false)
+        drawCaption(ctx, current, idle ? 0.45 + 0.55 * breath : 1)
+        // A new reply fades in; it rests faint, brightens under the pointer, and fades out once it is old.
+        if (answer) {
+          if (answer.text !== replyKey) { replyKey = answer.text; replyAlpha = 0 }
+          const age = answer.at ? Date.now() - answer.at : 0
+          const target = age > REPLY_MAX_AGE ? 0 : replyHover.current ? 0.96 : 0.42
+          replyAlpha += (target - replyAlpha) * 0.18
+          drawReply(ctx, answer, replyAlpha)
+        }
         ctx.globalAlpha = 1
         if (health !== 'ok') drawHealthTag(ctx, health)
       }
-      // Busy: about 30 fps. Idle or stale: about 8 fps without waking every display frame.
+      // Busy: about 30 fps, without waking every display frame when quieter.
       const busy = health === 'ok' && current?.busy
       if (busy) frame = requestAnimationFrame(() => { timer = window.setTimeout(render, 16) })
-      else timer = window.setTimeout(render, 125)
+      // Idle breathing needs ~15 fps to look smooth; a stale picture holds still at ~8 fps.
+      else timer = window.setTimeout(render, health === 'ok' ? 66 : 125)
     }
     render()
     return () => { stopped = true; cancelAnimationFrame(frame); window.clearTimeout(timer) }
@@ -316,10 +381,12 @@ export function OrbView() {
     const over = (event: MouseEvent) => {
       const rect = canvas.current?.getBoundingClientRect()
       if (!rect) return false
-      const x = event.clientX - rect.left, y = event.clientY - rect.top
+      const x = (event.clientX - rect.left) / scaleRef.current, y = (event.clientY - rect.top) / scaleRef.current
       const dx = x - CENTER.x, dy = y - CENTER.y
       const onLabel = y > CENTER.y + 50 && y < CENTER.y + 160 && Math.abs(dx) < 120
-      return Math.hypot(dx, dy) <= HIT_RADIUS || onLabel
+      const onReply = Boolean(latest.current.reply) && y < REPLY_SPACE + 4 && Math.abs(dx) < 124
+      replyHover.current = onReply
+      return Math.hypot(dx, dy) <= HIT_RADIUS || onLabel || onReply
     }
     const move = (event: PointerEvent) => {
       if (drag) {
@@ -331,7 +398,7 @@ export function OrbView() {
       // Name and status of the worker under the pointer.
       const rect = canvas.current?.getBoundingClientRect(), current = latest.current.summary
       if (rect && canvas.current && current) {
-        const px = event.clientX - rect.left - CENTER.x, py = event.clientY - rect.top - CENTER.y
+        const px = (event.clientX - rect.left) / scaleRef.current - CENTER.x, py = (event.clientY - rect.top) / scaleRef.current - CENTER.y
         const index = satellitePositions(current.dots.length).findIndex(point => Math.hypot(point.x - px, point.y - py) <= SAT_RADIUS + 5)
         const dot = current.dots[index]
         hoverTitle.current = dot ? `${dot.name}\n${STATUS_LABEL[dot.status]}` : null
@@ -356,7 +423,7 @@ export function OrbView() {
       window.clearTimeout(clickTimer)
       clickTimer = window.setTimeout(() => setExpanded(value => !value), 260)
     }
-    const leave = () => { if (!drag && interactiveRef.current && !expandedRef.current) { interactiveRef.current = false; api.setInteractive(false) } }
+    const leave = () => { replyHover.current = false; if (!drag && interactiveRef.current && !expandedRef.current) { interactiveRef.current = false; api.setInteractive(false) } }
     const open = (event: MouseEvent) => { if (over(event)) { window.clearTimeout(clickTimer); api.openFull() } }
     const menu = (event: MouseEvent) => { if (!over(event)) return; event.preventDefault(); api.menu() }
     window.addEventListener('pointermove', move)
@@ -400,17 +467,17 @@ export function OrbView() {
   const place = open && layout?.expanded ? layout : null
   // Centre the panel under the orb but keep it inside the window when the orb sits at a screen edge.
   const panelWidth = Math.min(360, window.innerWidth - 8)
-  const panelLeft = place ? Math.max(4, Math.min(place.left + ORB_SIZE.width / 2 - panelWidth / 2, window.innerWidth - panelWidth - 4)) : 0
+  const panelLeft = place ? Math.max(4, Math.min(place.left + (ORB_SIZE.width * scale) / 2 - panelWidth / 2, window.innerWidth - panelWidth - 4)) : 0
   const panelStyle: React.CSSProperties = place
     ? place.panel === 'below'
-      ? { position: 'absolute', left: panelLeft, top: place.top + ORB_SIZE.height - 6, width: panelWidth }
+      ? { position: 'absolute', left: panelLeft, top: place.top + ORB_SIZE.height * scale - 6, width: panelWidth }
       : { position: 'absolute', left: panelLeft, bottom: `calc(100% - ${place.top + 18}px)`, width: panelWidth }
     : { width: panelWidth, marginTop: -6 }
   return (
     <div style={{ position: 'relative', width: '100%', height: '100vh', background: 'transparent' }}>
       <canvas ref={canvas} aria-label={summary ? `${snapshot!.title}: ${summary.line}` : 'No T3 team'}
         style={{ position: place ? 'absolute' : 'relative', left: place?.left ?? 0, top: place?.top ?? 0,
-          width: ORB_SIZE.width, height: ORB_SIZE.height, display: 'block', cursor: 'grab', background: 'transparent' }} />
+          width: ORB_SIZE.width * scale, height: ORB_SIZE.height * scale, display: 'block', cursor: 'grab', background: 'transparent' }} />
       {open && (
         <div style={panelStyle}>
           <PromptBar compact autoFocus projects={feed.projects} threads={threads} models={models} selectedThreadId={snapshot?.sessionId ?? null}

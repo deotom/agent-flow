@@ -8,6 +8,22 @@ import { projectT3Teams, t3WorkspaceMatches, type T3Projection, type T3Row, type
 
 /** A T3 project the prompt bar can target. Only id, title and folder: no scripts, settings or icons. */
 export interface T3ProjectInfo { id: string; title: string; root: string; current: boolean }
+
+/**
+ * The lead's latest reply, for the orb's fading caption. Local only: the relay never mirrors it to mobile.
+ * Only the reply text, cleaned and capped; never tool output, commands or the user's own messages.
+ */
+export interface T3Reply { sessionId: string; text: string; at: number | null; streaming: boolean }
+const REPLY_LIMIT = 280
+export function replyText(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  const plain = value
+    .replace(/```[\s\S]*?(```|$)/g, ' ')        // code blocks
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')   // links and images keep their text
+    .replace(/[*_`>#|]+/g, '')                   // markdown marks
+    .replace(/\s+/g, ' ').trim()
+  return plain.length > REPLY_LIMIT ? `${plain.slice(0, REPLY_LIMIT - 1).trimEnd()}…` : plain
+}
 // @ts-ignore -- shared web contract intentionally lives outside extension/rootDir.
 import type { SourceHealth } from '../../web/lib/team-types'
 
@@ -30,6 +46,9 @@ export class T3SessionWatcher {
   private projectLists = new TypedEventEmitter<T3ProjectInfo[]>()
   private projectList: T3ProjectInfo[] = []
   private projectFingerprint = ''
+  private replyLists = new TypedEventEmitter<T3Reply[]>()
+  private replyList: T3Reply[] = []
+  private replyFingerprint = ''
   readonly onEvent = this.events.event
   readonly onSessionLifecycle = this.lifecycle.event
   readonly onSessionDetected = this.detected.event
@@ -38,6 +57,8 @@ export class T3SessionWatcher {
   readonly onSourceHealth = this.sourceHealthEvents.event
   readonly onProjectsChanged = this.projectLists.event
   get projects(): T3ProjectInfo[] { return this.projectList }
+  readonly onRepliesChanged = this.replyLists.event
+  get replies(): T3Reply[] { return this.replyList }
   private teams = new Map<string, T3Team>()
   private fingerprints = new Map<string, string>()
   private timer?: ReturnType<typeof setInterval>
@@ -62,7 +83,26 @@ export class T3SessionWatcher {
   replaySessionStart(ids?: string[], options?: { latestOnly?: boolean; onSnapshot?: (event: AgentEvent) => void }): void {
     for (const [id, team] of this.teams) if (!ids || ids.includes(id)) (options?.onSnapshot || (event => this.events.fire(event)))(team.event)
   }
-    private updateProjects(rows: T3Row[]): void {
+    private updateReplies(db: ReadDatabase, sessionIds: string[]): void {
+    const list: T3Reply[] = []
+    try {
+      const latest = db.prepare(`SELECT updated_at, json_extract(payload_json, '$.streaming') AS streaming,
+        substr(json_extract(payload_json, '$.text'), 1, 2000) AS text
+        FROM orchestration_v2_projection_turn_items WHERE thread_id = ? AND type = 'assistant_message'
+        ORDER BY updated_at DESC LIMIT 1`)
+      for (const sessionId of sessionIds) {
+        const row = latest.all(sessionId.replace(/^t3:/, ''))[0]
+        const text = replyText(row?.text)
+        if (row && text) list.push({ sessionId, text, at: Date.parse(String(row.updated_at)) || null, streaming: row.streaming === 1 || row.streaming === true })
+      }
+    } catch { return /* Replies are optional; team monitoring continues without them. */ }
+    const fingerprint = JSON.stringify(list)
+    if (fingerprint === this.replyFingerprint) return
+    this.replyFingerprint = fingerprint
+    this.replyList = list
+    this.replyLists.fire(list)
+  }
+  private updateProjects(rows: T3Row[]): void {
     const list = rows.filter(row => !row.deleted_at && !row.archived_at && typeof row.workspace_root === 'string' && row.workspace_root)
       .map(row => {
         const root = String(row.workspace_root)
@@ -145,6 +185,7 @@ poll(): void {
       let projectRows = projects
       try { projectRows = db.prepare(`SELECT project_id, title, workspace_root, deleted_at, archived_at FROM projection_projects`).all() } catch { /* use folder names */ }
       this.updateProjects(projectRows)
+      this.updateReplies(db, [...next.keys()])
       this.lastSuccessAt = checkedAt
       if (changed) this.lastChangeAt = checkedAt
       if (this.lastError) this.diagnostics.fire('T3 local teams (read-only)')

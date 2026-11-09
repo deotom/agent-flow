@@ -43,3 +43,12 @@ describe('prompt targets', async () => {
     assert.equal(reconcileSnapshots(snapshots, ['t3:a', 't3:b']), snapshots, 'Unchanged lists keep the same object')
   })
 })
+
+describe('orb reply feed', async () => {
+  const { repliesIn } = await import('../hooks/use-team-feed')
+  it('accepts only well-formed reply lists', () => {
+    assert.deepEqual(repliesIn({ type: 't3-replies', replies: [{ sessionId: 't3:a', text: 'Done.', at: 5, streaming: false }, { sessionId: 1 }, null] }),
+      [{ sessionId: 't3:a', text: 'Done.', at: 5, streaming: false }])
+    assert.equal(repliesIn({ type: 't3-projects', projects: [] }), null)
+  })
+})
