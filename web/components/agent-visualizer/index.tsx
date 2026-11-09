@@ -34,6 +34,9 @@ import { AgentScopeSwitch } from './agent-scope-switch'
 import { sessionGraphPresentation } from '@/lib/graph-presentation'
 import { useAudioEffects } from "@/hooks/use-audio-effects"
 import { TeamWorkspace, type TeamPane } from './team/team-workspace'
+import { PromptBar } from '../prompt/prompt-bar'
+import { useT3Projects } from '@/hooks/use-t3-projects'
+import { canSendPrompts } from '@/lib/desktop-actions'
 import type { TeamScope } from '@/lib/team-model'
 
 export function AgentVisualizer({ desktopWidget = false }: { desktopWidget?: boolean } = {}) {
@@ -46,6 +49,8 @@ export function AgentVisualizer({ desktopWidget = false }: { desktopWidget?: boo
   const teamMode = bridge.sourceHealth !== null || bridge.sessions.some(session => session.id.startsWith('t3:'))
   const [teamScope, setTeamScope] = useState<TeamScope>('active')
   const [teamPane, setTeamPane] = useState<TeamPane>('board')
+  const t3Projects = useT3Projects()
+  const [promptReady] = useState(canSendPrompts)
   useEffect(() => setShowAllAgents(teamMode ? teamScope === 'session' : bridge.selectedSessionId?.startsWith('t3:') === true), [bridge.selectedSessionId, teamMode, teamScope])
 
   const {
@@ -259,6 +264,10 @@ export function AgentVisualizer({ desktopWidget = false }: { desktopWidget?: boo
           pane={teamPane}
           onPane={pane => { setTeamPane(pane); setZoomToFitTrigger(value => value + 1) }}
           viewerControls={<FlowControls bridge={bridge} />}
+          promptBar={promptReady && !desktopWidget ? (
+            <PromptBar projects={t3Projects} threads={bridge.sessions.filter(session => session.id.startsWith('t3:'))}
+              selectedThreadId={bridge.selectedSessionId} onSent={id => { if (bridge.sessions.some(session => session.id === id)) bridge.selectSession(id) }} />
+          ) : null}
           renderGraph={(selectedId, onSelect, hiddenIds, mission) => (
             <AgentCanvas
               topInset={12}

@@ -8,7 +8,64 @@ const path = require('node:path')
 const vm = require('node:vm')
 const { pathToFileURL } = require('node:url')
 
-test('orb preload exposes only fire-and-forget actions in the main frame', () => {
+test('desktop preload exposes prompt and project invokes only in the main frame', async () => {
+  let api
+  const calls = []
+  const source = fs.readFileSync(path.resolve(__dirname, '../preload.cjs'), 'utf8')
+  const run = isMainFrame => vm.runInNewContext(source, {
+    process: { isMainFrame },
+    require: () => ({ contextBridge: { exposeInMainWorld(_name, value) { api = value } },
+      ipcRenderer: { invoke: async (...args) => { calls.push(args); return 'result' } } }),
+  })
+  run(false); assert.equal(api, undefined)
+  run(true)
+  for (const method of ['t3Send', 't3Start', 'openProject']) assert.equal(await api[method]({ value: method }), 'result')
+  assert.deepEqual(calls, [['desktop:t3-send', { value: 't3Send' }], ['desktop:t3-start', { value: 't3Start' }], ['desktop:open-project', { value: 'openProject' }]])
+})
+
+test('shell prompt bridge checks iframe source, origin, id and action and replies with the request id', async () => {
+  const elements = new Map()
+  const listeners = new Map()
+  const calls = []
+  const replies = []
+  const contentWindow = { postMessage: (value, origin) => replies.push({ value, origin }) }
+  const getElement = id => {
+    if (!elements.has(id)) elements.set(id, { contentWindow, addEventListener() {} })
+    return elements.get(id)
+  }
+  let fail = false
+  const api = {
+    t3Send: async payload => { calls.push(['send', payload]); if (fail) throw new Error('Send failed'); return { ok: true, threadId: 'test-thread' } },
+    t3Start: async payload => { calls.push(['start', payload]); return { ok: true, threadId: 'new-thread' } },
+    openProject: async payload => { calls.push(['open', payload]); return { folder: payload.root } },
+    onState() {}, state: () => new Promise(() => {}),
+  }
+  const context = vm.createContext({ window: { agentFlowDesktop: api, addEventListener: (name, handler) => listeners.set(name, handler) },
+    document: { getElementById: getElement } })
+  vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../shell.js'), 'utf8'), context)
+  vm.runInContext("currentURL = 'http://127.0.0.1:42001'", context)
+  const event = { source: contentWindow, origin: 'http://127.0.0.1:42001', data: { type: 'agent-flow:desktop-request', id: 'request-1', action: 't3-send', payload: { message: 'fake' } } }
+  const receive = listeners.get('message')
+  for (const invalid of [{ ...event, source: {} }, { ...event, origin: 'http://evil.example' },
+    ...[{}, { id: '' }, { id: 1 }, { id: 'x'.repeat(101) }, { action: 'toString' }, { action: 'close' }, { type: 'other' }]
+      .map(patch => ({ ...event, data: Object.keys(patch).length ? { ...event.data, ...patch } : {} }))]) await receive(invalid)
+  assert.equal(calls.length, 0)
+  assert.equal(replies.length, 0)
+  for (const [action, method] of [['t3-send', 'send'], ['t3-start', 'start'], ['open-project', 'open']]) {
+    await receive({ ...event, data: { ...event.data, action } })
+    assert.equal(calls.at(-1)[0], method)
+    assert.equal(replies.at(-1).value.type, 'agent-flow:desktop-response')
+    assert.equal(replies.at(-1).value.id, 'request-1')
+    assert.equal(replies.at(-1).value.ok, true)
+    assert.equal(replies.at(-1).origin, event.origin)
+  }
+  fail = true
+  await receive(event)
+  assert.equal(replies.at(-1).value.ok, false)
+  assert.equal(replies.at(-1).value.error, 'Send failed')
+})
+
+test('orb preload exposes prompt invokes and fire-and-forget window actions in the main frame', async () => {
   const calls = []
   let api
   const source = fs.readFileSync(path.resolve(__dirname, '../orb-preload.cjs'), 'utf8')
@@ -16,7 +73,7 @@ test('orb preload exposes only fire-and-forget actions in the main frame', () =>
     process: { isMainFrame },
     require: () => ({
       contextBridge: { exposeInMainWorld(name, value) { assert.equal(name, 'agentFlowOrb'); api = value } },
-      ipcRenderer: { send: (...args) => calls.push(args) },
+      ipcRenderer: { send: (...args) => calls.push(args), invoke: async (...args) => { calls.push(args); return 'result' } },
     }),
   })
   run(false)
@@ -26,8 +83,13 @@ test('orb preload exposes only fire-and-forget actions in the main frame', () =>
   api.moveTo({ x: 10, y: 20, done: true })
   api.openFull()
   api.menu()
+  api.setExpanded(true)
+  assert.equal(await api.t3Send({ message: 'hi' }), 'result')
+  assert.equal(await api.t3Start({ message: 'new' }), 'result')
+  assert.equal(await api.openProject({ root: 'project' }), 'result')
   assert.deepEqual(calls, [
     ['orb:set-interactive', true], ['orb:move-to', { x: 10, y: 20, done: true }], ['orb:open-full'], ['orb:menu'],
+    ['orb:set-expanded', true], ['orb:t3-send', { message: 'hi' }], ['orb:t3-start', { message: 'new' }], ['orb:open-project', { root: 'project' }],
   ])
 })
 
@@ -37,7 +99,7 @@ test('orb settings accept bounded integer coordinates and never restore open mod
   const context = vm.createContext({
     require: id => id === 'electron' ? { app: { setName() {}, getPath: () => root, requestSingleInstanceLock: () => false, quit() {} } }
       : id === './mobile-profile.cjs' ? { configureMobileProfile() {} }
-        : id === './mobile-pairing.cjs' ? { resolveMobileConfig() {} } : require(id),
+        : id === './mobile-pairing.cjs' ? { resolveMobileConfig() {} } : id === './t3-cli.cjs' ? require('../t3-cli.cjs') : require(id),
     __dirname: path.resolve(__dirname, '..'), process,
   })
   vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../main.cjs'), 'utf8'), context)
@@ -82,7 +144,9 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
     }
     isDestroyed() { return Boolean(this.destroyed) }
     setAlwaysOnTop(value, level) { this.pin = value; this.level = level }
-    setIgnoreMouseEvents(value, options) { this.ignoreMouse = value; this.forward = options.forward }
+    setIgnoreMouseEvents(value, options = {}) { this.ignoreMouse = value; this.forward = options.forward }
+    setResizable(value) { this.resizable = value }
+    setFocusable(value) { this.focusable = value }
     hide() { this.hidden = true }
     show() { this.hidden = false }
     focus() { this.focused = true }
@@ -126,14 +190,30 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
     return { set: (side, width) => edge.calls.push([side, width]), remove: () => edge.calls.push(['off']) }
   } }
   const source = fs.readFileSync(path.resolve(__dirname, '../main.cjs'), 'utf8')
+  const promptCalls = []
+  const t3 = {
+    ...require('../t3-cli.cjs').createT3CLI(),
+    t3Send: async payload => { promptCalls.push(['send', payload]); return { ok: true, threadId: 'test-thread' } },
+    t3Start: async payload => { promptCalls.push(['start', payload]); return { ok: true, threadId: 'new-thread' } },
+  }
   vm.runInNewContext(source, {
-    require: id => id === 'electron' ? electron : id === './appbar.cjs' ? appbar : id === './mobile-profile.cjs' ? { configureMobileProfile() {} } : id === './mobile-pairing.cjs' ? { resolveMobileConfig() {}, createPairingQR: async () => ({ dataURL: 'test-qr' }) } : require(id),
+    require: id => id === 'electron' ? electron : id === './t3-cli.cjs' ? { createT3CLI: () => t3 } : id === './appbar.cjs' ? appbar : id === './mobile-profile.cjs' ? { configureMobileProfile() {} } : id === './mobile-pairing.cjs' ? { resolveMobileConfig() {}, createPairingQR: async () => ({ dataURL: 'test-qr' }) } : require(id),
     __dirname: path.resolve(__dirname, '..'), process: Object.create(process, { platform: { value: 'win32' } }), console, setTimeout, clearTimeout,
   })
   await new Promise(resolve => setImmediate(resolve))
   const trusted = { sender: window.webContents, senderFrame: window.webContents.mainFrame }
   const invoke = (key, payload) => handlers.get(`desktop:${key}`)(trusted, payload)
   const sendOrb = (orb, key, payload, sender = orb.webContents) => listeners.get(`orb:${key}`)({ sender }, payload)
+  for (const key of ['t3-send', 't3-start', 'open-project']) {
+    assert.equal(typeof handlers.get(`desktop:${key}`), 'function')
+    for (const event of [{ ...trusted, sender: {} }, { ...trusted, senderFrame: { url: trusted.senderFrame.url } }]) {
+      assert.throws(() => handlers.get(`desktop:${key}`)(event, {}), /Untrusted desktop request/)
+    }
+    assert.throws(() => handlers.get(`orb:${key}`)({ sender: window.webContents }, {}), /Untrusted orb request/)
+  }
+  assert.equal((await invoke('t3-send', { message: 'fake' })).threadId, 'test-thread')
+  assert.equal((await invoke('t3-start', { message: 'fake' })).threadId, 'new-thread')
+  assert.throws(() => invoke('open-project', { root: path.join(root, 'missing') }), /existing directory/)
   assert.equal(window.pin, true)
   assert.equal(window.options.webPreferences.nodeIntegration, false)
   assert.equal(window.options.webPreferences.contextIsolation, true)
@@ -155,7 +235,7 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   invoke('toggle-pin')
   assert.equal(window.pin, false)
   selected = { canceled: false, filePaths: [folders[0]] }
-  await invoke('choose-folder')
+  await invoke('open-project', { root: folders[0] })
   assert.equal(invoke('state').folder, fs.realpathSync(folders[0]))
   const activeURL = invoke('state').url
   invoke('toggle-widget')
@@ -242,6 +322,43 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   assert.deepEqual(orb.getPosition(), [1636, 786])
   assert.equal(menus.length, 0)
   assert.equal(orb.destroyed, undefined)
+  for (const key of ['t3-send', 't3-start', 'open-project']) {
+    assert.throws(() => handlers.get(`orb:${key}`)({ sender: window.webContents }, {}), /Untrusted orb request/)
+  }
+  assert.equal((await handlers.get('orb:t3-send')({ sender: orb.webContents }, { message: 'orb fake' })).threadId, 'test-thread')
+  assert.equal((await handlers.get('orb:t3-start')({ sender: orb.webContents }, { message: 'orb fake' })).threadId, 'new-thread')
+  assert.throws(() => handlers.get('orb:open-project')({ sender: orb.webContents }, { root: 'missing-directory' }), /existing directory/)
+  assert.equal(promptCalls.length, 4)
+  // Centre and top edge are preserved where the work area permits it.
+  orb.setPosition(500, 100)
+  sendOrb(orb, 'set-expanded', true, window.webContents)
+  assert.equal(orb.bounds.width, 260)
+  sendOrb(orb, 'set-expanded', true)
+  assert.deepEqual({ ...orb.bounds }, { x: 440, y: 100, width: 380, height: 520 })
+  assert.equal(orb.ignoreMouse, false)
+  assert.equal(orb.focusable, true)
+  assert.equal(orb.focused, true)
+  assert.equal(orb.resizable, false)
+  sendOrb(orb, 'set-interactive', false)
+  assert.equal(orb.ignoreMouse, false, 'Expanded composer stays interactive')
+  sendOrb(orb, 'set-expanded', true)
+  assert.equal(orb.bounds.x, 440, 'Repeated expansion does not shift the window')
+  sendOrb(orb, 'move-to', { x: 9999, y: 9999 })
+  assert.deepEqual(orb.getPosition(), [1540, 560], 'Expanded movement clamps to its actual size')
+  sendOrb(orb, 'set-expanded', false)
+  assert.deepEqual({ ...orb.bounds }, { x: 1600, y: 560, width: 260, height: 270 })
+  assert.equal(orb.ignoreMouse, true)
+  assert.equal(orb.forward, true)
+  assert.equal(orb.focusable, false)
+  orb.setPosition(500, 100)
+  sendOrb(orb, 'set-expanded', true)
+  sendOrb(orb, 'set-expanded', false)
+  assert.deepEqual({ ...orb.bounds }, { x: 500, y: 100, width: 260, height: 270 })
+  orb.setPosition(1636, 786)
+  sendOrb(orb, 'set-expanded', true)
+  assert.deepEqual({ ...orb.bounds }, { x: 1540, y: 560, width: 380, height: 520 }, 'Expansion clamps to the work area')
+  sendOrb(orb, 'set-expanded', false)
+  orb.setPosition(1636, 786)
   sendOrb(orb, 'set-interactive', true)
   assert.equal(orb.ignoreMouse, false)
   sendOrb(orb, 'set-interactive', 'false')

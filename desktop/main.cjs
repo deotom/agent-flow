@@ -3,6 +3,7 @@ const { app, BrowserWindow, dialog, ipcMain, Menu, utilityProcess, screen } = re
 const fs = require('node:fs')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
+const t3CLI = require('./t3-cli.cjs').createT3CLI()
 
 app.setName('Agent Flow')
 const { resolveMobileConfig, createPairingQR } = require('./mobile-pairing.cjs')
@@ -12,6 +13,7 @@ require('./mobile-profile.cjs').configureMobileProfile(app)
 const shellURL = pathToFileURL(path.join(__dirname, 'shell.html')).href
 let win
 let orbWin
+let orbExpanded = false
 let worker
 let pendingWorker
 let settings = { alwaysOnTop: true, lastFolder: '', widgetMode: true, runtime: 'auto', dock: 'off', dockWidth: 380,
@@ -307,6 +309,7 @@ function toggleOrb() {
     return snapshot()
   }
   const area = screen.getDisplayMatching(win.getBounds()).workArea
+  orbExpanded = false
   const saved = settings.orbPosition
   const onScreen = saved && screen.getAllDisplays().some(({ workArea: a }) =>
     saved.x >= a.x && saved.y >= a.y && saved.x + 260 <= a.x + a.width && saved.y + 270 <= a.y + a.height)
@@ -332,8 +335,30 @@ function toggleOrb() {
   publish()
   return snapshot()
 }
+function setOrbExpanded(value) {
+  if (typeof value !== 'boolean' || value === orbExpanded) return
+  const bounds = orbWin.getBounds()
+  const width = value ? 380 : 260
+  const height = value ? 520 : 270
+  const area = screen.getDisplayMatching(bounds).workArea
+  const x = Math.max(area.x, Math.min(bounds.x + (bounds.width - width) / 2, area.x + area.width - width))
+  const y = Math.max(area.y, Math.min(bounds.y, area.y + area.height - height))
+  orbWin.setResizable(true)
+  try { orbWin.setBounds({ x: Math.round(x), y, width, height }) }
+  finally { orbWin.setResizable(false) }
+  orbExpanded = value
+  orbWin.setIgnoreMouseEvents(!value, { forward: true })
+  orbWin.setFocusable(value)
+  if (value) orbWin.focus()
+}
+function openProject(payload) {
+  return openFolder(t3CLI.projectRoot(payload?.root))
+}
 function registerIPC() {
   const actions = {
+    'desktop:t3-send': t3CLI.t3Send,
+    'desktop:t3-start': t3CLI.t3Start,
+    'desktop:open-project': openProject,
     'desktop:state': snapshot,
     'desktop:choose-folder': chooseFolder,
     'desktop:open-last': () => settings.lastFolder ? openFolder(settings.lastFolder) : snapshot(),
@@ -362,14 +387,16 @@ function registerIPC() {
     return handler(payload)
   })
   const orbActions = {
+    'orb:set-expanded': setOrbExpanded,
     'orb:set-interactive': value => {
-      if (typeof value === 'boolean') orbWin.setIgnoreMouseEvents(!value, { forward: true })
+      if (typeof value === 'boolean') orbWin.setIgnoreMouseEvents(orbExpanded ? false : !value, { forward: true })
     },
     'orb:move-to': value => {
       if (!value || !Number.isFinite(value.x) || !Number.isFinite(value.y) || (value.done !== undefined && typeof value.done !== 'boolean')) return
-      const area = screen.getDisplayMatching({ x: Math.round(value.x), y: Math.round(value.y), width: 260, height: 270 }).workArea
-      const x = Math.max(area.x, Math.min(Math.round(value.x), area.x + area.width - 260))
-      const y = Math.max(area.y, Math.min(Math.round(value.y), area.y + area.height - 270))
+      const { width, height } = orbWin.getBounds()
+      const area = screen.getDisplayMatching({ x: Math.round(value.x), y: Math.round(value.y), width, height }).workArea
+      const x = Math.max(area.x, Math.min(Math.round(value.x), area.x + area.width - width))
+      const y = Math.max(area.y, Math.min(Math.round(value.y), area.y + area.height - height))
       orbWin.setPosition(x, y)
       if (value.done === true) {
         settings.orbPosition = { x, y }
@@ -387,6 +414,12 @@ function registerIPC() {
   for (const [channel, handler] of Object.entries(orbActions)) ipcMain.on(channel, (event, payload) => {
     if (orbWin && event.sender === orbWin.webContents) handler(payload)
   })
+  for (const [channel, handler] of Object.entries({ 'orb:t3-send': t3CLI.t3Send, 'orb:t3-start': t3CLI.t3Start, 'orb:open-project': openProject })) {
+    ipcMain.handle(channel, (event, payload) => {
+      if (!orbWin || event.sender !== orbWin.webContents) throw new Error('Untrusted orb request')
+      return handler(payload)
+    })
+  }
 }
 function createWindow() {
   const size = settings.widgetMode ? settings.widgetSize : settings.fullSize

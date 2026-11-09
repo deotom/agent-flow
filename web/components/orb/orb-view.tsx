@@ -1,10 +1,10 @@
 'use client'
 /**
  * Orb mode: a floating, transparent reactor for the current team.
- * The lead is drawn with the Mission Map renderer; workers orbit it as status dots.
+ * The lead is drawn with the Mission Map renderer; workers are small satellite reactors on the upper arc.
  * Desktop hooks (drag, click-through, open full view, menu) come from the orb preload when present.
  */
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTeamFeed } from '@/hooks/use-team-feed'
 import { buildMissionView, type MissionView } from '@/lib/mission-model'
 import { missionPresentation } from '@/lib/graph-presentation'
@@ -12,17 +12,21 @@ import { createEmptyState } from '@/hooks/simulation/types'
 import { orbSummary, pickOrbTeam, type OrbSummary } from '@/lib/orb-model'
 import { drawMissionAgents, MISSION_COLORS } from '@/components/agent-visualizer/canvas/draw-mission'
 import type { TeamAgentStatus } from '@/lib/team-types'
+import { STATUS_LABEL } from '@/lib/team-model'
+import { PromptBar } from '@/components/prompt/prompt-bar'
+import { canSendPrompts } from '@/lib/desktop-actions'
 
 interface OrbDesktop {
   setInteractive(value: boolean): void
   moveTo(position: { x: number; y: number; done?: boolean }): void
   openFull(): void
   menu(): void
+  setExpanded?(value: boolean): void
 }
 declare global { interface Window { agentFlowOrb?: OrbDesktop } }
 
 export const ORB_SIZE = { width: 260, height: 270 }
-const CENTER = { x: 130, y: 104 }
+const CENTER = { x: 130, y: 112 }
 const ORBIT = 84
 const HIT_RADIUS = 104
 const TAU = Math.PI * 2
@@ -47,33 +51,83 @@ function leadScene(summary: OrbSummary | null): { view: MissionView; agents: Ret
   return { view, agents: missionPresentation(createEmptyState(), view).agents }
 }
 
-function drawOrbit(ctx: CanvasRenderingContext2D, summary: OrbSummary, time: number) {
-  const count = summary.dots.length
+/** Satellites sit on the upper arc so they never cover the lead's plate below. */
+const SAT_ORBIT = 90
+const SAT_RADIUS = 12
+const RUNTIME_MARK: Record<string, { letter: string; color: string }> = {
+  claude: { letter: 'C', color: '#f0a070' }, codex: { letter: 'X', color: '#c3f5ff' },
+}
+export function satellitePositions(count: number, time = 0): Array<{ x: number; y: number }> {
+  const span = Math.min(Math.PI * 1.45, Math.max(0, count - 1) * 0.62)
+  return Array.from({ length: count }, (_, index) => {
+    const angle = -Math.PI / 2 - span / 2 + (count > 1 ? (index / (count - 1)) * span : 0)
+    const bob = Math.sin(time * 1.4 + index * 1.7) * 1.6
+    return { x: Math.cos(angle) * (SAT_ORBIT + bob), y: Math.sin(angle) * (SAT_ORBIT + bob) }
+  })
+}
+
+function drawSatellites(ctx: CanvasRenderingContext2D, summary: OrbSummary, time: number) {
+  const positions = satellitePositions(summary.dots.length, time)
   summary.dots.forEach((dot, index) => {
-    const angle = -Math.PI / 2 + (index / Math.max(count, 1)) * TAU + (dot.working ? time * 0.35 : 0)
-    const x = Math.cos(angle) * ORBIT, y = Math.sin(angle) * ORBIT
+    const { x, y } = positions[index]
     const color = DOT_COLOR[dot.status]
+    const waiting = dot.status === 'waiting_approval' || dot.status === 'waiting_input'
+    const settled = !dot.working && !waiting && dot.status !== 'failed'
+    const distance = Math.hypot(x, y), ux = x / distance, uy = y / distance
     ctx.save()
-    ctx.globalAlpha = dot.working || dot.status.startsWith('waiting') || dot.status === 'failed' ? 1 : 0.45
+    ctx.globalAlpha = settled ? 0.55 : 1
+    // Tether from the lead's ring to the satellite; a light packet travels out while the worker works.
+    const from = 62, to = distance - SAT_RADIUS - 2
+    ctx.strokeStyle = `${color}55`; ctx.lineWidth = 1; ctx.setLineDash([2, 3])
+    ctx.beginPath(); ctx.moveTo(ux * from, uy * from); ctx.lineTo(ux * to, uy * to); ctx.stroke(); ctx.setLineDash([])
     if (dot.working) {
-      const glow = ctx.createRadialGradient(x, y, 0, x, y, 11)
-      glow.addColorStop(0, `${color}aa`); glow.addColorStop(1, `${color}00`)
-      ctx.fillStyle = glow
-      ctx.beginPath(); ctx.arc(x, y, 11, 0, TAU); ctx.fill()
+      const t = (time * 0.9 + index * 0.37) % 1, r = from + (to - from) * t
+      ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 6
+      ctx.beginPath(); ctx.arc(ux * r, uy * r, 1.6, 0, TAU); ctx.fill(); ctx.shadowBlur = 0
     }
-    ctx.fillStyle = color
-    ctx.beginPath(); ctx.arc(x, y, dot.working ? 4.2 : 3.4, 0, TAU); ctx.fill()
+    // Halo
+    if (!settled) {
+      const pulse = waiting ? 0.5 + 0.5 * Math.sin(time * 5) : 0.75
+      const glow = ctx.createRadialGradient(x, y, SAT_RADIUS * 0.6, x, y, SAT_RADIUS * 2.1)
+      glow.addColorStop(0, `${color}${Math.round(80 * pulse).toString(16).padStart(2, '0')}`); glow.addColorStop(1, `${color}00`)
+      ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(x, y, SAT_RADIUS * 2.1, 0, TAU); ctx.fill()
+    }
+    // Core
+    const core = ctx.createRadialGradient(x - 2, y - 2, 1, x, y, SAT_RADIUS)
+    core.addColorStop(0, '#1d3a55'); core.addColorStop(1, '#071321')
+    ctx.fillStyle = core; ctx.beginPath(); ctx.arc(x, y, SAT_RADIUS - 2.5, 0, TAU); ctx.fill()
+    // Segmented status ring, spinning while the worker works
+    const segments = 6, gap = 0.28, spin = dot.working ? time * 2.2 : 0
+    ctx.strokeStyle = color; ctx.lineWidth = 2.2; ctx.lineCap = 'round'
+    if (!settled) { ctx.shadowColor = color; ctx.shadowBlur = 5 }
+    for (let i = 0; i < segments; i++) {
+      const a = spin + (i / segments) * TAU
+      ctx.beginPath(); ctx.arc(x, y, SAT_RADIUS, a + gap / 2, a + TAU / segments - gap / 2); ctx.stroke()
+    }
+    ctx.shadowBlur = 0
+    // Runtime mark in the core
+    const mark = RUNTIME_MARK[dot.runtime ?? ''] ?? { letter: '•', color: '#9fc4d8' }
+    ctx.fillStyle = mark.color; ctx.font = '700 10px "Cascadia Mono", Consolas, monospace'
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(mark.letter, x, y + 0.5)
+    // Outcome badge
+    const badge = waiting ? { text: '?', fill: MISSION_COLORS.waiting } : dot.status === 'failed' ? { text: '!', fill: MISSION_COLORS.failed }
+      : dot.status === 'done' ? { text: '✓', fill: MISSION_COLORS.received } : null
+    if (badge) {
+      const bx = x + SAT_RADIUS * 0.75, by = y - SAT_RADIUS * 0.75
+      ctx.globalAlpha = 1; ctx.fillStyle = badge.fill
+      ctx.beginPath(); ctx.arc(bx, by, 4.3, 0, TAU); ctx.fill()
+      ctx.fillStyle = '#04121c'; ctx.font = '800 6.5px Segoe UI, sans-serif'; ctx.fillText(badge.text, bx, by + 0.4)
+    }
     ctx.restore()
   })
   if (summary.overflow > 0) {
     ctx.save()
     ctx.font = '600 10px "Cascadia Mono", Consolas, monospace'
-    ctx.fillStyle = '#9fd8ee'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
-    ctx.fillText(`+${summary.overflow}`, ORBIT * 0.72, -ORBIT * 0.72)
+    ctx.fillStyle = '#9fd8ee'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText(`+${summary.overflow}`, SAT_ORBIT * 0.95, SAT_ORBIT * 0.2)
     ctx.restore()
   }
 }
-
 function drawAlert(ctx: CanvasRenderingContext2D, alert: OrbSummary['alert'], time: number) {
   if (!alert) return
   ctx.save()
@@ -95,7 +149,12 @@ function drawAlert(ctx: CanvasRenderingContext2D, alert: OrbSummary['alert'], ti
 export function OrbView() {
   const feed = useTeamFeed()
   const canvas = useRef<HTMLCanvasElement>(null)
-  const snapshot = pickOrbTeam(feed.snapshots, feed.locked)
+  const [focusTeam, setFocusTeam] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  const expandedRef = useRef(false)
+  const baseTitle = useRef('Agent Flow')
+  // A team the user just prompted from the orb takes over until they lock another one.
+  const snapshot = pickOrbTeam(feed.snapshots, feed.locked ?? focusTeam)
   const summary = useMemo(() => snapshot ? orbSummary(snapshot) : null, [snapshot])
   const scene = useMemo(() => leadScene(summary), [summary])
   const latest = useRef({ summary, scene })
@@ -134,23 +193,28 @@ export function OrbView() {
         return
       }
       drawAlert(ctx, current.alert, time)
-      drawOrbit(ctx, current, time)
+      drawSatellites(ctx, current, time)
       drawMissionAgents(ctx, lead.agents, lead.view, null, null, time, true, 1, true)
     }
     frame = requestAnimationFrame(render)
     return () => cancelAnimationFrame(frame)
   }, [])
 
-  // Desktop behaviour: click-through outside the orb, drag to move, double-click to open, right-click for the menu.
+  //   // Desktop behaviour: click-through outside the orb, drag to move, click for the prompt panel,
+  // double-click to open the full view, right-click for the menu.
   useEffect(() => {
     const desktop = window.agentFlowOrb
     if (!desktop) return
     const api: OrbDesktop = desktop
     let interactive = false
+    let clickTimer = 0
     let drag: { x: number; y: number; left: number; top: number; moved: boolean } | null = null
     const over = (event: MouseEvent) => {
-      const dx = event.clientX - CENTER.x, dy = event.clientY - CENTER.y
-      const onLabel = event.clientY > CENTER.y + 50 && event.clientY < CENTER.y + 160 && Math.abs(dx) < 120
+      const rect = canvas.current?.getBoundingClientRect()
+      if (!rect) return false
+      const x = event.clientX - rect.left, y = event.clientY - rect.top
+      const dx = x - CENTER.x, dy = y - CENTER.y
+      const onLabel = y > CENTER.y + 50 && y < CENTER.y + 160 && Math.abs(dx) < 120
       return Math.hypot(dx, dy) <= HIT_RADIUS || onLabel
     }
     const move = (event: PointerEvent) => {
@@ -160,6 +224,16 @@ export function OrbView() {
         if (drag.moved) api.moveTo({ x: drag.left + dx, y: drag.top + dy })
         return
       }
+      // Name and status of the worker under the pointer.
+      const rect = canvas.current?.getBoundingClientRect(), current = latest.current.summary
+      if (rect && canvas.current && current) {
+        const px = event.clientX - rect.left - CENTER.x, py = event.clientY - rect.top - CENTER.y
+        const index = satellitePositions(current.dots.length).findIndex(point => Math.hypot(point.x - px, point.y - py) <= SAT_RADIUS + 5)
+        const dot = current.dots[index]
+        canvas.current.title = dot ? `\n${STATUS_LABEL[dot.status]}` : baseTitle.current
+      }
+      // While the panel is open the whole window takes input; only the collapsed orb is click-through.
+      if (expandedRef.current) return
       const hit = over(event)
       if (hit !== interactive) { interactive = hit; api.setInteractive(hit) }
     }
@@ -169,12 +243,17 @@ export function OrbView() {
       ;(event.target as Element).setPointerCapture?.(event.pointerId)
     }
     const up = (event: PointerEvent) => {
-      if (drag?.moved) api.moveTo({ x: drag.left + event.screenX - drag.x, y: drag.top + event.screenY - drag.y, done: true })
+      const current = drag
       drag = null
+      if (!current) return
+      if (current.moved) { api.moveTo({ x: current.left + event.screenX - current.x, y: current.top + event.screenY - current.y, done: true }); return }
+      // A single click toggles the prompt panel; wait briefly so a double-click can open the full view instead.
+      window.clearTimeout(clickTimer)
+      clickTimer = window.setTimeout(() => setExpanded(value => !value), 260)
     }
-    const leave = () => { if (!drag && interactive) { interactive = false; api.setInteractive(false) } }
-    const open = (event: MouseEvent) => { if (over(event)) api.openFull() }
-    const menu = (event: MouseEvent) => { event.preventDefault(); if (over(event)) api.menu() }
+    const leave = () => { if (!drag && interactive && !expandedRef.current) { interactive = false; api.setInteractive(false) } }
+    const open = (event: MouseEvent) => { if (over(event)) { window.clearTimeout(clickTimer); api.openFull() } }
+    const menu = (event: MouseEvent) => { if (!over(event)) return; event.preventDefault(); api.menu() }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerdown', down)
     window.addEventListener('pointerup', up)
@@ -183,6 +262,7 @@ export function OrbView() {
     window.addEventListener('dblclick', open)
     window.addEventListener('contextmenu', menu)
     return () => {
+      window.clearTimeout(clickTimer)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerdown', down)
       window.removeEventListener('pointerup', up)
@@ -193,7 +273,27 @@ export function OrbView() {
     }
   }, [])
 
-  const title = snapshot ? `${snapshot.title}\nDouble-click to open Agent Flow · right-click for options` : 'Agent Flow'
-  return <canvas ref={canvas} title={title} aria-label={summary ? `${snapshot!.title}: ${summary.line}` : 'No T3 team'}
-    style={{ width: ORB_SIZE.width, height: ORB_SIZE.height, display: 'block', cursor: 'grab', background: 'transparent' }} />
+  useEffect(() => {
+    expandedRef.current = expanded
+    window.agentFlowOrb?.setExpanded?.(expanded)
+  }, [expanded])
+
+  const threads = useMemo(() => Object.values(feed.snapshots)
+    .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+    .map(team => ({ id: team.sessionId, label: team.title })), [feed.snapshots])
+
+  const title = snapshot ? `${snapshot.title}\nClick to prompt · double-click to open Agent Flow · right-click for options` : 'Agent Flow'
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', background: 'transparent' }}>
+      <canvas ref={canvas} title={title} aria-label={summary ? `${snapshot!.title}: ${summary.line}` : 'No T3 team'}
+        style={{ width: ORB_SIZE.width, height: ORB_SIZE.height, display: 'block', cursor: 'grab', background: 'transparent', flexShrink: 0 }} />
+      {expanded && canSendPrompts() && (
+        <div style={{ width: 360, marginTop: -6 }}>
+          <PromptBar compact autoFocus projects={feed.projects} threads={threads} selectedThreadId={snapshot?.sessionId ?? null}
+            onClose={() => setExpanded(false)}
+            onSent={sessionId => { setFocusTeam(sessionId); window.setTimeout(() => setExpanded(false), 1400) }} />
+        </div>
+      )}
+    </div>
+  )
 }

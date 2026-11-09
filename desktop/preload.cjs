@@ -3,6 +3,9 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 // Expose individual actions only. The embedded graph receives no Node access.
 if (process.isMainFrame) contextBridge.exposeInMainWorld('agentFlowDesktop', {
+  t3Send: payload => ipcRenderer.invoke('desktop:t3-send', payload),
+  t3Start: payload => ipcRenderer.invoke('desktop:t3-start', payload),
+  openProject: payload => ipcRenderer.invoke('desktop:open-project', payload),
   state: () => ipcRenderer.invoke('desktop:state'),
   chooseFolder: () => ipcRenderer.invoke('desktop:choose-folder'),
   openLast: () => ipcRenderer.invoke('desktop:open-last'),

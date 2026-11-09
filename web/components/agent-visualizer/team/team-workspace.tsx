@@ -27,6 +27,8 @@ interface TeamWorkspaceProps {
   onPane: (pane: TeamPane) => void
   viewerControls?: ReactNode
   renderGraph: (selectedId: string | null, onSelect: (id: string | null) => void, hiddenIds: ReadonlySet<string>, mission: MissionView | undefined) => ReactNode
+  /** Prompt bar shown under the board and the graph when the desktop app can send prompts. */
+  promptBar?: ReactNode
 }
 
 const providerName = (runtime: TeamAgentRow['runtime']) => runtime === 'claude' ? 'Claude' : runtime === 'codex' ? 'Codex' : null
@@ -277,7 +279,7 @@ function DetailPanel({ snapshot, agentId, live, now, onSelect, onClose }: { snap
   )
 }
 
-export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSession, teamSnapshots, health, transport, animationMode, scope, onScope, pane, onPane, viewerControls, renderGraph }: TeamWorkspaceProps) {
+export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSession, teamSnapshots, health, transport, animationMode, scope, onScope, pane, onPane, viewerControls, renderGraph, promptBar }: TeamWorkspaceProps) {
   const now = useClock(1000)
   const snapshot = selectedSessionId ? teamSnapshots[selectedSessionId] ?? null : null
   const connection = connectionView(transport, health, now)
@@ -375,6 +377,7 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
         {selectedExists && snapshot && <DetailPanel snapshot={snapshot} agentId={selectedAgentId!} live={live} now={now} onSelect={select} onClose={() => select(null)} />}
       </main>
 
+      {promptBar}
       {widget && <footer className="jv-foot"><ConnectionPill connection={connection} health={health} now={now} compact /></footer>}
     </div>
   )

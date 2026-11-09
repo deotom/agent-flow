@@ -4,7 +4,10 @@ import * as path from 'node:path'
 import { TypedEventEmitter } from './typed-event-emitter'
 import type { AgentEvent, SessionInfo } from './protocol'
 import type { SessionLifecycleEvent } from './session-runtime'
-import { projectT3Teams, type T3Projection, type T3Row, type T3Team } from './t3-projection'
+import { projectT3Teams, t3WorkspaceMatches, type T3Projection, type T3Row, type T3Team } from './t3-projection'
+
+/** A T3 project the prompt bar can target. Only id, title and folder: no scripts, settings or icons. */
+export interface T3ProjectInfo { id: string; title: string; root: string; current: boolean }
 // @ts-ignore -- shared web contract intentionally lives outside extension/rootDir.
 import type { SourceHealth } from '../../web/lib/team-types'
 
@@ -24,12 +27,17 @@ export class T3SessionWatcher {
   private diagnostics = new TypedEventEmitter<string>()
   private sessionLists = new TypedEventEmitter<SessionInfo[]>()
   private sourceHealthEvents = new TypedEventEmitter<SourceHealth>()
+  private projectLists = new TypedEventEmitter<T3ProjectInfo[]>()
+  private projectList: T3ProjectInfo[] = []
+  private projectFingerprint = ''
   readonly onEvent = this.events.event
   readonly onSessionLifecycle = this.lifecycle.event
   readonly onSessionDetected = this.detected.event
   readonly onDiagnostic = this.diagnostics.event
   readonly onSessionsChanged = this.sessionLists.event
   readonly onSourceHealth = this.sourceHealthEvents.event
+  readonly onProjectsChanged = this.projectLists.event
+  get projects(): T3ProjectInfo[] { return this.projectList }
   private teams = new Map<string, T3Team>()
   private fingerprints = new Map<string, string>()
   private timer?: ReturnType<typeof setInterval>
@@ -54,7 +62,21 @@ export class T3SessionWatcher {
   replaySessionStart(ids?: string[], options?: { latestOnly?: boolean; onSnapshot?: (event: AgentEvent) => void }): void {
     for (const [id, team] of this.teams) if (!ids || ids.includes(id)) (options?.onSnapshot || (event => this.events.fire(event)))(team.event)
   }
-  poll(): void {
+    private updateProjects(rows: T3Row[]): void {
+    const list = rows.filter(row => !row.deleted_at && !row.archived_at && typeof row.workspace_root === 'string' && row.workspace_root)
+      .map(row => {
+        const root = String(row.workspace_root)
+        return { id: String(row.project_id), title: String(row.title || '') || path.basename(root), root,
+          current: this.workspaces.some(workspace => t3WorkspaceMatches(workspace, root) || t3WorkspaceMatches(root, workspace)) }
+      })
+      .sort((a, b) => Number(b.current) - Number(a.current) || a.title.localeCompare(b.title))
+    const fingerprint = JSON.stringify(list)
+    if (fingerprint === this.projectFingerprint) return
+    this.projectFingerprint = fingerprint
+    this.projectList = list
+    this.projectLists.fire(list)
+  }
+poll(): void {
     if (this.disposed) return
     const checkedAt = Date.now()
     let db: ReadDatabase | undefined
@@ -118,6 +140,10 @@ export class T3SessionWatcher {
       }
       this.teams = next
       if (changed) this.sessionLists.fire(this.getActiveSessions())
+      // Titles feed only the prompt bar; an older schema without them must not stop team monitoring.
+      let projectRows = projects
+      try { projectRows = db.prepare(`SELECT project_id, title, workspace_root, deleted_at, archived_at FROM projection_projects`).all() } catch { /* use folder names */ }
+      this.updateProjects(projectRows)
       this.lastSuccessAt = checkedAt
       if (changed) this.lastChangeAt = checkedAt
       if (this.lastError) this.diagnostics.fire('T3 local teams (read-only)')

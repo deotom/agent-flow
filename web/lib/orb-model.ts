@@ -7,7 +7,7 @@ import type { TeamAgentStatus, TeamSnapshot } from './team-types'
 
 export const ORB_MAX_DOTS = 8
 
-export interface OrbDot { id: string; status: TeamAgentStatus; working: boolean }
+export interface OrbDot { id: string; status: TeamAgentStatus; working: boolean; name: string; runtime: 'claude' | 'codex' | null }
 export interface OrbSummary {
   snapshot: TeamSnapshot
   /** Workers in the open team, working ones first, at most ORB_MAX_DOTS. */
@@ -34,7 +34,7 @@ export function orbSummary(snapshot: TeamSnapshot): OrbSummary {
   const view = buildTeamView(snapshot, 'active')
   const workers = view.rows.filter(row => row.agent.role !== 'lead').map(row => row.agent)
   workers.sort((a, b) => Number(isWorking(b.status)) - Number(isWorking(a.status)))
-  const dots = workers.slice(0, ORB_MAX_DOTS).map(agent => ({ id: agent.id, status: agent.status, working: isWorking(agent.status) }))
+  const dots = workers.slice(0, ORB_MAX_DOTS).map(agent => ({ id: agent.id, status: agent.status, working: isWorking(agent.status), name: agent.name, runtime: agent.runtime }))
   const kinds = new Set(view.attention.map(item => item.kind))
   const alert = kinds.has('waiting') ? 'waiting' : kinds.has('failed') ? 'failed' : null
   const working = workers.filter(agent => isWorking(agent.status)).length

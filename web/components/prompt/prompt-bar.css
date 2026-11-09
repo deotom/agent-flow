@@ -1,0 +1,28 @@
+/* Prompt bar: HUD glass that matches the team view, usable in a thin docked strip and in the orb. */
+.pb-root {
+  display: flex; flex-direction: column; gap: 6px; padding: 8px 10px;
+  border-top: 1px solid rgba(95, 225, 255, 0.18);
+  background: linear-gradient(180deg, rgba(5, 16, 28, 0.6), rgba(8, 22, 38, 0.92));
+  font: 12px "Segoe UI", system-ui, sans-serif; color: #dce9f5;
+}
+.pb-targets { display: flex; gap: 6px; min-width: 0; }
+.pb-select {
+  flex: 1 1 0; min-width: 0; padding: 3px 6px; border-radius: 6px; font: inherit; font-size: 11px;
+  color: #b5d8e5; background: #0d1a2a; border: 1px solid #2a4a5e; text-overflow: ellipsis;
+}
+.pb-select:focus-visible, .pb-input:focus-visible { outline: 1px solid #5fe1ff; outline-offset: 1px; }
+.pb-input-row { display: flex; gap: 6px; align-items: flex-end; }
+.pb-input {
+  flex: 1; min-width: 0; resize: none; max-height: 140px; padding: 6px 8px; border-radius: 8px; font: inherit;
+  color: #eaf6ff; background: rgba(3, 12, 22, 0.85); border: 1px solid #2a4a5e; field-sizing: content;
+}
+.pb-input::placeholder { color: #5f7f94; }
+.pb-send {
+  flex-shrink: 0; width: 32px; height: 30px; border-radius: 8px; font-size: 14px; cursor: pointer;
+  color: #04222c; background: #5fe1ff; border: 0; box-shadow: 0 0 12px rgba(95, 225, 255, 0.45);
+}
+.pb-send:disabled { cursor: default; color: #5f7f94; background: #13283a; box-shadow: none; }
+.pb-status { margin: 0; font-size: 11px; }
+.pb-status[data-kind="ok"] { color: #3dff9a; }
+.pb-status[data-kind="error"] { color: #ff8da1; }
+.pb-root[data-compact="true"] { border: 1px solid rgba(95, 225, 255, 0.3); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 18px rgba(95, 225, 255, 0.15); }

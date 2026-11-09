@@ -116,8 +116,18 @@ function finishResize(event) {
 }
 grip.addEventListener('pointerup', finishResize)
 grip.addEventListener('pointercancel', finishResize)
-window.addEventListener('message', event => {
-  if (currentURL && event.source === element('graph').contentWindow && event.origin === currentURL && event.data?.type === 'desktop:ready') sendMode()
+window.addEventListener('message', async event => {
+  if (!currentURL || event.source !== element('graph').contentWindow || event.origin !== currentURL) return
+  if (event.data?.type === 'desktop:ready') { sendMode(); return }
+  const { type, id, action, payload } = event.data || {}
+  const actions = { 't3-send': api.t3Send, 't3-start': api.t3Start, 'open-project': api.openProject }
+  if (type !== 'agent-flow:desktop-request' || typeof id !== 'string' || !id.length || id.length > 100 || !Object.hasOwn(actions, action)) return
+  const source = event.source
+  const origin = currentURL
+  let response
+  try { response = { type: 'agent-flow:desktop-response', id, ok: true, result: await actions[action](payload) } }
+  catch (error) { response = { type: 'agent-flow:desktop-response', id, ok: false, error: String(error.message || 'Desktop request failed.').slice(0, 200) } }
+  source.postMessage(response, origin)
 })
 api.onState(render)
 act(api.state)

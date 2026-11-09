@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from 'react'
 import type { TeamSnapshot } from '@/lib/team-types'
+import { projectsIn, type T3ProjectInfo } from './use-t3-projects'
 
 interface RelayEvent { type?: string; sessionId?: string; payload?: { source?: string; team?: unknown } }
 
@@ -26,7 +27,8 @@ export function lockedTeamId(): string | null {
   try { return localStorage.getItem('agent-flow-session-locked') === 'true' ? localStorage.getItem('agent-flow-locked-session') : null } catch { return null }
 }
 
-export function useTeamFeed(): { snapshots: Record<string, TeamSnapshot>; locked: string | null; connected: boolean } {
+export function useTeamFeed(): { snapshots: Record<string, TeamSnapshot>; projects: T3ProjectInfo[]; locked: string | null; connected: boolean } {
+  const [projects, setProjects] = useState<T3ProjectInfo[]>([])
   const [snapshots, setSnapshots] = useState<Record<string, TeamSnapshot>>({})
   const [connected, setConnected] = useState(false)
   const [locked, setLocked] = useState(lockedTeamId)
@@ -43,6 +45,8 @@ export function useTeamFeed(): { snapshots: Record<string, TeamSnapshot>; locked
         if (id) setSnapshots(previous => { if (!(id in previous)) return previous; const next = { ...previous }; delete next[id]; return next })
         return
       }
+      const list = projectsIn(data)
+      if (list) { setProjects(list); return }
       const teams = teamSnapshotsIn(data)
       if (teams.length) setSnapshots(previous => {
         const next = { ...previous }
@@ -55,5 +59,5 @@ export function useTeamFeed(): { snapshots: Record<string, TeamSnapshot>; locked
     window.addEventListener('storage', storage)
     return () => { source.close(); window.removeEventListener('storage', storage) }
   }, [])
-  return { snapshots, locked, connected }
+  return { snapshots, projects, locked, connected }
 }

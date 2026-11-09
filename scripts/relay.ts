@@ -473,6 +473,9 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
     t3Watcher.onEvent(broadcastEvent)
     t3Watcher.onSessionLifecycle(event => broadcastSessionLifecycle(event.type, event.sessionId, event.label))
     t3Watcher.onSessionsChanged(sessions => broadcast(JSON.stringify({ type: 'session-list', sessions })))
+    // Projects only feed the local prompt bar: never mirrored to the mobile viewer.
+    t3Watcher.onProjectsChanged(projects => distributeRelayMessage(JSON.stringify({ type: 't3-projects', projects }), sseClients, remoteMirror, false,
+      client => sseClients.delete(client as http.ServerResponse)))
     t3Watcher.onSourceHealth(health => {
       broadcastSourceHealth(health)
       broadcastT3ConnectionStatus(health)
@@ -568,6 +571,7 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
         sessionList.push(...t3Watcher.getActiveSessions())
         if (t3Watcher.sourceHealth) sendSSE(res, { type: 'source-health', health: t3Watcher.sourceHealth })
         sendSSE(res, { type: 'connection-status', status: t3ConnectionStatus(t3Watcher.sourceHealth), source: t3Watcher.diagnostic })
+        sendSSE(res, { type: 't3-projects', projects: t3Watcher.projects })
       }
       if (sessionList.length > 0) {
         sendSSE(res, { type: 'session-list', sessions: sessionList })
