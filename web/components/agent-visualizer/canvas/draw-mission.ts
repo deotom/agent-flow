@@ -545,7 +545,7 @@ export function drawMissionAgents(
     else ctx.fillText(glyph, agent.x, agent.y - (subtitle ? 5 : 0))
     if (node.role !== 'lead' && runtime && detailed) {
       const offset = radius * 0.74
-      drawRuntimeBadge(ctx, runtime, agent.x + offset, agent.y - offset, Math.max(6, radius * 0.24), color + 'c0')
+      drawRuntimeBadge(ctx, runtime, agent.x + offset, agent.y - offset, Math.max(9, radius * 0.36), color + 'c0')
     }
     if (subtitle) {
       ctx.font = `bold 10px ${FONT}`

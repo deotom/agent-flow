@@ -72,7 +72,7 @@ export interface MissionView {
 export const STAGE_TAG: Record<MissionStage, { word: string; rest: string }> = {
   working: { word: 'dispatch', rest: '(task)' },
   waiting: { word: 'await', rest: ' you()' },
-  queued: { word: 'return', rest: ' // queued' },
+  queued: { word: 'return', rest: ' // waiting' },
   sent: { word: 'send', rest: '(result)' },
   received: { word: 'ack', rest: ' ✓' },
   failed: { word: 'throw', rest: ' Err' },
@@ -141,7 +141,7 @@ function statusLine(agent: TeamAgentRow, stage: MissionStage, role: MissionNode[
   if (agent.status === 'waiting_input') return 'await you() // answer'
   if (role === 'lead') return agent.status === 'idle' ? '› idle' : `› ${agent.status}`
   switch (stage) {
-    case 'queued': return 'done // not sent'
+    case 'queued': return 'done // waiting for lead'
     case 'sent': return 'sent // await ack'
     case 'received': return 'done // acked'
     case 'failed': return 'throw // failed'
