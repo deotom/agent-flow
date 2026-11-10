@@ -16,6 +16,7 @@ import { STATUS_LABEL } from '@/lib/team-model'
 import { PromptBar } from '@/components/prompt/prompt-bar'
 import { canSendPrompts } from '@/lib/desktop-actions'
 import { modelChoices } from '@/lib/prompt-model'
+import { drawRuntimeMark, isRuntime } from '@/components/agent-visualizer/canvas/runtime-mark'
 
 interface OrbDesktop {
   setInteractive(value: boolean): void
@@ -61,9 +62,6 @@ function leadScene(summary: OrbSummary | null): { view: MissionView; agents: Ret
 /** Satellites sit on the upper arc so they never cover the lead's plate below. */
 const SAT_ORBIT = 90
 const SAT_RADIUS = 12
-const RUNTIME_MARK: Record<string, { letter: string; color: string }> = {
-  claude: { letter: 'C', color: '#f0a070' }, codex: { letter: 'X', color: '#c3f5ff' },
-}
 export function satellitePositions(count: number, time = 0): Array<{ x: number; y: number }> {
   const span = Math.min(Math.PI * 1.45, Math.max(0, count - 1) * 0.62)
   return Array.from({ length: count }, (_, index) => {
@@ -113,9 +111,9 @@ function drawSatellites(ctx: CanvasRenderingContext2D, summary: OrbSummary, time
     }
     ctx.shadowBlur = 0
     // Runtime mark in the core
-    const mark = RUNTIME_MARK[dot.runtime ?? ''] ?? { letter: '•', color: '#9fc4d8' }
-    ctx.fillStyle = mark.color; ctx.font = '700 10px "Cascadia Mono", Consolas, monospace'
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(mark.letter, x, y + 0.5)
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    if (isRuntime(dot.runtime)) drawRuntimeMark(ctx, dot.runtime, x, y, 11)
+    else { ctx.fillStyle = '#9fc4d8'; ctx.font = '700 10px "Cascadia Mono", Consolas, monospace'; ctx.fillText('•', x, y + 0.5) }
     // Outcome badge
     const badge = waiting ? { text: '?', fill: MISSION_COLORS.waiting } : dot.status === 'failed' ? { text: '!', fill: MISSION_COLORS.failed }
       : dot.status === 'done' ? { text: '✓', fill: MISSION_COLORS.received } : null

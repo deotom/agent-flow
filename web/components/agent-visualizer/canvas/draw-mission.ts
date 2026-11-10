@@ -4,6 +4,8 @@ import { captionLayout } from '@/lib/agent-caption'
 import { STAGE_TAG, type MissionNode, type MissionStage, type MissionView } from '@/lib/mission-model'
 import { getAgentGlowSprite, measureTextCached } from './render-cache'
 import { truncateText } from './draw-misc'
+import { drawCoreFx } from './core-fx'
+import { drawRuntimeBadge, drawRuntimeMark, isRuntime } from './runtime-mark'
 
 const TAU = Math.PI * 2
 const FONT = '"Cascadia Mono", Consolas, monospace'
@@ -483,6 +485,7 @@ export function drawMissionAgents(
     ctx.strokeStyle = color + (active ? 'ff' : '99')
     ctx.lineWidth = active ? 2 : 1
     ctx.stroke()
+    if (node.role === 'lead' && detailed) drawCoreFx(ctx, agent.x, agent.y, core, color, time, moving && stage === 'working', moving)
     // The status ring turns while work moves: fast when working, slow while a result is in transit.
     const spin = !moving ? 0 : stage === 'working' ? time * 0.8 : stage === 'sent' ? time * 0.3 : 0
     ctx.save()
@@ -527,7 +530,23 @@ export function drawMissionAgents(
     const subtitle = node.collapsed ? `+${node.hiddenChildren}` : node.role === 'lead' ? 'LEAD' : node.role === 'sublead' ? `×${node.summary.children}` : ''
     // The thinking glyph counts its dots so a quiet worker still reads as alive.
     const glyph = node.glyph === '…' && moving ? '.'.repeat(1 + Math.floor(time * 2) % 3) : node.glyph
-    ctx.fillText(glyph, agent.x, agent.y - (subtitle ? 5 : 0))
+    // The lead's core shows which AI runs it; other nodes wear it as a small rim badge.
+    const runtime = isRuntime(node.runtime) ? node.runtime : null
+    if (node.role === 'lead' && runtime) {
+      // The mark floats like a hologram: a faint cyan ghost just beside it, then the mark over a soft glow.
+      ctx.save()
+      ctx.globalAlpha *= 0.22
+      drawRuntimeMark(ctx, runtime, agent.x + 0.8, agent.y - 6, core * 0.62, '#5ff0ff')
+      ctx.restore()
+      const glow = core * 0.55
+      ctx.drawImage(getAgentGlowSprite(color, 0, glow, '50'), agent.x - glow, agent.y - 6 - glow, glow * 2, glow * 2)
+      drawRuntimeMark(ctx, runtime, agent.x, agent.y - 6, core * 0.62)
+    }
+    else ctx.fillText(glyph, agent.x, agent.y - (subtitle ? 5 : 0))
+    if (node.role !== 'lead' && runtime && detailed) {
+      const offset = radius * 0.74
+      drawRuntimeBadge(ctx, runtime, agent.x + offset, agent.y - offset, Math.max(6, radius * 0.24), color + 'c0')
+    }
     if (subtitle) {
       ctx.font = `bold 10px ${FONT}`
       ctx.fillStyle = '#eaf6ff'

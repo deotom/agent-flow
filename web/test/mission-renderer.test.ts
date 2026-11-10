@@ -20,7 +20,7 @@ function recorder(offscreen = false) {
       if (key === 'restore') return () => Object.assign(props, stack.pop())
       if (key === 'setLineDash') return (dash: number[]) => { props.dash = dash }
       if (key === 'measureText') return (text: string) => ({ width: Array.from(text).length * 5 })
-      if (key === 'createRadialGradient') return () => {
+      if (key === 'createRadialGradient' || key === 'createLinearGradient' || key === 'createConicGradient') return () => {
         assert.ok(offscreen, 'gradient allocated on live rendering context')
         gradients++
         return { addColorStop() {} }
