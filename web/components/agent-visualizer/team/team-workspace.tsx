@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { SessionInfo } from '@/lib/bridge-types'
 import type { SourceHealth, TeamAgentRow, TeamSnapshot, TeamTaskRow, TransportState } from '@/lib/team-types'
-import { LEGEND, STATUS_LABEL, ageLabel, buildTeamView, connectionView, deliverySteps, describeActivity, teamTitle, type AttentionItem, type ConnectionView, type TeamRow, type TeamScope, type TeamView } from '@/lib/team-model'
+import { LEGEND, STATUS_LABEL, ageLabel, buildTeamView, connectionView, deliverySteps, describeActivity, teamTitle, treeGuides, type AttentionItem, type TreeGuide, type ConnectionView, type TeamRow, type TeamScope, type TeamView } from '@/lib/team-model'
 import { buildMissionView, type MissionView } from '@/lib/mission-model'
 import { formatModelName } from '@/lib/utils'
 import type { AnimationMode } from '@/lib/viewer-preferences'
@@ -170,13 +170,16 @@ function AttentionPanel({ items, onOpen, onDismiss, limit }: { items: AttentionI
   )
 }
 
-function AgentRowCard({ row, selected, live, now, compact, onSelect }: { row: TeamRow; selected: boolean; live: boolean; now: number; compact: boolean; onSelect: (id: string) => void }) {
+const rowDepth = (row: TeamRow, compact: boolean) => compact ? Math.min(row.depth, 2) : Math.min(row.depth, 5)
+
+function AgentRowCard({ row, guides, selected, live, now, compact, onSelect }: { row: TeamRow; guides: TreeGuide[]; selected: boolean; live: boolean; now: number; compact: boolean; onSelect: (id: string) => void }) {
   const { agent, task } = row
   const provider = providerName(agent.runtime)
   const currentTitle = agent.status === 'running' ? agent.activities.at(-1)?.title?.trim() : undefined
-  const depth = compact ? Math.min(row.depth, 2) : Math.min(row.depth, 5)
+  const depth = rowDepth(row, compact)
   return (
     <li className="jv-row-wrap" data-depth={depth} data-status={agent.status} data-live={live} style={{ '--jv-depth': depth } as CSSProperties}>
+      {guides.map((guide, index) => guide && <span key={index} className="jv-guide" data-guide={guide} aria-hidden="true" style={{ '--jv-level': index + 1 } as CSSProperties} />)}
       <button className="jv-row" data-selected={selected} data-status={agent.status} data-role={agent.role} data-live={live} aria-pressed={selected} onClick={() => onSelect(agent.id)}
         title={`${agent.name}${agent.task ? `\n\n${agent.task.slice(0, 300)}` : ''}`}>
         <span className="jv-brackets" aria-hidden="true" />
@@ -286,6 +289,7 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
   const live = connection.live
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set())
   const view = useMemo(() => snapshot ? buildTeamView(snapshot, scope, dismissed) : null, [snapshot, scope, dismissed])
+  const guides = useMemo(() => view ? treeGuides(view.rows.map(row => rowDepth(row, widget))) : [], [view, widget])
   // The graph shows the same agents as the board, so a scope rule holds in both views.
   const hiddenIds = useMemo<ReadonlySet<string>>(() => {
     if (!snapshot || !view) return new Set()
@@ -364,7 +368,7 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
             {view ? (
               <>
                 <ol className="jv-tree" aria-label="Team members">
-                  {view.rows.map(row => <AgentRowCard key={row.agent.id} row={row} selected={row.agent.id === selectedAgentId} live={live} now={now} compact={widget} onSelect={id => select(id === selectedAgentId ? null : id)} />)}
+                  {view.rows.map((row, index) => <AgentRowCard key={row.agent.id} row={row} guides={guides[index]} selected={row.agent.id === selectedAgentId} live={live} now={now} compact={widget} onSelect={id => select(id === selectedAgentId ? null : id)} />)}
                 </ol>
                 {scope === 'active' && view.hiddenFinished > 0 && (
                   <button className="jv-more" onClick={() => onScope('session')}>{view.hiddenFinished} finished hidden · Show whole session</button>

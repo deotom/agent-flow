@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { withoutAgents } from '../lib/graph-presentation'
-import { ageLabel, buildTeamView, connectionView, deliverySteps, plainToolLabel, statusText } from '../lib/team-model'
+import { ageLabel, buildTeamView, connectionView, deliverySteps, plainToolLabel, statusText, treeGuides } from '../lib/team-model'
 import type { SourceHealth, TeamAgentRow, TeamSnapshot, TeamTaskRow } from '../lib/team-types'
 
 const agent = (id: string, fields: Partial<TeamAgentRow> = {}): TeamAgentRow => ({
@@ -163,4 +163,16 @@ describe('background commands', () => {
     assert.equal(statusText(lead), 'Waiting on 2 background commands')
     assert.equal(isWorking('background'), true)
   })
+})
+
+it('tree guides keep trunks unbroken across siblings and nested children', () => {
+  assert.deepEqual(treeGuides([0, 1, 2, 2, 1, 1]), [
+    [],
+    ['tee'],
+    ['pass', 'tee'],
+    ['pass', 'last'],
+    ['tee'],
+    ['last'],
+  ])
+  assert.deepEqual(treeGuides([0, 1, 2]), [[], ['last'], [null, 'last']])
 })

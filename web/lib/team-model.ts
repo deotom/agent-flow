@@ -258,3 +258,26 @@ export function connectionView(transport: TransportState, health: SourceHealth |
 export function teamTitle(label: string): string {
   return label.replace(/^T3\s*·\s*/, '') || 'Untitled team'
 }
+
+/** One tree guide column beside a row: a trunk passing by, a branch with siblings below, or the last branch. */
+export type TreeGuide = 'pass' | 'tee' | 'last' | null
+
+/**
+ * Guides for a flat, depth-first list of rows. Entry k-1 of a row's guides is the column for level k:
+ * at the row's own level it is 'tee' when a sibling follows and 'last' otherwise; above it, 'pass' when
+ * that ancestor's trunk continues further down. Drawing these per row gives unbroken connectors.
+ */
+export function treeGuides(depths: number[]): TreeGuide[][] {
+  return depths.map((depth, index) => {
+    const guides: TreeGuide[] = []
+    for (let level = 1; level <= depth; level++) {
+      let continues = false
+      for (let next = index + 1; next < depths.length; next++) {
+        if (depths[next] < level) break
+        if (depths[next] === level) { continues = true; break }
+      }
+      guides.push(level === depth ? (continues ? 'tee' : 'last') : continues ? 'pass' : null)
+    }
+    return guides
+  })
+}

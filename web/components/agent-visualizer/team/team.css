@@ -219,14 +219,36 @@
 .jv-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); position: relative; }
 .jv-board { min-height: 0; overflow: auto; padding: 12px 16px 16px; scrollbar-width: thin; scrollbar-color: rgba(95, 225, 255, 0.25) transparent; }
 .jv-graph { min-height: 0; position: relative; overflow: hidden; }
-.jv-tree { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.jv-row-wrap { position: relative; padding-left: calc(var(--jv-depth, 0) * 22px); }
-.jv-row-wrap::before {
-  content: ""; position: absolute; top: -6px; bottom: 50%; width: 12px;
-  left: calc(var(--jv-depth, 0) * 22px - 13px);
-  border-left: 1px solid var(--jv-line-strong); border-bottom: 1px solid var(--jv-line-strong); border-bottom-left-radius: 6px;
+.jv-tree {
+  list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--jv-gap);
+  /* Indent per level, gap between rows, and where a parent's trunk drops (clear of its card's rounded corner). */
+  --jv-indent: 24px; --jv-gap: 6px; --jv-trunk: 14px;
 }
-.jv-row-wrap[data-depth="0"]::before { display: none; }
+.jv-row-wrap { position: relative; padding-left: calc(var(--jv-depth, 0) * var(--jv-indent)); }
+
+/* Tree connectors. Each row draws one column per level, so the trunks run unbroken from parent to last child. */
+.jv-guide {
+  position: absolute; pointer-events: none; top: calc(-1 * var(--jv-gap)); bottom: 0;
+  left: calc((var(--jv-level) - 1) * var(--jv-indent) + var(--jv-trunk)); width: calc(var(--jv-indent) - var(--jv-trunk));
+  border-left: 1px solid var(--jv-line-strong);
+}
+.jv-guide[data-guide="last"] { bottom: 50%; border-bottom: 1px solid var(--jv-line-strong); border-bottom-left-radius: 6px; }
+/* A branch off a trunk that carries on below. */
+.jv-guide[data-guide="tee"]::before {
+  content: ""; position: absolute; left: 0; right: 0; top: calc(var(--jv-gap) + (100% - var(--jv-gap)) / 2);
+  border-top: 1px solid var(--jv-line-strong);
+}
+/* Port where the branch meets the card. */
+.jv-guide:is([data-guide="tee"], [data-guide="last"])::after {
+  content: ""; position: absolute; right: -3px; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--jv-bg, #06101c); border: 1px solid var(--jv-line-strong);
+}
+.jv-guide[data-guide="tee"]::after { top: calc(var(--jv-gap) + (100% - var(--jv-gap)) / 2 - 3px); }
+.jv-guide[data-guide="last"]::after { bottom: -3px; }
+/* A working child lights its own branch and port, not the shared trunk. */
+.jv-row-wrap:is([data-status="running"], [data-status="thinking"]) > .jv-guide:is([data-guide="tee"], [data-guide="last"])::after { background: var(--c); border-color: var(--c); box-shadow: 0 0 6px var(--c); }
+.jv-row-wrap:is([data-status="running"], [data-status="thinking"]) > .jv-guide[data-guide="tee"]::before,
+.jv-row-wrap:is([data-status="running"], [data-status="thinking"]) > .jv-guide[data-guide="last"] { border-color: color-mix(in srgb, var(--c) 60%, transparent); }
 
 .jv-row {
   position: relative; width: 100%; display: grid !important; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px;
@@ -389,8 +411,7 @@
   .jv-root:not([data-widget="true"]) .jv-link-age { white-space: nowrap; }
   .jv-root:not([data-widget="true"]) .jv-attention { padding: 6px 10px 0; }
   .jv-root:not([data-widget="true"]) .jv-board { padding: 8px 10px 10px; }
-  .jv-root:not([data-widget="true"]) .jv-row-wrap { padding-left: calc(var(--jv-depth, 0) * 12px); }
-  .jv-root:not([data-widget="true"]) .jv-row-wrap::before { left: calc(var(--jv-depth, 0) * 12px - 8px); width: 6px; }
+  .jv-root:not([data-widget="true"]) .jv-tree { --jv-indent: 18px; --jv-trunk: 12px; }
   .jv-root:not([data-widget="true"]) .jv-detail { width: 100%; }
   .jv-root:not([data-widget="true"]) .jv-row { gap: 10px; padding: 8px 10px; }
   .jv-root:not([data-widget="true"]) .jv-row-head { flex-wrap: wrap; row-gap: 2px; }
@@ -430,10 +451,9 @@
 .jv-root[data-widget="true"] .jv-attention .jv-more { margin-top: 0; padding: 2px 8px; font-size: 11px; }
 .jv-root[data-widget="true"] .jv-alert-body { padding: 4px 8px; }
 .jv-root[data-widget="true"] .jv-board { padding: 8px 10px 10px; }
-.jv-root[data-widget="true"] .jv-tree { gap: 4px; }
+.jv-root[data-widget="true"] .jv-tree { --jv-gap: 4px; }
 .jv-root[data-widget="true"] .jv-row { gap: 8px; padding: 6px 8px; }
-.jv-root[data-widget="true"] .jv-row-wrap { padding-left: calc(var(--jv-depth, 0) * 12px); }
-.jv-root[data-widget="true"] .jv-row-wrap::before { left: calc(var(--jv-depth, 0) * 12px - 8px); width: 6px; }
+.jv-root[data-widget="true"] .jv-tree { --jv-indent: 18px; --jv-trunk: 12px; }
 .jv-root[data-widget="true"] .jv-row-name { -webkit-line-clamp: 1; }
 .jv-root[data-widget="true"] .jv-row-meta { flex-wrap: nowrap; overflow: hidden; }
 .jv-root[data-widget="true"] .jv-row-meta > span { overflow: hidden; text-overflow: ellipsis; }
@@ -492,13 +512,19 @@
 /* Delegation link: a data packet travels down the connector to a working worker. */
 .jv-row-wrap::after {
   content: ""; position: absolute; width: 5px; height: 5px; border-radius: 50%; pointer-events: none; opacity: 0;
-  left: calc(var(--jv-depth, 0) * 22px - 15px); top: -6px;
+  --jv-packet-x: calc((var(--jv-depth, 0) - 1) * var(--jv-indent) + var(--jv-trunk) - 2px);
+  left: var(--jv-packet-x); top: calc(-1 * var(--jv-gap));
   background: var(--c, var(--jv-cyan)); box-shadow: 0 0 8px var(--c, var(--jv-cyan));
 }
-.jv-row-wrap:not([data-depth="0"])[data-live="true"]:is([data-status="running"], [data-status="thinking"])::after { animation: jv-packet calc(1.8s * var(--jv-speed)) ease-in infinite; }
-@keyframes jv-packet { 0% { top: -6px; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { top: calc(50% - 3px); opacity: 0; } }
-.jv-root[data-widget="true"] .jv-row-wrap::after { left: calc(var(--jv-depth, 0) * 12px - 10px); }
-.jv-row-wrap:not([data-depth="0"]):is([data-status="running"], [data-status="thinking"])::before { border-color: color-mix(in srgb, var(--c) 60%, transparent); }
+.jv-row-wrap:not([data-depth="0"])[data-live="true"]:is([data-status="running"], [data-status="thinking"])::after { animation: jv-packet calc(1.8s * var(--jv-speed)) ease-in-out infinite; }
+/* Down the trunk, then along the branch into the card. */
+@keyframes jv-packet {
+  0% { top: calc(-1 * var(--jv-gap)); left: var(--jv-packet-x); opacity: 0; }
+  12% { opacity: 1; }
+  65% { top: calc(50% - 2px); left: var(--jv-packet-x); }
+  90% { opacity: 1; }
+  100% { top: calc(50% - 2px); left: calc(var(--jv-depth, 0) * var(--jv-indent) - 3px); opacity: 0; }
+}
 
 /* Pipeline: the Working stage shimmers while it has work. */
 .jv-root[data-live="true"] .jv-stage[data-stage="working"]:not([data-empty="true"])::after {
