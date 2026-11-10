@@ -1,6 +1,6 @@
 /**
- * Holographic interior for the lead's core: a fine hex lattice, counter-turning instrument rings,
- * a radar sweep and scanlines. Idle holds still and only breathes; work sets it turning.
+ * Interior for the lead's core: a minimap of source code in syntax colours plus counter-turning
+ * instrument rings. Idle holds still and only breathes; work scrolls the code and turns the rings.
  * Every gradient lives in a cached sprite, so a frame allocates nothing on the live context.
  */
 import { getAgentGlowSprite } from './render-cache'
@@ -38,9 +38,6 @@ function base(r: number, color: string, scale: number, busy: boolean, small: boo
     well.addColorStop(1, color + '00')
     ctx.fillStyle = well
     ctx.fillRect(-r, -r, r * 2, r * 2)
-    ctx.fillStyle = 'rgba(200, 240, 255, 0.05)'
-    const gap = Math.max(small ? 3 : 2, r / (small ? 9 : 14))
-    for (let y = -r; y < r; y += gap) ctx.fillRect(-r, y, r * 2, 0.6)
     const shine = ctx.createLinearGradient(0, -r, 0, 0)
     shine.addColorStop(0, 'rgba(255,255,255,0.12)')
     shine.addColorStop(1, 'rgba(255,255,255,0)')
@@ -51,68 +48,72 @@ function base(r: number, color: string, scale: number, busy: boolean, small: boo
   })
 }
 
-/** A hex lattice faded toward the rim and the centre, so the mark stays crisp. */
-function lattice(r: number, color: string, scale: number) {
-  return sprite(`hex|${r}|${color}|${scale}`, r * 2, r * 2, scale, ctx => {
-    const cell = Math.max(3.2, r / 6)
-    const w = cell * Math.sqrt(3)
-    ctx.strokeStyle = color
-    ctx.lineWidth = 0.5
-    for (let row = -1; row * cell * 1.5 < r * 2 + cell; row++) {
-      for (let col = -1; col * w < r * 2 + w; col++) {
-        const cx = col * w + (row % 2 ? w / 2 : 0)
-        const cy = row * cell * 1.5
+const SYNTAX = ['#c7a6ff', '#5fe1ff', '#ffd479', '#7dffb0', '#dce9f7', '#5fe1ff']
+
+/** Small deterministic generator so the "code" is the same every frame and every launch. */
+function seeded(seed: number) {
+  let state = seed >>> 0
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0
+    let value = state
+    value = Math.imul(value ^ (value >>> 15), value | 1)
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61)
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+/** Line pitch of the code tile; the tile is a whole number of lines so it wraps seamlessly. */
+function codePitch(r: number, small: boolean) {
+  const pitch = Math.max(small ? 4 : 3, r / (small ? 6 : 7.5))
+  const lines = Math.max(4, Math.round((r * 2) / pitch))
+  return { pitch: (r * 2) / lines, lines }
+}
+
+/** A minimap of source code: indented token bars in syntax colours, with a faint gutter. */
+function codeTile(r: number, scale: number, small: boolean) {
+  const { pitch, lines } = codePitch(r, small)
+  return sprite(`code|${r}|${scale}|${small}`, r * 2, r * 2, scale, ctx => {
+    const random = seeded(r * 7919 + (small ? 1 : 0))
+    const bar = Math.max(1, pitch * 0.42)
+    let depth = 0
+    for (let line = 0; line < lines; line++) {
+      const y = line * pitch + (pitch - bar) / 2
+      // Gutter: one dim dot per line, like line numbers.
+      ctx.fillStyle = 'rgba(160, 200, 230, 0.35)'
+      ctx.fillRect(r * 0.2, y + bar * 0.2, bar * 0.6, bar * 0.6)
+      if (random() < 0.14) continue // blank line
+      // Blocks open and close, so indentation drifts like real code.
+      const roll = random()
+      depth = Math.max(0, Math.min(3, depth + (roll < 0.28 ? 1 : roll > 0.72 ? -1 : 0)))
+      let x = r * 0.36 + depth * r * 0.13
+      const tokens = 1 + Math.floor(random() * 4)
+      for (let token = 0; token < tokens && x < r * 1.85; token++) {
+        const width = r * (0.07 + random() * 0.3)
+        ctx.fillStyle = SYNTAX[Math.floor(random() * SYNTAX.length)]
         ctx.beginPath()
-        for (let i = 0; i < 6; i++) {
-          const angle = Math.PI / 6 + (i / 6) * TAU
-          ctx.lineTo(cx + Math.cos(angle) * cell, cy + Math.sin(angle) * cell)
-        }
-        ctx.closePath()
-        ctx.stroke()
+        ctx.roundRect(x, y, Math.min(width, r * 1.85 - x), bar, bar / 2)
+        ctx.fill()
+        x += width + r * 0.05
       }
     }
-    ctx.globalCompositeOperation = 'destination-in'
-    const fade = ctx.createRadialGradient(r, r, r * 0.15, r, r, r)
-    fade.addColorStop(0, 'rgba(0,0,0,0.25)')
-    fade.addColorStop(0.55, 'rgba(0,0,0,1)')
-    fade.addColorStop(1, 'rgba(0,0,0,0)')
-    ctx.fillStyle = fade
+  })
+}
+
+/** Darkens the top and bottom edges and the centre so the code reads as depth and the mark stays crisp. */
+function veil(r: number, scale: number) {
+  return sprite(`veil|${r}|${scale}`, r * 2, r * 2, scale, ctx => {
+    const edges = ctx.createLinearGradient(0, 0, 0, r * 2)
+    edges.addColorStop(0, 'rgba(4, 12, 22, 0.95)')
+    edges.addColorStop(0.3, 'rgba(4, 12, 22, 0)')
+    edges.addColorStop(0.7, 'rgba(4, 12, 22, 0)')
+    edges.addColorStop(1, 'rgba(4, 12, 22, 0.95)')
+    ctx.fillStyle = edges
     ctx.fillRect(0, 0, r * 2, r * 2)
-  })
-}
-
-/** Radar wedge pointing along +x: a fading tail behind a bright edge. Drawn rotated. */
-function sweep(r: number, color: string, scale: number) {
-  return sprite(`sweep|${r}|${color}|${scale}`, r * 2, r * 2, scale, ctx => {
-    ctx.translate(r, r)
-    ctx.beginPath()
-    ctx.arc(0, 0, r, 0, TAU)
-    ctx.clip()
-    const wedge = ctx.createConicGradient(0, 0, 0)
-    wedge.addColorStop(0, color + '00')
-    wedge.addColorStop(0.7, color + '00')
-    wedge.addColorStop(0.995, color + '80')
-    wedge.addColorStop(1, color + '00')
-    ctx.fillStyle = wedge
-    ctx.fillRect(-r, -r, r * 2, r * 2)
-    ctx.strokeStyle = color + 'dd'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.moveTo(0, 0)
-    ctx.lineTo(r, 0)
-    ctx.stroke()
-  })
-}
-
-/** A soft horizontal band of light that scans down the core while busy. */
-function band(r: number, color: string, scale: number) {
-  return sprite(`band|${r}|${color}|${scale}`, r * 2, r * 0.36, scale, ctx => {
-    const glow = ctx.createLinearGradient(0, 0, 0, r * 0.36)
-    glow.addColorStop(0, color + '00')
-    glow.addColorStop(0.5, color + '45')
-    glow.addColorStop(1, color + '00')
-    ctx.fillStyle = glow
-    ctx.fillRect(0, 0, r * 2, r * 0.36)
+    const centre = ctx.createRadialGradient(r, r * 0.85, 0, r, r * 0.85, r * 0.55)
+    centre.addColorStop(0, 'rgba(4, 12, 22, 0.75)')
+    centre.addColorStop(1, 'rgba(4, 12, 22, 0)')
+    ctx.fillStyle = centre
+    ctx.fillRect(0, 0, r * 2, r * 2)
   })
 }
 
@@ -137,7 +138,7 @@ function backingScale(ctx: CanvasRenderingContext2D): number {
 
 /**
  * Draw inside a core of radius `radius` centred on (x, y).
- * `busy` turns the rings and sweep; `animate` false freezes everything (reduced effects).
+ * `busy` scrolls the code and turns the rings; `animate` false freezes everything (reduced effects).
  */
 export function drawCoreFx(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, color: string, time: number, busy: boolean, animate: boolean) {
   const r = Math.max(4, Math.round(radius))
@@ -150,24 +151,30 @@ export function drawCoreFx(ctx: CanvasRenderingContext2D, x: number, y: number, 
   const alpha = ctx.globalAlpha
   ctx.translate(x, y)
   ctx.drawImage(base(r, color, scale, busy, small), -r, -r, r * 2, r * 2)
-  ctx.globalAlpha = alpha * (0.24 + 0.12 * breathe)
-  ctx.drawImage(lattice(r, color, scale), -r, -r, r * 2, r * 2)
-  ctx.globalAlpha = alpha
 
+  // Source code streams upward while the lead works; idle it holds still and only breathes.
+  ctx.save()
+  ctx.beginPath()
+  ctx.arc(0, 0, r - 0.5, 0, TAU)
+  ctx.clip()
+  const tile = codeTile(r, scale, small)
+  const { pitch } = codePitch(r, small)
+  const speed = pitch * 1.6 // lines per second, in canvas units
+  const offset = busy ? (t * speed) % (r * 2) : 0
+  ctx.globalAlpha = alpha * (busy ? 0.55 : 0.36 + 0.08 * breathe)
+  ctx.drawImage(tile, -r, -r - offset, r * 2, r * 2)
+  ctx.drawImage(tile, -r, r - offset, r * 2, r * 2)
+  ctx.globalAlpha = alpha
+  ctx.drawImage(veil(r, scale), -r, -r, r * 2, r * 2)
   if (busy) {
-    ctx.save()
-    ctx.rotate(t * 2.4)
-    ctx.drawImage(sweep(r, color, scale), -r, -r, r * 2, r * 2)
-    ctx.restore()
-    // The scan band passes top to bottom; the circle clip keeps it inside the core.
-    ctx.save()
-    ctx.beginPath()
-    ctx.arc(0, 0, r - 0.5, 0, TAU)
-    ctx.clip()
-    const top = ((t * 0.35) % 1) * r * 2.6 - r * 1.48
-    ctx.drawImage(band(r, color, scale), -r, top, r * 2, r * 0.36)
-    ctx.restore()
+    // A caret blinks at the line being written, low in the core.
+    const caretY = r * 0.62
+    if (Math.floor(t * 2) % 2 === 0) {
+      ctx.fillStyle = color
+      ctx.fillRect(-r * 0.3, caretY - pitch * 0.4, Math.max(1, r * 0.035), pitch * 0.8)
+    }
   }
+  ctx.restore()
 
   // Instrument rings: ticks one way, a broken arc the other.
   ctx.lineCap = 'round'
