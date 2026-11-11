@@ -166,14 +166,6 @@ export function drawCoreFx(ctx: CanvasRenderingContext2D, x: number, y: number, 
   ctx.drawImage(tile, -r, r - offset, r * 2, r * 2)
   ctx.globalAlpha = alpha
   ctx.drawImage(veil(r, scale), -r, -r, r * 2, r * 2)
-  if (busy) {
-    // A caret blinks at the line being written, low in the core.
-    const caretY = r * 0.62
-    if (Math.floor(t * 2) % 2 === 0) {
-      ctx.fillStyle = color
-      ctx.fillRect(-r * 0.3, caretY - pitch * 0.4, Math.max(1, r * 0.035), pitch * 0.8)
-    }
-  }
   ctx.restore()
 
   // Instrument rings: ticks one way, a broken arc the other.
