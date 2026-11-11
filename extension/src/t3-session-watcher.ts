@@ -10,7 +10,7 @@ import { projectT3Teams, t3WorkspaceMatches, type T3Projection, type T3Row, type
 export interface T3ProjectInfo { id: string; title: string; root: string; current: boolean }
 
 /**
- * The lead's latest reply, for the orb's fading caption. Local only: the relay never mirrors it to mobile.
+ * The lead's latest reply, for the orb's fading caption. Local only.
  * Only the reply text, cleaned and capped; never tool output, commands or the user's own messages.
  */
 export interface T3Reply { sessionId: string; text: string; at: number | null; streaming: boolean }
@@ -67,7 +67,8 @@ export class T3SessionWatcher {
   private lastChangeAt: number | null = null
   private latestHealth: SourceHealth | null = null
   private disposed = false
-  constructor(private workspaces: string[], readonly databasePath = process.env.AGENT_FLOW_T3_DB || path.join(os.homedir(), '.t3', 'userdata', 'statev2.sqlite')) {}
+  /** `workspaces` null watches every T3 project on this machine. */
+  constructor(private workspaces: string[] | null, readonly databasePath = process.env.AGENT_FLOW_T3_DB || path.join(os.homedir(), '.t3', 'userdata', 'statev2.sqlite')) {}
 
   start(): void {
     if (this.timer || this.disposed) return
@@ -108,7 +109,7 @@ export class T3SessionWatcher {
         const root = String(row.workspace_root)
         return { id: String(row.project_id), title: String(row.title || '') || path.basename(root), root,
           // Exact folder match only: a parent or nested project must be chosen explicitly, never guessed.
-          current: this.workspaces.some(workspace => t3WorkspaceMatches(workspace, root) && t3WorkspaceMatches(root, workspace)) }
+          current: this.workspaces !== null && this.workspaces.some(workspace => t3WorkspaceMatches(workspace, root) && t3WorkspaceMatches(root, workspace)) }
       })
       .sort((a, b) => Number(b.current) - Number(a.current) || a.title.localeCompare(b.title))
     const fingerprint = JSON.stringify(list)
@@ -127,7 +128,10 @@ poll(): void {
       const { DatabaseSync } = require('node:sqlite') as { DatabaseSync: new (file: string, options: { readOnly: boolean }) => ReadDatabase }
       db = new DatabaseSync(this.databasePath, { readOnly: true })
       db.exec('PRAGMA query_only = ON; PRAGMA busy_timeout = 100; BEGIN')
-      const projects = db.prepare(`SELECT project_id, workspace_root, deleted_at FROM projection_projects`).all()
+      // Titles name each team's project; an older schema without them falls back to folder names.
+      let projects: T3Row[]
+      try { projects = db.prepare(`SELECT project_id, title, workspace_root, deleted_at, archived_at FROM projection_projects`).all() }
+      catch { projects = db.prepare(`SELECT project_id, workspace_root, deleted_at FROM projection_projects`).all() }
       const threads = db.prepare(`SELECT thread_id, project_id, title, default_provider, active_provider_thread_id,
         created_at, updated_at, archived_at, deleted_at,
         json_object('lineage', json_extract(payload_json, '$.lineage'), 'modelSelection', json_extract(payload_json, '$.modelSelection'),
@@ -181,10 +185,7 @@ poll(): void {
       }
       this.teams = next
       if (changed) this.sessionLists.fire(this.getActiveSessions())
-      // Titles feed only the prompt bar; an older schema without them must not stop team monitoring.
-      let projectRows = projects
-      try { projectRows = db.prepare(`SELECT project_id, title, workspace_root, deleted_at, archived_at FROM projection_projects`).all() } catch { /* use folder names */ }
-      this.updateProjects(projectRows)
+      this.updateProjects(projects)
       this.updateReplies(db, [...next.keys()])
       this.lastSuccessAt = checkedAt
       if (changed) this.lastChangeAt = checkedAt

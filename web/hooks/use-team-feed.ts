@@ -30,7 +30,7 @@ export function lockedTeamId(): string | null {
 /** Whether the orb's picture is current: relay reachable and T3 readable. */
 export type FeedHealth = 'ok' | 'stale' | 'offline'
 
-/** The lead's latest reply per team (local only, never mirrored to mobile). */
+/** The lead's latest reply per team (local only). */
 export interface TeamReply { sessionId: string; text: string; at: number | null; streaming: boolean }
 
 /** Replies in a relay message, or null when it is not a reply list. Exported for tests. */

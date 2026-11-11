@@ -24,23 +24,11 @@ body { overflow: hidden; border: 1px solid #244457; }
 .widget h1 { font-size: 19px; margin: 4px 0 12px; }
 .widget p { font-size: 11px; line-height: 1.5; margin-bottom: 16px; }
 .widget .primary { padding: 9px 12px; font-size: 12px; }
-.widget #open-last { font-size: 11px; margin-top: 8px; }
+.widget #open-last, .widget #open-all-t3 { font-size: 11px; margin-top: 8px; }
 .widget .last-folder { font-size: 9px; margin-top: 2px; }
 .widget #error { padding: 7px; font-size: 10px; max-height: 65px; }
 @media (max-width: 320px) { .widget .brand-name { display: none; } }
 #resize-grip { display: none; }
-#mobile-dialog{background:#101c2d;color:#d8e7ef;border:1px solid #36576a;border-radius:14px;padding:20px;width:min(340px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow:auto;text-align:center}
-#mobile-dialog::backdrop{background:#030911c9}
-.mobile-dialog-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.mobile-dialog-heading h2{font-size:17px;margin:0;font-weight:500}
-#mobile-dialog p{font-size:12px;line-height:1.6;margin:15px 0}
-#mobile-qr{display:block;width:min(240px,100%);height:auto;margin:0 auto;border-radius:6px;background:white}
-#mobile-dialog .mobile-private{font-size:10px;color:#7994a9;margin-bottom:0}
-#mobile-error{color:#efba8f}
-.widget #mobile-dialog{padding:12px}
-.widget #mobile-dialog h2{font-size:14px}
-.widget #mobile-dialog p{font-size:10px;margin:8px 0}
-.widget #mobile-qr{width:min(200px,100%)}
 .widget #resize-grip { display: block; position: fixed; right: 2px; bottom: 2px; width: 17px; height: 17px; z-index: 10; cursor: nwse-resize; touch-action: none; background: repeating-linear-gradient(135deg, transparent 0 3px, #467587 3px 4px, transparent 4px 6px); clip-path: polygon(100% 0, 100% 100%, 0 100%); }
 
 /* Docked: a tall, narrow strip at a screen edge uses icon buttons so the toolbar fits. */
@@ -67,3 +55,5 @@ body { overflow: hidden; border: 1px solid #244457; }
   .widget .toolbar-actions, .docked .toolbar-actions { gap: 1px; }
   .widget .toolbar button, .docked .toolbar button { width: 24px; }
 }
+
+#open-all-t3 { display: block; margin: 12px auto 0; color: #73e3e8; border-color: #287a89; }

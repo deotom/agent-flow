@@ -18,15 +18,6 @@ const { distributeRelayMessage, t3ConnectionStatus, allowLocalRequest } = bundle
 const unavailable: SourceHealth = { source: 't3', state: 'unavailable', checkedAt: 1, lastSuccessAt: null,
   lastChangeAt: null, pollIntervalMs: 2000, reason: 'T3 projection unavailable.' }
 
-test('source health can be sent to SSE without entering the mobile mirror', () => {
-  const sent: string[] = [], mobile: string[] = []
-  const message = JSON.stringify({ type: 'source-health', health: unavailable })
-  distributeRelayMessage(message, [{ write: value => { sent.push(String(value)); return true } }], { ingest: value => mobile.push(value) }, false)
-  assert.equal(sent.length, 1)
-  assert.equal(sent[0].includes('source-health'), true)
-  assert.deepEqual(mobile, [])
-})
-
 test('T3 source failures render disconnected instead of live/watching', () => {
   assert.equal(t3ConnectionStatus(unavailable), 'disconnected')
   assert.equal(t3ConnectionStatus({ ...unavailable, state: 'ok', reason: null }), 'connected')
@@ -37,7 +28,7 @@ test('T3 source failures render disconnected instead of live/watching', () => {
 test('SSE drops slow or failed sinks and continues serving healthy clients', () => {
   // write() returning false alone is normal backpressure (e.g. during a replay) and must not drop the client.
   const busy = { writableLength: 64 * 1024, write: () => false, end() { throw new Error('busy client was dropped') } }
-  distributeRelayMessage('{}', [busy], undefined, true, () => assert.fail('busy client was dropped'))
+  distributeRelayMessage('{}', [busy], () => assert.fail('busy client was dropped'))
   for (const condition of ['queued', 'grows', 'throws']) {
     let ended = 0, writes = 0
     const dropped: unknown[] = [], healthy: string[] = []
@@ -47,7 +38,7 @@ test('SSE drops slow or failed sinks and continues serving healthy clients', () 
         return condition !== 'backpressure' },
       end() { ended++ },
     }
-    distributeRelayMessage('{}', [slow, { write: value => { healthy.push(value); return true } }], undefined, true, sink => dropped.push(sink))
+    distributeRelayMessage('{}', [slow, { write: value => { healthy.push(value); return true } }], sink => dropped.push(sink))
     assert.deepEqual(dropped, [slow])
     assert.equal(ended, 1)
     assert.equal(writes, condition === 'queued' ? 0 : 1)

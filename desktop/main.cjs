@@ -6,10 +6,6 @@ const { pathToFileURL } = require('node:url')
 const t3CLI = require('./t3-cli.cjs').createT3CLI()
 
 app.setName('Agent Flow')
-const { resolveMobileConfig, createPairingQR } = require('./mobile-pairing.cjs')
-const mobileConfig = resolveMobileConfig()
-if (mobileConfig) process.env.AGENT_FLOW_REMOTE_CONFIG = mobileConfig
-require('./mobile-profile.cjs').configureMobileProfile(app)
 const shellURL = pathToFileURL(path.join(__dirname, 'shell.html')).href
 let win
 let orbWin
@@ -56,7 +52,7 @@ function loadSettings() {
       alwaysOnTop: typeof saved.alwaysOnTop === 'boolean' ? saved.alwaysOnTop : true,
       lastFolder: typeof saved.lastFolder === 'string' ? saved.lastFolder : '',
       widgetMode: typeof saved.widgetMode === 'boolean' ? saved.widgetMode : true,
-      runtime: saved.runtime === 't3' ? 't3' : 'auto',
+      runtime: saved.runtime === 't3' || saved.runtime === 't3-all' ? saved.runtime : 'auto',
       widgetSize: validSize(saved.widgetSize, 260, 260, { width: 360, height: 360 }),
       fullSize: validSize(saved.fullSize, 620, 440, { width: 1120, height: 800 }),
       dock: saved.dock === 'left' || saved.dock === 'right' ? saved.dock : 'off',
@@ -100,7 +96,13 @@ function retire(child) {
   })
 }
 
-async function openFolder(folder, runtime = settings.runtime) {
+// 'all T3 projects' needs no folder: the home folder only serves as the worker's working directory.
+const ALL_T3 = 't3-all'
+/** The source mode a chosen folder opens in: picking a folder leaves 'all T3 projects'. */
+function folderRuntime() { return settings.runtime === ALL_T3 ? 't3' : settings.runtime }
+function openAllT3() { return openFolder(app.getPath('home'), ALL_T3) }
+
+async function openFolder(folder, runtime = folderRuntime()) {
   if (state.busy || quitting) return snapshot()
   state.busy = true
   state.error = ''
@@ -149,7 +151,7 @@ async function openFolder(folder, runtime = settings.runtime) {
     state.url = url
     if (orbWin) orbWin.loadURL(`${url}/?orb=1`)
     state.sourceStatus = sourceStatus
-    settings.lastFolder = folder
+    if (runtime !== ALL_T3) settings.lastFolder = folder
     settings.runtime = runtime
     worker.once('exit', code => {
       if (worker !== candidate || quitting) return
@@ -171,6 +173,16 @@ async function openFolder(folder, runtime = settings.runtime) {
     publish()
   }
   return snapshot()
+}
+
+/** Stop watching without opening anything else (leaving 'all T3 projects' with no folder to return to). */
+async function stopWorker() {
+  const previous = worker
+  worker = undefined
+  state.url = ''
+  state.folder = ''
+  closeOrb()
+  await retire(previous)
 }
 
 async function chooseFolder() {
@@ -431,7 +443,10 @@ function setOrbScale(scale) {
   sendOrbLayout(false)
 }
 function openProject(payload) {
-  return openFolder(t3CLI.projectRoot(payload?.root))
+  const root = t3CLI.projectRoot(payload?.root)
+  // Watching every project already shows the new thread's team.
+  if (settings.runtime === ALL_T3) return snapshot()
+  return openFolder(root)
 }
 function reclampWindows() {
   for (const window of [orbWin, settings.dock === 'off' ? win : undefined]) {
@@ -466,15 +481,19 @@ function registerIPC() {
     'desktop:state': snapshot,
     'desktop:choose-folder': chooseFolder,
     'desktop:open-last': () => settings.lastFolder ? openFolder(settings.lastFolder) : snapshot(),
+    'desktop:open-all-t3': openAllT3,
     'desktop:toggle-pin': togglePin,
     'desktop:toggle-widget': toggleWidget,
     'desktop:toggle-dock': toggleDock,
     'desktop:toggle-orb': toggleOrb,
     'desktop:set-dock': setDock,
     'desktop:set-runtime': async value => {
-      if (value !== 'auto' && value !== 't3') throw new Error('Unknown source mode')
+      if (value !== 'auto' && value !== 't3' && value !== ALL_T3) throw new Error('Unknown source mode')
       if (state.busy || value === settings.runtime) return snapshot()
-      if (state.folder) return openFolder(state.folder, value)
+      if (value === ALL_T3) return openAllT3()
+      const folder = settings.runtime === ALL_T3 ? settings.lastFolder : state.folder
+      if (folder) return openFolder(folder, value)
+      if (settings.runtime === ALL_T3) await stopWorker()
       settings.runtime = value
       saveSettings(); publish()
       return snapshot()
@@ -482,7 +501,6 @@ function registerIPC() {
     'desktop:minimize': () => win.minimize(),
     'desktop:close': () => win.close(),
     'desktop:resize-widget': resizeWidget,
-    'desktop:pair-mobile': () => createPairingQR(mobileConfig),
   }
   for (const [channel, handler] of Object.entries(actions)) ipcMain.handle(channel, (event, payload) => {
     if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || event.senderFrame.url !== shellURL) {
@@ -583,7 +601,11 @@ function createWindow() {
 if (!app.requestSingleInstanceLock()) app.quit()
 else {
   app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus() } })
-  app.whenReady().then(() => { loadSettings(); registerIPC(); createWindow() }).catch(error => {
+  app.whenReady().then(() => {
+    loadSettings(); registerIPC(); createWindow()
+    // 'All T3 projects' needs no folder choice, so it reopens by itself.
+    if (settings.runtime === ALL_T3) openAllT3()
+  }).catch(error => {
     dialog.showErrorBox('Agent Flow could not start', error.message)
     app.quit()
   })

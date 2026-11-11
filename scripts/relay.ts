@@ -23,7 +23,6 @@ import {
 } from '../extension/src/constants'
 import { setLogLevel } from '../extension/src/logger'
 import type { TelemetryClient } from './telemetry'
-import { createRemoteMirror, type RemoteMirror } from './remote-mirror'
 import type { SourceHealth } from '../web/lib/team-types'
 
 const MAX_EVENT_BUFFER = 5000
@@ -63,13 +62,11 @@ function log(...args: unknown[]) {
 // ─── SSE client management ──────────────────────────────────────────────────
 
 const sseClients = new Set<http.ServerResponse>()
-let remoteMirror: RemoteMirror | undefined
 
 interface RelaySink { write(value: string): unknown; writableLength?: number; writableEnded?: boolean; end?(): unknown }
-interface MobileSink { ingest(value: string): unknown }
 const MAX_SSE_QUEUE = 4 * 1024 * 1024
 
-/** Local HTTP only; the separately hosted mobile mirror does not use this guard. */
+/** Local HTTP only. */
 export function allowLocalRequest(req: http.IncomingMessage, res: http.ServerResponse): boolean {
   const port = req.socket.localPort
   if (port && (req.headers.host === `127.0.0.1:${port}` || req.headers.host === `localhost:${port}`)) return true
@@ -94,11 +91,8 @@ function writeSSE(client: RelaySink, value: string, onClientError?: (client: Rel
 export function distributeRelayMessage(
   data: string,
   clients: Iterable<RelaySink>,
-  mirror?: MobileSink,
-  includeRemote = true,
   onClientError?: (client: RelaySink) => void,
 ): void {
-  if (includeRemote) mirror?.ingest(data)
   for (const client of clients) {
     writeSSE(client, `data: ${data}\n\n`, onClientError)
   }
@@ -113,17 +107,17 @@ function sendSSE(res: http.ServerResponse, data: unknown) {
 }
 
 function broadcast(data: string) {
-  distributeRelayMessage(data, sseClients, remoteMirror, true, client => sseClients.delete(client as http.ServerResponse))
+  distributeRelayMessage(data, sseClients, client => sseClients.delete(client as http.ServerResponse))
 }
 
 function broadcastSourceHealth(health: SourceHealth): void {
-  distributeRelayMessage(JSON.stringify({ type: 'source-health', health }), sseClients, remoteMirror, false,
+  distributeRelayMessage(JSON.stringify({ type: 'source-health', health }), sseClients,
     client => sseClients.delete(client as http.ServerResponse))
 }
 
 function broadcastT3ConnectionStatus(health: SourceHealth): void {
   distributeRelayMessage(JSON.stringify({ type: 'connection-status', status: t3ConnectionStatus(health),
-    source: health.reason || 'T3 local teams (read-only)' }), sseClients, remoteMirror, false,
+    source: health.reason || 'T3 local teams (read-only)' }), sseClients,
   client => sseClients.delete(client as http.ServerResponse))
 }
 
@@ -420,6 +414,8 @@ export interface RelayOptions {
    *  dev relay and `npx agent-flow-app` have a way to opt out of one runtime. */
   runtime?: RelayRuntimeMode
   onSourceStatus?: (source: string) => void
+  /** T3 only: watch every T3 project instead of the workspace folder. */
+  allProjects?: boolean
 }
 
 function resolveRuntimeMode(explicit?: RelayRuntimeMode): RelayRuntimeMode {
@@ -439,9 +435,6 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
   }
   relayCreated = true
 
-  try { remoteMirror = await createRemoteMirror(workspace) }
-  catch { console.warn('[mobile] Sharing could not start. Check the local remote configuration.') }
-
   const mode = resolveRuntimeMode(options.runtime)
   const wantClaude = mode === 'claude' || mode === 'auto'
   const wantCodex = mode === 'codex' || mode === 'auto'
@@ -455,8 +448,6 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
     hookServer = new HookServer()
     const hookPort = await hookServer.start()
     if (hookPort === HOOK_SERVER_NOT_STARTED) {
-      remoteMirror?.dispose()
-      remoteMirror = undefined
       throw new Error('Failed to start hook server (port in use)')
     }
 
@@ -490,15 +481,13 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
   let codexWatcher: CodexSessionWatcher | null = null
   let t3Watcher: T3SessionWatcher | undefined
   if (mode === 't3') {
-    t3Watcher = new T3SessionWatcher([workspace])
+    t3Watcher = new T3SessionWatcher(options.allProjects ? null : [workspace])
     t3Watcher.onEvent(broadcastEvent)
     t3Watcher.onSessionLifecycle(event => broadcastSessionLifecycle(event.type, event.sessionId, event.label))
     t3Watcher.onSessionsChanged(sessions => broadcast(JSON.stringify({ type: 'session-list', sessions })))
-    // Projects only feed the local prompt bar: never mirrored to the mobile viewer.
-    // The lead's latest reply feeds only the local orb caption: never mirrored to the mobile viewer.
-    t3Watcher.onRepliesChanged(replies => distributeRelayMessage(JSON.stringify({ type: 't3-replies', replies }), sseClients, remoteMirror, false,
+    t3Watcher.onRepliesChanged(replies => distributeRelayMessage(JSON.stringify({ type: 't3-replies', replies }), sseClients,
       client => sseClients.delete(client as http.ServerResponse)))
-    t3Watcher.onProjectsChanged(projects => distributeRelayMessage(JSON.stringify({ type: 't3-projects', projects }), sseClients, remoteMirror, false,
+    t3Watcher.onProjectsChanged(projects => distributeRelayMessage(JSON.stringify({ type: 't3-projects', projects }), sseClients,
       client => sseClients.delete(client as http.ServerResponse)))
     t3Watcher.onSourceHealth(health => {
       broadcastSourceHealth(health)
@@ -510,7 +499,6 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
     t3Watcher.start()
     options.onSourceStatus?.(t3Watcher.diagnostic)
   }
-  let remoteSnapshotTimer: ReturnType<typeof setInterval> | undefined
   if (wantCodex) {
     codexWatcher = new CodexSessionWatcher(workspace)
     codexWatcher.onEvent((event) => broadcastEvent(event))
@@ -518,20 +506,6 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
       broadcastSessionLifecycle(lifecycle.type, lifecycle.sessionId, lifecycle.label)
     })
     codexWatcher.start()
-    if (remoteMirror) {
-      const refreshRemote = () => {
-        const claudeSessions = [...sessions.values()].filter(session => session.sessionDetected).map(session => ({
-          id: session.sessionId, label: session.label, status: session.sessionCompleted ? 'completed' : 'active',
-          startTime: session.sessionStartTime, lastActivityTime: session.lastActivityTime,
-        }))
-        remoteMirror?.ingest(JSON.stringify({ type: 'session-list', sessions: [...claudeSessions, ...codexWatcher!.getActiveSessions()] }))
-        codexWatcher!.replaySessionStart(undefined, { latestOnly: true,
-          onSnapshot: event => remoteMirror?.ingest(JSON.stringify({ type: 'agent-event', event })) })
-      }
-      refreshRemote()
-      remoteSnapshotTimer = setInterval(refreshRemote, 2000)
-      remoteSnapshotTimer.unref?.()
-    }
   }
 
   const telemetry = options.telemetry
@@ -633,9 +607,6 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
       // callers or hot-reload could call this twice.
       if (relayDisposed) return
       relayDisposed = true
-      clearInterval(remoteSnapshotTimer)
-      remoteMirror?.dispose()
-      remoteMirror = undefined
       const models = [...observedModels].sort().join(',').slice(0, 128)
       const runtimes = [wantClaude && 'claude', wantCodex && 'codex'].filter(Boolean).join(',')
       telemetry?.emit({

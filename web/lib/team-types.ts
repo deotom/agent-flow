@@ -89,6 +89,8 @@ export interface TeamSnapshot {
   sessionId: string
   /** Uncapped team title without the "T3 ·" label prefix. */
   title: string
+  /** T3 project name, so teams from different projects can be told apart. */
+  project?: string | null
   active: boolean
   /** Newest T3 updated_at among team rows: the last change T3 recorded. */
   updatedAt: number | null

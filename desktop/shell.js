@@ -25,15 +25,16 @@ function render(state) {
   element('dock-button').setAttribute('aria-label', dock === 'off' ? 'Dock to screen edge' : 'Undock')
   element('dock-icon').textContent = dock === 'left' ? '▌' : '▐'
   element('dock-text').textContent = dock === 'off' ? 'Dock' : 'Undock'
-  for (const id of ['folder-button', 'welcome-choose', 'open-last']) element(id).disabled = state.busy
-  element('folder-text').textContent = state.busy ? 'Opening…' : state.folder ? 'Change folder' : 'Choose folder'
-  element('workspace-label').textContent = widgetMode && state.folder ? state.folder.split(/[\\/]/).filter(Boolean).pop() : state.folder || 'No workspace selected'
-  element('workspace-label').title = state.folder
+  for (const id of ['folder-button', 'welcome-choose', 'open-last', 'open-all-t3']) element(id).disabled = state.busy
+  const allT3 = state.runtime === 't3-all'
+  element('folder-text').textContent = state.busy ? 'Opening…' : state.folder && !allT3 ? 'Change folder' : 'Choose folder'
+  element('workspace-label').textContent = allT3 ? 'All T3 projects' : widgetMode && state.folder ? state.folder.split(/[\\/]/).filter(Boolean).pop() : state.folder || 'No workspace selected'
+  element('workspace-label').title = allT3 ? 'Teams from every T3 project on this computer' : state.folder
   // In T3 mode the team view reports T3 health itself; the shell only reports its local viewer.
-  const t3View = state.runtime === 't3' && Boolean(state.url)
+  const t3View = state.runtime !== 'auto' && Boolean(state.url)
   element('connection-label').textContent = state.busy ? 'CONNECTING' : t3View ? 'VIEWER ON' : state.url ? 'CONNECTED' : 'READY'
   element('connection-dot').classList.toggle('connected', Boolean(state.url))
-  const sourceError = state.runtime === 't3' && !t3View && state.sourceStatus && state.sourceStatus !== 'T3 local teams (read-only)' ? state.sourceStatus : ''
+  const sourceError = state.runtime !== 'auto' && !t3View && state.sourceStatus && state.sourceStatus !== 'T3 local teams (read-only)' ? state.sourceStatus : ''
   element('error').textContent = state.error || sourceError
   element('error').hidden = !(state.error || sourceError)
   element('welcome').hidden = Boolean(state.url)
@@ -41,10 +42,10 @@ function render(state) {
   element('open-last').hidden = !state.lastFolder
   element('last-folder').textContent = state.lastFolder
   element('last-folder').title = state.lastFolder
-  element('footer-status').textContent = state.busy ? 'OPENING WORKSPACE…' : state.runtime === 't3' ? 'T3 TEAMS · READ ONLY' : state.url ? 'WATCHING LOCAL AGENT SESSIONS' : 'LOCAL WORKSPACE VIEWER'
+  element('footer-status').textContent = state.busy ? 'OPENING WORKSPACE…' : allT3 ? 'ALL T3 PROJECTS · READ ONLY' : state.runtime === 't3' ? 'T3 TEAMS · READ ONLY' : state.url ? 'WATCHING LOCAL AGENT SESSIONS' : 'LOCAL WORKSPACE VIEWER'
   if (state.url !== currentURL) {
     currentURL = state.url
-    element('graph').src = state.url ? `${state.url}/?desktop=1&widget=${widgetMode ? '1' : '0'}` : 'about:blank'
+    element('graph').src = state.url ? `${state.url}/?desktop=1&widget=${widgetMode ? '1' : '0'}${allT3 ? '&scope=all' : ''}` : 'about:blank'
   }
   sendMode()
 }
@@ -56,6 +57,7 @@ element('folder-button').addEventListener('click', () => act(api.chooseFolder))
 element('source-mode').addEventListener('change', event => act(() => api.setRuntime(event.target.value)))
 element('welcome-choose').addEventListener('click', () => act(api.chooseFolder))
 element('open-last').addEventListener('click', () => act(api.openLast))
+element('open-all-t3').addEventListener('click', () => act(api.openAllT3))
 element('pin-button').addEventListener('click', () => act(api.togglePin))
 element('widget-button').addEventListener('click', () => act(api.toggleWidget))
 element('dock-button').addEventListener('click', () => act(api.toggleDock))
@@ -67,30 +69,6 @@ element('dock-button').addEventListener('contextmenu', event => {
 })
 element('minimize-button').addEventListener('click', () => api.minimize())
 element('close-button').addEventListener('click', () => api.close())
-let pairingRequest = 0
-element('mobile-button').addEventListener('click', async () => {
-  const request = ++pairingRequest
-  element('mobile-qr').hidden = true
-  element('mobile-qr').removeAttribute('src')
-  element('mobile-error').hidden = true
-  element('mobile-dialog').showModal()
-  try {
-    const result = await api.pairMobile()
-    if (request !== pairingRequest || !element('mobile-dialog').open) return
-    element('mobile-qr').src = result.dataURL
-    element('mobile-qr').hidden = false
-  } catch (error) {
-    if (request !== pairingRequest || !element('mobile-dialog').open) return
-    element('mobile-error').textContent = error.message
-    element('mobile-error').hidden = false
-  }
-})
-element('mobile-close').addEventListener('click', () => element('mobile-dialog').close())
-element('mobile-dialog').addEventListener('close', () => {
-  pairingRequest++
-  element('mobile-qr').removeAttribute('src')
-  element('mobile-qr').hidden = true
-})
 element('graph').addEventListener('load', sendMode)
 const grip = element('resize-grip')
 let resizing

@@ -36,8 +36,11 @@ async function main() {
   if (!fs.statSync(workspace).isDirectory()) throw new Error('Please select a folder.')
   // Desktop watches existing transcripts and hook registrations. It does not
   // rewrite global Claude settings or enable the published CLI's telemetry.
-  const runtime = process.argv[3] === 't3' || process.argv[3] === 'auto' ? process.argv[3] as 't3' | 'auto' : undefined
-  relay = await createRelay({ workspace, runtime, onSourceStatus: message => send({ type: 'source-status', message }) })
+  // 't3-all' watches every T3 project; the folder is then only the process's working directory.
+  const mode = process.argv[3]
+  const allProjects = mode === 't3-all'
+  const runtime = allProjects ? 't3' : mode === 't3' || mode === 'auto' ? mode : undefined
+  relay = await createRelay({ workspace, runtime, allProjects, onSourceStatus: message => send({ type: 'source-status', message }) })
   server = http.createServer((req, res) => {
     if (!allowLocalRequest(req, res)) return
     if (req.url === '/events') return relay!.handleSSE(req, res)

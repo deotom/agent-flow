@@ -141,25 +141,6 @@ once on a machine with Node.js installed.
 
 Desktop integration checks: `npm --prefix desktop test` (after building).
 
-### iPhone / remote mobile viewer
-
-The mobile viewer is available at https://deotom.github.io/agent-flow/.
-It shows encrypted live agent status from the desktop or standalone relay using
-Supabase Realtime, without an inbound port or VPN. Prompts, source code, tool
-inputs/results, transcripts and file paths are excluded from the mobile feed.
-
-The packaged desktop app reads the external mobile configuration at
-`D:\sensitive\agent-flow-supabase.env` automatically. Open
-`artifacts.local/desktop/Agent Flow-win32-x64/Agent Flow.exe`, choose a workspace,
-and click **iPhone QR**. Scan with the iPhone camera and open Safari to pair.
-The QR is generated locally and contains the pairing key in a URL fragment;
-the phone removes it from the address bar after reading it. Keep the QR private.
-The computer must stay awake and online. The optional
-`scripts/start-mobile-desktop.cmd` launcher still works for development.
-
-See [mobile setup and security details](mobile/README.md) for other configuration
-paths, pairing key rotation, disabling sharing, hosting, and verification.
-
 ### VS Code Extension
 
 1. Install the extension

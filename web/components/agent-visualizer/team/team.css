@@ -140,6 +140,7 @@
 .jv-picker-option:hover, .jv-picker-option[aria-selected="true"] { background: rgba(95, 225, 255, 0.09) !important; }
 .jv-picker-option-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .jv-picker-option-title { overflow-wrap: anywhere; font-weight: 600; }
+.jv-picker-option-project { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--jv-cyan); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jv-picker-option .jv-muted { font-size: 11px; }
 .jv-dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; flex-shrink: 0; background: var(--jv-dim); }
 .jv-dot[data-active="true"] { background: var(--jv-done); box-shadow: 0 0 8px var(--jv-done); }

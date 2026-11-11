@@ -4,6 +4,27 @@
 @custom-variant dark (&:is(.dark *));
 
 .agent-flow-ui { font-family: "Segoe UI", system-ui, sans-serif; }
+.agent-flow-ui {
+  color-scheme: dark;
+  --flow-scroll-track: #081726;
+  --flow-scroll-thumb: #326478;
+  --flow-scroll-thumb-hover: #58b5ce;
+}
+.agent-flow-ui, .agent-flow-ui * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--flow-scroll-thumb) var(--flow-scroll-track);
+}
+/* Fallback for Chromium versions without standard scrollbar styling. */
+.agent-flow-ui::-webkit-scrollbar, .agent-flow-ui ::-webkit-scrollbar { width: 8px; height: 8px; }
+.agent-flow-ui::-webkit-scrollbar-track, .agent-flow-ui ::-webkit-scrollbar-track { background: var(--flow-scroll-track); }
+.agent-flow-ui::-webkit-scrollbar-thumb, .agent-flow-ui ::-webkit-scrollbar-thumb {
+  background: var(--flow-scroll-thumb);
+  border: 2px solid var(--flow-scroll-track);
+  border-radius: 8px;
+}
+.agent-flow-ui::-webkit-scrollbar-thumb:hover, .agent-flow-ui ::-webkit-scrollbar-thumb:hover { background: var(--flow-scroll-thumb-hover); }
+.agent-flow-ui::-webkit-scrollbar-corner, .agent-flow-ui ::-webkit-scrollbar-corner { background: var(--flow-scroll-track); }
+.agent-flow-ui::-webkit-scrollbar-button, .agent-flow-ui ::-webkit-scrollbar-button { display: none; }
 .agent-flow-ui button { transition: background-color 150ms, color 150ms, border-color 150ms; }
 .agent-flow-ui button:hover { background-color: rgba(123, 201, 255, 0.1); }
 .agent-flow-ui :is(button, select, input):focus-visible { outline: 2px solid #7bc9ff; outline-offset: 2px; }

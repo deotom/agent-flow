@@ -57,16 +57,23 @@ function useDismissOnOutside(open: boolean, close: () => void) {
   return root
 }
 
+/** Desktop 'All T3 projects' mode: teams come from every project, not one folder. */
+const allProjectsScope = () => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('scope') === 'all'
+
 function TeamPicker({ sessions, selectedSessionId, onSelect, snapshots, compact }: { sessions: SessionInfo[]; selectedSessionId: string | null; onSelect: (id: string) => void; snapshots: Record<string, TeamSnapshot>; compact: boolean }) {
   const [open, setOpen] = useState(false)
   const root = useDismissOnOutside(open, () => setOpen(false))
   const selected = sessions.find(session => session.id === selectedSessionId)
   const title = selected ? snapshots[selected.id]?.title || teamTitle(selected.label) : 'Choose a team'
+  const allScope = allProjectsScope()
+  // Name the project once teams can come from more than one.
+  const showProject = allScope || new Set(sessions.map(session => snapshots[session.id]?.project).filter(Boolean)).size > 1
+  const selectedProject = selected ? snapshots[selected.id]?.project : null
   const ordered = [...sessions].sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active') || b.lastActivityTime - a.lastActivityTime)
   return (
     <div ref={root} className="jv-picker">
       <button className="jv-picker-button" aria-expanded={open} aria-haspopup="listbox" aria-label={`Team: ${title}. Choose another team`} title={title} onClick={() => setOpen(value => !value)}>
-        {!compact && <span className="jv-eyebrow">T3 team · {sessions.length} in this folder</span>}
+        {!compact && <span className="jv-eyebrow">T3 team{showProject && selectedProject ? ` · ${selectedProject}` : ''} · {sessions.length} {allScope ? 'across all projects' : 'in this folder'}</span>}
         <span className="jv-picker-title">{title}</span>
         <span className="jv-picker-caret" aria-hidden="true" />
       </button>
@@ -80,6 +87,7 @@ function TeamPicker({ sessions, selectedSessionId, onSelect, snapshots, compact 
                 <span className="jv-dot" data-active={session.status === 'active'} aria-hidden="true" />
                 <span className="jv-picker-option-body">
                   <span className="jv-picker-option-title">{team?.title || teamTitle(session.label)}</span>
+                  {showProject && team?.project && <span className="jv-picker-option-project">{team.project}</span>}
                   <span className="jv-muted">{session.status === 'active' ? `Active · ${working} working` : 'No active work'} · {team?.agents.length ?? '?'} agents · {ageLabel(team?.updatedAt ?? session.lastActivityTime, Date.now())}</span>
                 </span>
               </button>
@@ -393,7 +401,7 @@ function EmptyState({ connection, hasSessions }: { connection: ConnectionView; h
       <TeamReactor statuses={[]} active={0} live={false} size={84} label="Teams" />
       {connection.tone === 'down' ? <><h2>T3 data is unavailable</h2><p>{connection.detail}</p></>
         : hasSessions ? <><h2>Loading team</h2><p>Waiting for the next read of T3 data.</p></>
-        : <><h2>No T3 teams in this folder</h2><p>Teams appear here when a T3 project in this folder has threads. This view only reads T3 and never starts work.</p></>}
+        : <><h2>{allProjectsScope() ? 'No T3 teams yet' : 'No T3 teams in this folder'}</h2><p>{allProjectsScope() ? 'Teams appear here when any T3 project has threads.' : 'Teams appear here when a T3 project in this folder has threads.'} This view only reads T3 and never starts work.</p></>}
     </div>
   )
 }

@@ -73,9 +73,13 @@ export function mapT3Delivery(stateValue: unknown, observedByRunId?: unknown): T
 
 /** Only explicit delegation relationships form teams. Forked or similarly named
  * conversations stay independent; no native transcript IDs are guessed. */
-export function projectT3Teams(data: T3Projection, workspaces: string[], now = Date.now()): T3Team[] {
-  const projects = new Set(data.projects.filter(row => !row.deleted_at && workspaces.some(w => t3WorkspaceMatches(w, text(row.workspace_root))))
-    .map(row => text(row.project_id)))
+/** `workspaces` null means every T3 project on this machine. */
+export function projectT3Teams(data: T3Projection, workspaces: string[] | null, now = Date.now()): T3Team[] {
+  const inScope = (folder: string) => workspaces === null || workspaces.some(w => t3WorkspaceMatches(w, folder))
+  const liveProjects = data.projects.filter(row => !row.deleted_at && inScope(text(row.workspace_root)))
+  const projects = new Set(liveProjects.map(row => text(row.project_id)))
+  // Project name per team, so teams from different projects can be told apart.
+  const projectNames = new Map(liveProjects.map(row => [text(row.project_id), text(row.title) || path.basename(text(row.workspace_root))]))
   const threads = new Map(data.threads.filter(row => !row.deleted_at).map(row => [text(row.thread_id), row]))
   const parents = new Map<string, string>()
   for (const [id, row] of threads) {
@@ -95,7 +99,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[], now = D
     return id
   }
   const roots = [...threads].filter(([id, row]) => !parents.has(id) && !row.archived_at &&
-    (projects.has(text(row.project_id)) || workspaces.some(w => t3WorkspaceMatches(w, text(row.worktree_path)))))
+    (projects.has(text(row.project_id)) || (workspaces !== null && workspaces.some(w => t3WorkspaceMatches(w, text(row.worktree_path))))))
     .sort((a, b) => timestamp(b[1].updated_at) - timestamp(a[1].updated_at)).slice(0, 20)
   const result: T3Team[] = []
   for (const [rootId, root] of roots) {
@@ -247,7 +251,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[], now = D
     const updatedCandidates = [root, ...members.map(([, row]) => row), ...taskRows,
       ...data.providerThreads.filter(row => memberIds.has(text(row.thread_id))), ...data.items.filter(row => memberIds.has(text(row.thread_id)))]
       .map(row => optionalTimestamp(row.updated_at)).filter((value): value is number => value !== null)
-    const team: TeamSnapshot = { sessionId: session.id, title: text(root.title) || 'Untitled team', active,
+    const team: TeamSnapshot = { sessionId: session.id, title: text(root.title) || 'Untitled team', project: projectNames.get(text(root.project_id)) || null, active,
       updatedAt: updatedCandidates.length ? Math.max(...updatedCandidates) : null, agents: teamAgents, tasks: teamTasks }
     result.push({ session, event: { sessionId: session.id, time: relative(new Date(now).toISOString()), type: 'session_snapshot',
       payload: { agents, delegations, team, round: 0, source: 't3', preserveLayout: true, preserveHistory: true } } })

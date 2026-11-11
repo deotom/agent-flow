@@ -98,8 +98,7 @@ test('orb settings accept bounded integer coordinates and never restore open mod
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const context = vm.createContext({
     require: id => id === 'electron' ? { app: { setName() {}, getPath: () => root, requestSingleInstanceLock: () => false, quit() {} } }
-      : id === './mobile-profile.cjs' ? { configureMobileProfile() {} }
-        : id === './mobile-pairing.cjs' ? { resolveMobileConfig() {} } : id === './t3-cli.cjs' ? require('../t3-cli.cjs') : require(id),
+      : id === './t3-cli.cjs' ? require('../t3-cli.cjs') : require(id),
     __dirname: path.resolve(__dirname, '..'), process,
   })
   vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../main.cjs'), 'utf8'), context)
@@ -205,7 +204,7 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   class Clock extends Date { static now() { return now } }
   vm.runInNewContext(source, {
     Date: Clock,
-    require: id => id === 'electron' ? electron : id === './t3-cli.cjs' ? { createT3CLI: () => t3 } : id === './appbar.cjs' ? appbar : id === './mobile-profile.cjs' ? { configureMobileProfile() {} } : id === './mobile-pairing.cjs' ? { resolveMobileConfig() {}, createPairingQR: async () => ({ dataURL: 'test-qr' }) } : require(id),
+    require: id => id === 'electron' ? electron : id === './t3-cli.cjs' ? { createT3CLI: () => t3 } : id === './appbar.cjs' ? appbar : require(id),
     __dirname: path.resolve(__dirname, '..'), process: Object.create(process, { platform: { value: 'win32' } }), console, setTimeout: (callback, delay) => delay === 3000 ? resumeTimers.push(callback) : setTimeout(callback, delay), clearTimeout,
   })
   await new Promise(resolve => setImmediate(resolve))
@@ -243,8 +242,6 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   await invoke('choose-folder')
   assert.equal(children.length, 0, 'Canceling the picker must not start a watcher')
   assert.throws(() => handlers.get('desktop:toggle-pin')({ ...trusted, senderFrame: { url: 'http://127.0.0.1:42001' } }), /Untrusted/)
-  assert.throws(() => handlers.get('desktop:pair-mobile')({ ...trusted, senderFrame: { url: 'http://127.0.0.1:42001' } }), /Untrusted/)
-  assert.equal((await invoke('pair-mobile')).dataURL, 'test-qr')
   invoke('toggle-pin')
   assert.equal(window.pin, false)
   selected = { canceled: false, filePaths: [folders[0]] }
@@ -491,6 +488,19 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   const failedMode = await invoke('set-runtime', 'auto')
   assert.equal(failedMode.runtime, 't3', 'Failed mode change keeps the old source and worker')
   assert.equal(children.at(-2).stopped, undefined)
+  // All T3 projects: no folder choice, the last folder is kept for leaving the mode again.
+  const lastFolder = invoke('state').lastFolder
+  const allState = await invoke('set-runtime', 't3-all')
+  assert.equal(allState.runtime, 't3-all')
+  assert.deepEqual([...children.at(-1).args], [fs.realpathSync(root), 't3-all'])
+  assert.equal(allState.lastFolder, lastFolder, 'Watching every project does not replace the last folder')
+  const workers = children.length
+  await invoke('open-project', { root: folders[0] })
+  assert.equal(children.length, workers, 'A new thread already shows up while watching every project')
+  const backState = await invoke('set-runtime', 't3')
+  assert.equal(backState.folder, lastFolder)
+  assert.deepEqual([...children.at(-1).args], [lastFolder, 't3'])
+  const active = children.at(-1)
   invoke('toggle-orb')
   orb = windows.at(-1)
   const layouts = []
@@ -509,7 +519,7 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   assert.deepEqual([orb.bounds.width, orb.bounds.height], [169, 215])
   app.emit('before-quit', { preventDefault() {} })
   await new Promise(resolve => setImmediate(resolve))
-  assert.equal(children.at(-2).stopped, true)
+  assert.equal(active.stopped, true)
   assert.equal(orb.destroyed, true)
   assert.equal(window.hidden, true, 'Quitting must not restore the main window')
 })

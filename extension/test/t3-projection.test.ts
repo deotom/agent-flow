@@ -128,3 +128,13 @@ test('keeps a lead whose run ended busy while T3 waits on its background command
   assert.equal((after.event.payload.team as TeamSnapshot).agents[0].status, 'idle')
   assert.equal(after.session.status, 'completed')
 })
+
+test('all-projects scope (null) takes teams from every project and names each project', () => {
+  const data = fixture()
+  data.projects[1].title = 'Other app'
+  const teams = projectT3Teams(data, null)
+  assert.deepEqual(teams.map(t => t.session.id).sort(), ['t3:fork', 't3:lead', 't3:unrelated'])
+  const project = (id: string) => (teams.find(t => t.session.id === id)!.event.payload.team as TeamSnapshot).project
+  assert.equal(project('t3:lead'), 'vrm', 'Untitled projects fall back to the folder name')
+  assert.equal(project('t3:unrelated'), 'Other app')
+})

@@ -11,7 +11,6 @@
   <header class="toolbar">
     <div class="brand"><span class="brand-icon">◈</span> <span class="brand-name">AGENT FLOW</span> <span class="desktop-tag">DESKTOP</span></div>
     <div class="toolbar-actions">
-      <button id="mobile-button" title="Pair iPhone with QR" aria-label="Pair iPhone"><span class="button-icon" aria-hidden="true">▦</span><span class="button-label">iPhone QR</span></button>
       <button id="folder-button" title="Choose workspace · Ctrl+O" aria-label="Choose workspace"><span class="button-icon" aria-hidden="true">▱</span><span class="button-label" id="folder-text">Choose folder</span></button>
       <button id="pin-button" aria-pressed="true" title="Keep above other windows · Ctrl+Shift+T" aria-label="Always on top"><span class="button-icon" aria-hidden="true">⌖</span><span class="button-label" id="pin-text">Always on top</span></button>
       <button id="dock-button" aria-pressed="false" title="Dock to the screen edge · Ctrl+Shift+← / →" aria-label="Dock to screen edge"><span class="button-icon" id="dock-icon" aria-hidden="true">▐</span><span class="button-label" id="dock-text">Dock</span></button>
@@ -21,7 +20,7 @@
       <button id="close-button" class="window-button" title="Close" aria-label="Close">×</button>
     </div>
   </header>
-  <div class="workspace-bar"><select id="source-mode" aria-label="Agent source"><option value="auto">Local</option><option value="t3">T3 teams</option></select><span id="connection-dot" class="dot"></span><span id="workspace-label">No workspace selected</span><span id="connection-label">READY</span></div>
+  <div class="workspace-bar"><select id="source-mode" aria-label="Agent source"><option value="auto">Local</option><option value="t3">T3 teams</option><option value="t3-all">All T3 projects</option></select><span id="connection-dot" class="dot"></span><span id="workspace-label">No workspace selected</span><span id="connection-label">READY</span></div>
   <div id="error" role="alert" hidden></div>
   <main>
     <section id="welcome">
@@ -30,6 +29,7 @@
       <h1>A window into your workspace.</h1>
       <p>Choose a project folder to watch Claude Code and Codex sessions as they work.</p>
       <button id="welcome-choose" class="primary">Choose workspace folder <span>↗</span></button>
+      <button id="open-all-t3" title="Watch teams from every T3 project. No folder needed.">Watch all T3 projects</button>
       <button id="open-last" hidden>Open last workspace</button>
       <div id="last-folder" class="last-folder"></div>
       <div class="welcome-note">Keep this window nearby. Pin it above your editor with Always on top.</div>
@@ -38,13 +38,6 @@
   </main>
   <footer><span id="footer-status">LOCAL WORKSPACE VIEWER</span><span>Ctrl+O <span class="muted">folder</span> &nbsp; / &nbsp; Ctrl+Shift+T <span class="muted">pin</span></span></footer>
   <div id="resize-grip" title="Drag to resize widget" aria-hidden="true"></div>
-  <dialog id="mobile-dialog" aria-labelledby="mobile-title">
-    <div class="mobile-dialog-heading"><h2 id="mobile-title">Pair your iPhone</h2><button id="mobile-close" aria-label="Close pairing">×</button></div>
-    <p id="mobile-hint">สแกน QR ด้วยกล้อง iPhone แล้วเปิดใน Safari</p>
-    <img id="mobile-qr" width="240" height="240" alt="QR สำหรับจับคู่ iPhone กับ Agent Flow" hidden>
-    <p id="mobile-error" role="alert" hidden></p>
-    <p class="mobile-private">เก็บ QR นี้เป็นส่วนตัว · ผู้ที่สแกนจะดูสถานะงานได้</p>
-  </dialog>
   <script src="shell.js"></script>
 </body>
 </html>
