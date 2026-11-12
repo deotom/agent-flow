@@ -113,8 +113,9 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     drawOfficeFrame(context, { ...input.scene, actors }, { time: elapsed.current, date: new Date(), now: Date.now(), live: input.live,
       motion: input.enabled, pets: input.pets, petEvent: input.petEvent, selectedKey: input.selectedKey, elevatorY: movement?.elevatorY ?? null, doorOpen: Boolean(movement && movement.actor.y >= input.scene.height-35) })
   }
-  // Static clock/lighting still updates with motion disabled; no animation loop runs then.
-  useEffect(() => { if (!enabled && visible && pageVisible) paint(null) }, [visualScene, now, enabled, selectedKey, petEvent, visible, pageVisible])
+  // Paint on mount and scene changes even when the animation loop is suspended.
+  // A restored/hidden pane must never leave a newly mounted canvas transparent.
+  useEffect(() => { paint(null) }, [visualScene, now, enabled, selectedKey, petEvent])
   useEffect(() => {
     if (!enabled) return
     let handle = 0, lastTime = 0, lastPaint = 0, lastLabels = 0

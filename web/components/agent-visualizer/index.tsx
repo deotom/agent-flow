@@ -268,7 +268,7 @@ export function AgentVisualizer({ desktopWidget = false }: { desktopWidget?: boo
           health={bridge.sourceHealth}
           transport={bridge.transport}
           animationMode={bridge.animationMode}
-          visible={bridge.viewVisible && !bridge.restoring}
+          visible={bridge.viewVisible}
           scope={teamScope}
           onScope={scope => { setTeamScope(scope); setZoomToFitTrigger(value => value + 1) }}
           pane={teamPane}
