@@ -39,6 +39,7 @@ import { useT3Projects } from '@/hooks/use-t3-projects'
 import { canSendPrompts } from '@/lib/desktop-actions'
 import { modelChoices } from '@/lib/prompt-model'
 import type { TeamScope } from '@/lib/team-model'
+import { parseOfficePane } from '@/lib/office-motion'
 
 export function AgentVisualizer({ desktopWidget = false }: { desktopWidget?: boolean } = {}) {
   const bridge = useVSCodeBridge()
@@ -49,7 +50,8 @@ export function AgentVisualizer({ desktopWidget = false }: { desktopWidget?: boo
   // T3 team monitoring replaces the native layout only when the relay reads T3.
   const teamMode = bridge.sourceHealth !== null || bridge.sessions.some(session => session.id.startsWith('t3:'))
   const [teamScope, setTeamScope] = useState<TeamScope>('active')
-  const [teamPane, setTeamPane] = useState<TeamPane>('board')
+  const [teamPane, setTeamPane] = useState<TeamPane>(() => { try { return parseOfficePane(localStorage.getItem('agent-flow-team-pane')) } catch { return 'board' } })
+  useEffect(() => { try { localStorage.setItem('agent-flow-team-pane', teamPane) } catch { /* Storage can be unavailable. */ } }, [teamPane])
   const t3Projects = useT3Projects()
   const [promptReady] = useState(canSendPrompts)
   const promptModels = useMemo(() => modelChoices(Object.values(bridge.teamSnapshots)), [bridge.teamSnapshots])
@@ -266,6 +268,7 @@ export function AgentVisualizer({ desktopWidget = false }: { desktopWidget?: boo
           health={bridge.sourceHealth}
           transport={bridge.transport}
           animationMode={bridge.animationMode}
+          visible={bridge.viewVisible && !bridge.restoring}
           scope={teamScope}
           onScope={scope => { setTeamScope(scope); setZoomToFitTrigger(value => value + 1) }}
           pane={teamPane}

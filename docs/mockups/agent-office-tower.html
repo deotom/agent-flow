@@ -1,0 +1,96 @@
+<!DOCTYPE html><html><head><style>
+body{margin:0;font-family:'Segoe UI',sans-serif}
+.wrap{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.box{position:relative;width:372px;height:600px;border-radius:10px;overflow:hidden;background:#0a1220}
+canvas{display:block;image-rendering:pixelated;width:372px;height:600px}
+.tag{position:absolute;left:6px;font:700 9px Consolas,monospace;letter-spacing:.08em;color:#cfe8ff;background:#0a1220cc;border:1px solid #5fe1ff55;border-radius:3px;padding:1px 5px}
+.tag i{font-style:normal;color:#5fe1ff}
+.nm{position:absolute;transform:translateX(-50%);font:600 9px 'Segoe UI';color:#eaf4ff;white-space:nowrap;text-shadow:0 1px 0 #000,0 0 3px #000}
+.side{flex:1;min-width:240px;font:12px var(--font-sans,'Segoe UI');line-height:1.55;color:var(--foreground,#dfefff)}
+.side h3{margin:0 0 6px;font-size:14px}.side dt{font-weight:600;margin-top:8px}.side dd{margin:0;color:var(--muted-foreground,#89a3b9)}
+</style></head><body><div class="wrap"><div class="box"><canvas id="c" width="124" height="200"></canvas><div id="ov"></div></div>
+<div class="side"><h3>Agent Tower · รวมทุก session</h3><dl>
+<dt>ทุก session อยู่ในตึกเดียว</dt><dd>ไม่ต้องเลือก session · แต่ละ session คือ "แผนก" มีแถบสีของตัวเองที่ผนังซ้าย (A ฟ้า, B ส้ม)</dd>
+<dt>ทีมเล็กอยู่ชั้นเดียว</dt><dd>session ที่มี worker ≤ 3 ใช้ชั้นเดียว lead นั่งหลังกระจก · ทีมใหญ่ได้ชั้น lead + ชั้นทีม · sub-lead ได้ชั้นของตัวเอง</dd>
+<dt>เรียงชั้น</dt><dd>session ที่มีคนรอเราขึ้นบนสุด → กำลังทำงาน → เงียบ ๆ · session ที่ไม่มีใครทำงานยุบเป็นป้ายเดียว "Quiet: 4 teams"</dd>
+<dt>Lounge รวม</dt><dd>ชั้นล่างใช้ร่วมกันทุก session · ลิฟต์ร่วมกัน</dd>
+<dt>คลิก</dt><dd>คลิกตัวละคร = detail ของ agent · คลิกป้ายชั้น = เปิด session นั้นใน Board</dd></dl></div></div>
+<script>
+const c=document.getElementById('c'),x=c.getContext('2d');x.imageSmoothingEnabled=false
+const W=124,H=200,S=3
+const px=(X,Y,w,h,col)=>{x.fillStyle=col;x.fillRect(Math.round(X),Math.round(Y),w,h)}
+const hash=s=>[...s].reduce((a,ch)=>(a*31+ch.charCodeAt(0))>>>0,7)
+const HAIR=['#5b3a29','#f2c14e','#e46a8b','#3b2f5c','#e07a3f','#8fd0ff','#2b2b2b'],SHIRT=['#4fa3ff','#ff8a5c','#7ed957','#b48cff','#ffd25c','#5ce1e6']
+const ST={run:'#5fe1ff',think:'#b48cff',wait:'#ffb627',done:'#3dff9a',fail:'#ff5c7a'}
+const AI={claude:'#e8865f',codex:'#f2f8ff',gemini:'#7fa8ff',copilot:'#cfd8e3'}
+// side-view sprite, facing right. pose: stand0, stand1 (walk), sit
+const HEAD=["..HHHH..",".HHHHHH.",".HSSSSH.",".HSSSKS.","..SSSSP.","...SS..."]
+const TORSO=["..TTTT..",".TTTTTT.",".TTTTTS.","..TTTT.."]
+const LEGS={stand0:["..PPPP..","..P..P..","..P..P..",".BB.BB.."],stand1:["..PPPP..","..PP.P..",".P...P..","BB...BB."],
+ sit:["..PPPPP.","..PPPPP.","......P.","......BB"]}
+function sprite(rows,X,Y,pal,flip){rows.forEach((r,j)=>[...r].forEach((ch,i)=>{const col=pal[ch];if(ch!=='.'&&col)px(X+(flip?7-i:i),Y+j,1,1,col)}))}
+function agent(X,Y,id,pose,flip,t,o={}){const h=hash(id),pal={H:HAIR[h%7],S:'#ffd9b8',K:'#1b1b2b',P:'#3a4766',B:'#20283a',T:SHIRT[(h>>3)%6]}
+ if(o.sad)pal.K='#4b5a7a'
+ const rows=[...HEAD,...TORSO,...LEGS[pose]];sprite(rows,X,Y,pal,flip)
+ if(o.headset){px(X+1,Y-1,6,1,'#2a2f45');px(X+(flip?6:1),Y+2,1,3,'#2a2f45')}
+ if(o.star){px(X+3,Y-4,2,1,'#ffd25c');px(X+2,Y-3,4,1,'#ffd25c');px(X+3,Y-2,2,1,'#ffd25c')}
+ if(o.typing){const f=Math.floor(t*8)%2;px(X+(flip?-1:7)+(f?1:0)*(flip?-1:1),Y+8,2,1,'#ffd9b8')}
+ if(o.hand){const up=Math.floor(t*3)%2;px(X+(flip?-1:7),Y+3-up,1,5,pal.T);px(X+(flip?-1:7),Y+1-up,1,2,'#ffd9b8')}
+ if(o.carry){px(X+(flip?-4:7),Y+7,5,4,'#fff');px(X+(flip?-3:8),Y+8,3,1,'#ff6b8b')}
+ if(o.mug){px(X+(flip?-2:7),Y+8,2,2,'#fff')}}
+function bubble(X,Y,kind,t){const col=kind==='?'?'#ff9a1f':kind==='…'?ST.think:ST.run;px(X,Y,11,7,'#f4f8ff');px(X+1,Y+7,2,1,'#f4f8ff');px(X,Y+8,1,1,'#f4f8ff')
+ if(kind==='>_'){px(X+2,Y+2,1,1,col);px(X+3,Y+3,1,1,col);px(X+2,Y+4,1,1,col);if(Math.floor(t*3)%2)px(X+5,Y+4,4,1,col)}
+ if(kind==='</>'){px(X+2,Y+3,1,1,col);px(X+3,Y+2,1,1,col);px(X+3,Y+4,1,1,col);px(X+7,Y+2,1,1,col);px(X+8,Y+3,1,1,col);px(X+7,Y+4,1,1,col);px(X+5,Y+2,1,3,col)}
+ if(kind==='…')for(let i=0;i<3;i++){x.globalAlpha=(Math.floor(t*3)%3)>=i?1:.25;px(X+2+i*3,Y+3,2,1,col);x.globalAlpha=1}
+ if(kind==='?'){px(X+5,Y+1,1,4,col);px(X+5,Y+6-1,1,1,col)}}
+function desk(X,base,st,ai,t,on){ // base = floor y; desk faces viewer, chair on the left
+ px(X,base-8,16,2,'#8a5a3c');px(X+1,base-6,1,6,'#5e3b27');px(X+14,base-6,1,6,'#5e3b27')
+ px(X+4,base-16,9,8,'#2b3346');px(X+5,base-15,7,6,'#020a12');px(X+8,base-9,1,1,'#2b3346')
+ if(on){const col=ST[st];for(let i=0;i<3;i++){const w=2+((Math.floor(t*4)+i*2)%5);x.globalAlpha=.85;px(X+6,base-14+i*2,Math.min(w,5),1,col)}x.globalAlpha=1}
+ px(X+13,base-12,2,2,AI[ai]) // AI badge
+ px(X-6,base-7,5,1,'#3b4a63');px(X-4,base-6,1,6,'#3b4a63');px(X-6,base-11,1,4,'#3b4a63')} // chair
+function plant(X,base){px(X+1,base-4,4,4,'#a55a3a');px(X,base-8,2,4,'#4caf50');px(X+3,base-10,2,6,'#66cc66');px(X+5,base-7,1,3,'#4caf50')}
+const F=[{y:12,h:44,wall:'#1b2742',name:'LEAD'},{y:56,h:44,wall:'#17233a',name:'TEAM'},{y:100,h:44,wall:'#1a2238',name:'SUB'},{y:144,h:46,wall:'#1f2a2a',name:'LOUNGE'}]
+const base=i=>F[i].y+F[i].h-3
+function building(t){px(0,0,W,H,'#0b1426')
+ for(let i=0;i<14;i++)px((i*37)%W,(i*13)%10,1,1,'#ffffff88') // stars
+ px(46,2,1,10,'#5f6f8a');if(Math.floor(t*2)%2)px(45,1,3,2,'#ff5c7a') // antenna
+ F.forEach((f,i)=>{px(2,f.y,W-4,f.h,f.wall);for(let k=8;k<100;k+=24){px(k,f.y+5,14,9,'#0e1a2c');px(k+1,f.y+6,12,7,i===3?'#2a3f3a':'#16304a');px(k+1,f.y+6,3,7,'#ffffff10')}
+  px(2,f.y+f.h-3,W-4,3,'#3b4a63');px(2,f.y+f.h-3,W-4,1,'#55657f')})
+ px(0,12,2,H,'#2b3a55');px(2,12,2,88,'#5fe1ff');px(2,100,2,44,'#ff8a5c');px(2,144,2,46,'#3dff9a');px(W-2,12,2,H,'#2b3a55');px(0,190,W,10,'#141c2b')
+ // elevator shaft
+ px(104,12,16,178,'#0e1626');px(104,12,1,178,'#2b3a55');px(119,12,1,178,'#2b3a55');px(111,12,2,178,'#1a2438')}
+function car(y,open){px(105,y,14,24,'#3b4a63');px(106,y+1,12,22,'#5fe1ff18');if(!open){px(106,y+1,6,22,'#4a5a76');px(112,y+1,6,22,'#4a5a76')}px(105,y,14,1,'#5fe1ff')}
+function lerp(a,b,f){return a+(b-a)*Math.max(0,Math.min(1,f))}
+function frame(ms){const t=ms/1000;building(t)
+ // F0 lead
+ plant(6,base(0));desk(58,base(0),'think','claude',t,true);desk(74,base(0),'think','claude',t,false);agent(51,base(0)-14,'lead','sit',false,t,{headset:true,star:true});bubble(55,base(0)-28,'…',t)
+ // F1 team
+ desk(22,base(1),'run','codex',t,true);agent(15,base(1)-14,'w1','sit',false,t,{typing:true});bubble(19,base(1)-27,'>_',t)
+ desk(52,base(1),'run','codex',t,true);agent(45,base(1)-14,'w2','sit',false,t,{typing:true});bubble(49,base(1)-27,'</>',t)
+ // new hire scenario, loop 12 s: ride up 0-3s, walk 3-6s, sit 6-12s
+ const L=t%12,doorX=104,deskX=82
+ let carY=lerp(base(3)-24,base(1)-24,L/3);if(L>=3&&L<9)carY=base(1)-24;if(L>=9)carY=lerp(base(1)-24,base(3)-24,(L-9)/3)
+ desk(deskX,base(1),'run','copilot',t,L>=6)
+ car(carY,L>=3&&L<4.5)
+ if(L<3)agent(108,carY+10,'w4','stand0',true,t,{carry:true})
+ else if(L<6){const wx=lerp(108,deskX-7,(L-3)/3);agent(wx,base(1)-14,'w4',Math.floor(t*6)%2?'stand1':'stand0',true,t,{carry:true})}
+ else{agent(deskX-7,base(1)-14,'w4','sit',false,t,{typing:true});bubble(deskX-3,base(1)-27,'>_',t)}
+ // F2 sub-team
+ desk(18,base(2),'think','codex',t,true);agent(11,base(2)-14,'leadB','sit',false,t,{headset:true,star:true});bubble(15,base(2)-28,'…',t)
+ px(37,F[2].y+18,1,23,'#3b4a63') // glass partition between lead and team
+ desk(50,base(2),'wait','gemini',t,true);agent(43,base(2)-14,'w3','sit',false,t,{hand:true});bubble(47,base(2)-28,'?',t)
+ desk(80,base(2),'think','claude',t,true);agent(73,base(2)-14,'w5','sit',false,t);bubble(77,base(2)-27,'…',t)
+ // F3 lounge: sofa, coffee, arcade, rain cloud
+ const b3=base(3);px(18,b3-6,40,4,'#6d4aa8');px(18,b3-10,40,4,'#8a63cf');px(16,b3-10,2,10,'#5a3c8c');px(58,b3-10,2,10,'#5a3c8c')
+ ;['d1','d2','d3'].forEach((id,i)=>{agent(20+i*12,b3-14,id,'sit',false,t,{mug:i===1})})
+ px(80,b3-16,7,16,'#3b4a63');px(81,b3-15,5,4,'#5fe1ff55');px(82,b3-6,3,3,'#fff') // coffee
+ px(92,b3-20,9,20,'#5a2a6b');px(93,b3-19,7,6,Math.floor(t*4)%2?'#ff5ce1':'#5ce1ff');px(94,b3-11,2,2,'#ffd25c');px(97,b3-11,2,2,'#ff5c7a') // arcade
+ const cw=t%8;const cx=cw<2?lerp(62,74,cw/2):cw<5?74:cw<7?lerp(74,62,(cw-5)/2):62
+ agent(cx,b3-14,'d4','stand'+(cw<2||(cw>=5&&cw<7)?Math.floor(t*6)%2:0),cw>=5,t,{mug:cw>=2})
+ agent(6,b3-14,'f1','stand0',false,t,{sad:true});px(4,b3-22,12,3,'#7a8aa0');px(6,b3-23,8,1,'#7a8aa0');if(Math.floor(t*4)%2){px(7,b3-18,1,1,'#5fa8ff');px(12,b3-17,1,1,'#5fa8ff')}
+ requestAnimationFrame(frame)}
+const tags=[[0,'A · quick-vendor','จัดทีม Codex สำรวจ Quick Vendor','#5fe1ff'],[1,'A · TEAM','Plan 0 · 3 working','#5fe1ff'],[2,'B · vrm','Fix login flow · 1 waits for you','#ff8a5c'],[3,'LOUNGE','ทุก session · 11 done · 1 failed','#3dff9a']]
+document.getElementById('ov').innerHTML=tags.map(([i,a,b,col])=>`<div class="tag" style="top:${(F[i].y+1)*S}px;border-color:${col}88"><i style="color:${col}">${a}</i> ${b}</div>`).join('')
+requestAnimationFrame(frame)
+</script></body></html>

@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{margin:0;font-family:var(--font-sans,'Segoe UI',sans-serif);color:var(--foreground,#e7edf6)}
+*{box-sizing:border-box}.mockup{max-width:360px;margin:auto}.controls{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;font-size:11px;color:var(--muted-foreground,#95a3ba)}
+button{font:inherit;color:var(--foreground,#e7edf6);background:var(--secondary,#243043);border:1px solid var(--border,#3b4a60);border-radius:8px;padding:5px 10px;cursor:pointer}button:focus-visible{outline:2px solid var(--ring,#8fced6);outline-offset:3px}
+.scene{position:relative;isolation:isolate;border-radius:18px;overflow:hidden;background:#172238}canvas{display:block;width:100%;height:auto;image-rendering:pixelated}
+.floor-label{position:absolute;left:7.5%;right:17%;display:flex;align-items:center;justify-content:space-between;gap:4px;font-size:10px;font-weight:650;line-height:1.3;pointer-events:none;color:#304965;background:#fff5d9e8;border-radius:3px;padding:1px 3px}.floor-label small{font-size:9px;font-weight:400;opacity:.8}.floor-label.b{color:#754360;background:#ffdedbe8}.floor-label.l{color:#285d58;background:#d7f8dfe8}
+.caption{display:flex;flex-wrap:wrap;gap:7px 14px;margin:12px 0;font-size:11px;color:var(--muted-foreground,#95a3ba)}.caption span{display:flex;gap:5px;align-items:center}.dot{height:6px;width:6px;border-radius:50%;background:#92d7c5}.dot.wait{background:#f6c97d}.dot.think{background:#c4acec}
+.note{margin:10px 0 0;font-size:11px;line-height:1.6;color:var(--muted-foreground,#95a3ba)}
+.cat-surprise{position:absolute;left:70%;top:84%;width:13%;height:8%;border:0;background:transparent;padding:0;border-radius:6px}.cat-surprise:hover{background:#ffe3ad22}.cat-surprise:focus-visible{outline:2px solid #f3bd77;outline-offset:1px}
+.event-note{min-height:32px;font-size:11px;line-height:1.5;color:var(--muted-foreground,#95a3ba);margin:6px 0}
+@media(max-width:340px){.floor-label{font-size:9px}.floor-label small{font-size:8px}}
+</style>
+<div class="mockup">
+ <div class="controls"><span>MOCKUP · ข้อมูลจำลอง</span><button id="motion" type="button" aria-pressed="false">พักการเคลื่อนไหว</button></div>
+ <div class="controls"><time id="clock"></time><span id="atmosphere"></span></div>
+ <div class="scene">
+  <canvas id="office" width="180" height="272" role="img" aria-label="ออฟฟิศ pixel art หลายชั้น ตัวละครหัวโตในสองทีม มีลิฟต์และห้องพักรวม"></canvas>
+  <div class="floor-label" style="top:12.7%"><span>☁ Quick Vendor · Lead</span><small>กำลังคิด</small></div>
+  <div class="floor-label" style="top:32.6%"><span>☁ Quick Vendor · Team</span><small>3 agents</small></div>
+  <div class="floor-label b" style="top:52.5%"><span>✿ VRM · Login flow</span><small>1 รอคุณ</small></div>
+  <div class="floor-label l" style="top:72.4%"><span>♧ ห้องพักทุกทีม</span><small>พักแป๊บนึง…</small></div>
+  <button class="cat-surprise" id="cat-surprise" aria-label="ทักทายแมวในห้องพัก" title="ทักทายเจ้าแมว"></button>
+ </div>
+ <div class="caption"><span><i class="dot"></i>ทำงาน</span><span><i class="dot think"></i>กำลังคิด</span><span><i class="dot wait"></i>รอคุณ</span></div>
+ <p class="event-note" id="event-note" role="status" aria-live="polite">ลองแตะเจ้าแมวในห้องพักดู…</p>
+ <p class="note">แสงเปลี่ยนตามเวลาบนเครื่อง · เมฆเป็นของตกแต่ง<br>การเดินและอารมณ์เป็นตัวอย่าง ยังไม่เชื่อมสถานะงานจริง</p>
+</div>
+<script>
+const canvas=document.querySelector('#office'),ctx=canvas.getContext('2d');ctx.imageSmoothingEnabled=false;
+const reduce=matchMedia('(prefers-reduced-motion: reduce)');let paused=reduce.matches,elapsed=0,last=null;
+let ambient,sceneTime=0;
+const loungeEvent={until:0,type:0};
+const eventNote=document.querySelector('#event-note');
+document.querySelector('#cat-surprise').onclick=()=>{
+ if(Date.now()<loungeEvent.until)return;
+ loungeEvent.type=(loungeEvent.type+1)%3;loungeEvent.until=Date.now()+6500;
+ eventNote.textContent=['ปลดล็อก: แมวอนุมัติให้พัก! ♡','เซอร์ไพรส์: ปาร์ตี้กาแฟของเจ้าแมว ☕','พบสมบัติลับ: ปลาทองหนึ่งตัว! ✦'][loungeEvent.type];
+};
+const clock=document.querySelector('#clock'),atmosphere=document.querySelector('#atmosphere');
+const clockFormat=new Intl.DateTimeFormat('th-TH',{hour:'2-digit',minute:'2-digit',hour12:false});
+clock.title=Intl.DateTimeFormat().resolvedOptions().timeZone;
+function environment(date){
+ const h=date.getHours()+date.getMinutes()/60;
+ if(h>=5&&h<8)return {name:'เช้าอรุณ ☀',sky:'#f8c5b2',horizon:'#ffe8b3',night:false,rooms:['#f9e0ae','#bdebdc','#f3cbdc','#d4edac'],glass:'#ffe5b5',ground:'#8bcbb0',sun:'#ffdc79'};
+ if(h>=8&&h<17)return {name:'กลางวัน ☀',sky:'#7bcfe9',horizon:'#d0f4e9',night:false,rooms:['#ffe6a4','#b3e8e0','#e6cbf5','#c5ecb2'],glass:'#a3e4ee',ground:'#6ec8a7',sun:'#ffe579'};
+ if(h>=17&&h<19)return {name:'ยามเย็น ☀',sky:'#e6a4bf',horizon:'#ffd0a2',night:false,rooms:['#f5d5a0','#afd5c9','#dbb1d8','#c4d3a3'],glass:'#ffc8a4',ground:'#7ab7a5',sun:'#ffe0a4'};
+ return {name:'ค่ำคืน ☾',sky:'#334579',horizon:'#716499',night:true,rooms:['#867393','#537f8b','#876c94','#638579'],glass:'#f6d88f',ground:'#497f83',sun:'#ffe7af'};
+}
+function cloud(x,y,size=1){ctx.save();ctx.translate(Math.round(x),y);ctx.scale(size,size);rounded(0,4,25,6,'#fff8ed');rounded(5,1,10,7,'#fff8ed');rounded(13,0,7,9,'#fff8ed');p(3,9,20,1,'#b7dce3');ctx.restore()}
+const p=(x,y,w,h,c)=>{ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),w,h)};
+function rounded(x,y,w,h,c){p(x+1,y,w-2,h,c);p(x,y+1,w,h-2,c)}
+function heart(x,y,c){p(x,y,2,2,c);p(x+3,y,2,2,c);p(x+1,y+2,3,2,c);p(x+2,y+4,1,1,c)}
+const floors=[{y:32,trim:'#53c4d1'},{y:86,trim:'#53c4d1'},{y:140,trim:'#ef8bac'},{y:194,trim:'#81c884'}];
+const base=i=>floors[i].y+49;
+function windowAt(x,y,t){rounded(x-1,y-1,21,17,'#f6efe4');p(x,y,19,15,ambient.glass);p(x+2,y+2,3,11,'#ffffff70');p(x+9,y,1,15,'#f6efe4');p(x-2,y+15,23,2,'#e9ab77');p(x-2,y-2,23,2,'#ed9eae');p(x-2,y,2,14,'#e9a0b1');p(x+19,y,2,14,'#e9a0b1');if(!ambient.night)p(x+3+Math.round(Math.sin(t*.2)*2),y+5,5,2,'#ffffffb0')}
+function plant(x,b,flower=false){const sway=Math.round(Math.sin(sceneTime*1.3+x));rounded(x,b-5,7,5,'#e99c75');p(x+1,b-4,5,1,'#ffd89a');p(x+3,b-13,1,9,'#54ac79');p(x+sway,b-11,3,3,'#7fce82');p(x+4+sway,b-14,3,4,'#a5e58b');if(flower){p(x+2+sway,b-16,4,3,'#fa8db0');p(x+3+sway,b-15,2,1,'#ffe775')}}
+function shelf(x,y){p(x,y,25,2,'#c7a88d');p(x+2,y-7,3,7,'#e2b1b0');p(x+6,y-5,3,5,'#b6ccbe');p(x+10,y-8,3,8,'#a9bdd6');p(x+14,y-6,3,6,'#e3cf9e');p(x+20,y-5,4,5,'#bd9c8c');p(x+21,y-9,2,5,'#a5c098')}
+function desk(x,b,status,t){const colors={run:'#9fdcc6',think:'#c9b5ed',wait:'#f6d595'};
+ rounded(x-3,b-4,26,4,'#c7a38c');p(x,b,2,7,'#a77e6a');p(x+19,b,2,7,'#a77e6a');p(x-3,b-4,26,1,'#edc8a6');
+ rounded(x+2,b-16,16,12,'#e4d2c1');p(x+3,b-15,14,9,'#273645');p(x+8,b-4,4,1,'#e4d2c1');
+ for(let i=0;i<3;i++)p(x+5,b-13+i*2,3+(Math.floor(t*2+i)%6),1,colors[status]);
+ rounded(x+19,b-9,3,5,'#f6e8d4');p(x+22,b-8,1,3,'#f6e8d4');p(x+19,b-10,3,1,'#8c6356');
+ p(x-1,b-3,18,1,'#b79685');p(x-7,b-4,5,3,'#9e899a');p(x-6,b-1,2,5,'#8d7f91');
+}
+// Chibi sprites: big cheeks, tiny feet, soft hair and oversized jumpers.
+function person(x,b,style,t,{walk=false,sit=false,lead=false,typing=false,mug=false,carry=false,hand=false}={}){
+ const palettes=[['#b98760','#53cbb8'],['#826496','#f18caf'],['#ebaf56','#74b5ee'],['#a96f65','#b68ce9'],['#719eb3','#f4c35e']];
+ const [hair,shirt]=palettes[style%5],y=b-21-(walk&&Math.sin(t*10)>0?1:0),skin='#f5d6bc';
+ p(x+1,b,11,1,'#263442');rounded(x+2,y,9,2,hair);rounded(x,y+2,13,9,hair);rounded(x+1,y+5,11,8,skin);
+ p(x+1,y+4,3,3,hair);p(x+4,y+3,7,3,hair);p(x+9,y+4,3,3,hair);p(x,y+7,1,3,skin);p(x+12,y+7,1,3,skin);
+ const blink=Math.floor(t*2+style)%11===0;
+ p(x+4,y+8,1,blink?1:2,'#544553');p(x+9,y+8,1,blink?1:2,'#544553');p(x+2,y+10,2,1,'#eaa9ad');p(x+10,y+10,2,1,'#eaa9ad');p(x+6,y+11,2,1,'#c68e83');
+ rounded(x+3,y+13,7,5,shirt);p(x+2,y+14,1,3,shirt);p(x+10,y+14,1,3,shirt);p(x+3,y+17,7,1,'#ffffff30');
+ if(sit){p(x+4,y+18,3,2,'#73829b');p(x+8,y+18,3,2,'#73829b');p(x+6,y+20,2,1,'#ead9c5');p(x+10,y+20,2,1,'#ead9c5')}
+ else{const step=walk&&Math.floor(t*8)%2;p(x+4,y+18,2,step?2:3,'#73829b');p(x+8,y+18,2,3,'#73829b');p(x+3,y+20-(step?1:0),3,1,'#ead9c5');p(x+8,y+20,3,1,'#ead9c5')}
+ if(lead){p(x+3,y-4,1,3,'#f6d88e');p(x+6,y-5,1,4,'#f6d88e');p(x+9,y-4,1,3,'#f6d88e');p(x+3,y-2,7,2,'#f6d88e')}
+ if(typing){p(x+11,y+15+(Math.floor(t*5)%2),3,1,skin)}
+ if(mug){rounded(x+10,y+14,4,4,'#f5e7d2');p(x+14,y+15,1,2,'#f5e7d2')}
+ if(carry){p(x+9,y+14,6,4,'#f7ead3');heart(x+10,y+14,'#dfaaa8')}
+ if(hand){p(x+12,y+10,2,6,shirt);p(x+12,y+8-(Math.floor(t*2)%2),2,3,skin)}
+}
+function bubble(x,y,kind,t){rounded(x,y,13,9,kind==='wait'?'#ffe0a5':'#eee6fa');p(x+3,y+8,2,3,kind==='wait'?'#ffe0a5':'#eee6fa');
+ if(kind==='wait'){p(x+6,y+2,1,3,'#ae7a4d');p(x+6,y+6,1,1,'#ae7a4d')}
+ else for(let i=0;i<3;i++){ctx.globalAlpha=Math.floor(t*3)%3===i?1:.4;p(x+3+i*3,y+4,1,1,'#8d75b0');ctx.globalAlpha=1}}
+function cat(x,b,t){const awake=Date.now()<loungeEvent.until;rounded(x,b-6,13,6,'#dfb891');rounded(x+9,b-8,6,7,'#dfb891');p(x+9,b-10,2,3,'#dfb891');p(x+13,b-10,2,3,'#dfb891');p(x+10,b-9,1,1,'#e7a9a5');p(x+13,b-9,1,1,'#e7a9a5');p(x+10,b-5,awake?1:2,1,'#8c685e');p(x+13,b-5,awake?1:2,1,'#8c685e');p(x,b-3,4,2,'#eccdab');p(x+1,b-5,2,1,'#b69276');p(x+5,b-5,2,1,'#b69276');if(!awake&&Math.floor(t)%3===0)p(x+17,b-12,2,1,'#bec9dc')}
+function building(t){p(0,0,180,272,ambient.sky);p(0,16,180,256,ambient.horizon);
+ if(ambient.night){for(const [i,x,y]of[[0,17,12],[1,155,8],[2,137,24],[3,44,6],[4,165,28]]){ctx.globalAlpha=.5+.3*Math.sin(t+i);p(x,y,1,1,'#fff0bb');ctx.globalAlpha=1}rounded(118,5,11,11,ambient.sun);rounded(122,3,10,11,ambient.sky)}
+ else{rounded(121,5,12,12,ambient.sun);p(125,2,3,2,ambient.sun);p(125,18,3,2,ambient.sun);p(118,9,2,3,ambient.sun);p(134,9,2,3,ambient.sun)}
+ ctx.globalAlpha=ambient.night?.45:.95;cloud(((t*1.4+28)%226)-28,5,.85);cloud(((t*.8+143)%232)-28,16,.65);ctx.globalAlpha=1;
+ // Roof garden and a small cat-shaped office sign.
+ rounded(10,25,164,8,'#eea6a0');p(8,31,168,3,'#ffd5ad');p(16,23,146,2,'#c17da3');plant(24,25);plant(139,25,true);
+ rounded(76,14,25,12,'#f1d1ad');p(76,11,4,6,'#f1d1ad');p(97,11,4,6,'#f1d1ad');p(81,20,2,2,'#977c83');p(94,20,2,2,'#977c83');p(87,22,3,1,'#c49091');p(78,23,3,1,'#e5a3a5');p(96,23,3,1,'#e5a3a5');
+ floors.forEach((f,i)=>{p(10,f.y,164,54,'#d993aa');p(13,f.y,139,47,ambient.rooms[i]);p(13,f.y,2,47,f.trim);p(13,f.y+8,139,1,'#ffffff40');
+  windowAt(23,f.y+14,t);windowAt(118,f.y+14,t);p(16,f.y+42,133,5,'#e3b688');for(let j=17;j<149;j+=15)p(j,f.y+43,1,4,'#c99777');p(10,f.y+47,164,3,'#ffdbab');p(10,f.y+50,164,4,'#db9ba4');
+  p(153,f.y,18,47,ambient.night?'#5a6287':'#b9c8e8');p(154,f.y+8,16,1,'#e6cee2');p(160,f.y+9,1,37,'#93a6ce');p(154,f.y+40,16,2,'#9e9ac1');p(172,f.y,2,54,'#ffd5b7');
+  // Coloured paper bunting, warm ceiling lights and a little wall picture.
+  for(let j=0;j<5;j++){p(52+j*9,f.y+11,9,1,'#bb929a');p(54+j*9,f.y+12,5,2,['#fa95aa','#f8cd65','#6dcab7','#ad94e3','#79bde0'][j]);p(55+j*9,f.y+14,3,1,['#fa95aa','#f8cd65','#6dcab7','#ad94e3','#79bde0'][j])}
+  if(ambient.night){ctx.globalAlpha=.12+.025*Math.sin(t*.7+i);p(48,f.y+10,56,28,'#ffe09b');ctx.globalAlpha=1;p(74,f.y+9,8,2,'#fff1b4')}
+ });
+ // Outdoor doorstep, tiny flowers and a letterbox.
+ p(10,248,164,4,'#f2c5a1');p(17,252,148,3,'#c89cac');p(23,255,136,3,'#b08fab');p(0,262,180,10,ambient.ground);
+ [6,17,164,172].forEach((x,i)=>{p(x,259,1,5,'#93ae9e');p(x-1,258,3,2,i%2?'#ddbac9':'#f2d397')});
+}
+const lerp=(a,b,t)=>a+(b-a)*Math.max(0,Math.min(1,t));
+function draw(t){sceneTime=t;const realNow=new Date();ambient=environment(realNow);const timeLabel=clockFormat.format(realNow)+' · เวลาบนเครื่อง';if(clock.textContent!==timeLabel){clock.textContent=timeLabel;clock.dateTime=realNow.toISOString()}if(atmosphere.textContent!==ambient.name)atmosphere.textContent=ambient.name;building(t);
+ // Lead's room: a rug, bookshelf, gentle desk lamp, and a curious plant.
+ p(46,base(0)-4,56,8,'#b784cc');p(48,base(0)-3,52,5,'#d6b4ec');shelf(65,58);plant(137,base(0),true);
+ desk(80,base(0)-5,'think',t);person(65,base(0),1,t,{lead:true,sit:true});bubble(68,base(0)-37,'think',t);
+ p(108,base(0)-25,1,20,'#d3bd91');p(104,base(0)-26,10,2,'#f0d7a3');p(106,base(0)-29,6,3,'#f0d7a3');
+ // Quick Vendor: two workers and a new arrival coming up from the lounge.
+ desk(35,base(1)-5,'run',t);person(20,base(1),0,t,{sit:true,typing:true});
+ desk(79,base(1)-5,'run',t);person(64,base(1),2,t,{sit:true,typing:true});desk(122,base(1)-5,'run',t);
+ const phase=t%16;let cy=lerp(base(3)-24,base(1)-24,phase/3);if(phase>=3&&phase<12)cy=base(1)-24;if(phase>=12)cy=lerp(base(1)-24,base(3)-24,(phase-12)/4);
+ rounded(154,cy,16,25,'#f7c8d7');p(155,cy+1,14,23,'#b38fce');p(155,cy+1,14,2,'#fff2c5');p(160,cy+3,1,20,'#d5b5e4');p(156,cy+22,12,1,'#ffe2b1');
+ if(phase<3)person(155,cy+23,3,t,{carry:true});
+ else if(phase<6)person(lerp(155,107,(phase-3)/3),base(1),3,t,{walk:true,carry:true});
+ else person(107,base(1),3,t,{sit:true,typing:true});
+ // VRM: its lead and a raised hand stay together on a peach-trimmed floor.
+ desk(35,base(2)-5,'think',t);person(20,base(2),4,t,{lead:true,sit:true});bubble(21,base(2)-37,'think',t);
+ desk(79,base(2)-5,'wait',t);person(64,base(2),1,t,{sit:true,hand:true});bubble(65,base(2)-37,'wait',t);
+ desk(122,base(2)-5,'run',t);person(107,base(2),0,t,{sit:true,typing:true});
+ // Shared lounge: oversized cushions, cat bed and a coffee machine.
+ p(22,base(3)-4,77,7,'#7d8d93');p(24,base(3)-3,73,4,'#b9bbb0');
+ rounded(27,base(3)-12,51,11,'#e88fb7');p(30,base(3)-11,45,2,'#ffc0d5');p(25,base(3)-9,4,10,'#eea1c3');p(76,base(3)-9,4,10,'#eea1c3');p(31,base(3)-1,3,2,'#e4b482');p(71,base(3)-1,3,2,'#e4b482');
+ person(33,base(3)-2,2,t,{sit:true,mug:true});person(54,base(3)-2,3,t,{sit:true});heart(48,base(3)-30,'#e9b6bb');
+ rounded(108,base(3)-23,14,22,'#65c9bb');p(110,base(3)-21,10,6,'#368a8d');p(114,base(3)-13,3,2,'#ffda8a');p(112,base(3)-10,6,7,'#368a8d');p(114,base(3)-8,3,4,'#fff1d5');p(108,base(3)-1,14,2,'#ffcd96');
+ const walkPhase=t%14,wx=walkPhase<3?lerp(85,96,walkPhase/3):walkPhase<7?96:walkPhase<10?lerp(96,85,(walkPhase-7)/3):85;
+ person(wx,base(3),0,t,{walk:walkPhase<3||(walkPhase>=7&&walkPhase<10),mug:walkPhase>=3});
+ rounded(126,base(3)-1,21,3,'#c2a3a9');cat(129,base(3)-1,t);plant(17,base(3),true);
+ moods(t,ambient.night);
+ loungeSurprise(t);
+}
+function loungeSurprise(t){
+ if(Date.now()>=loungeEvent.until){if(eventNote.textContent!=='ลองแตะเจ้าแมวในห้องพักดู…')eventNote.textContent='ลองแตะเจ้าแมวในห้องพักดู…';return}
+ // A quiet, local celebration. Motion off freezes the confetti as decorations.
+ for(let i=0;i<12;i++)p(25+(i*23)%120,205+((t*5+i*7)%15),1,2,['#fa8fb3','#ffdb73','#75d9c2','#c3a1ef'][i%4]);
+ rounded(126,211,21,15,'#fff0cf');p(138,225,2,3,'#fff0cf');
+ if(loungeEvent.type===0){heart(134,215,'#ef8fb4')}
+ else if(loungeEvent.type===1){rounded(132,215,7,7,'#74c9b7');p(139,216,2,4,'#74c9b7');p(133,214,5,1,'#94705d');p(134,212,1,1,'#caa689');p(137,210,1,2,'#caa689')}
+ else{rounded(131,216,8,5,'#f7b65c');p(139,215,3,7,'#f7b65c');p(132,217,1,1,'#74607b');p(134,219,3,1,'#ffe1a1')}
+}
+function moods(t,night){
+ // Decorative moods loop independently of the sample work statuses.
+ const beat=t%18;
+ if(beat<6){const y=base(1)-32-Math.round(Math.sin(t*2)*2);heart(25,y,'#f075a7');p(22,y+2,1,1,'#ffe07d');p(33,y-2,1,2,'#ffe07d')}
+ else if(beat<12){p(26,base(1)-31,2,1,'#eaa13b');p(29,base(1)-34,1,2,'#eaa13b');p(33,base(1)-31,2,1,'#eaa13b')}
+ else {heart(25,base(1)-33,'#83cc9f')}
+ // Coffee steam rises; the cat naps; the worker in the lounge gets sleepy at night.
+ const drift=Math.floor(t*2)%4;ctx.globalAlpha=.65;p(115,base(3)-14-drift,1,2,'#fff9e8');p(118,base(3)-17-drift,1,2,'#fff9e8');ctx.globalAlpha=1;
+ const zX=139+Math.floor(t*.6)%3,zY=base(3)-17-Math.floor(t)%3;
+ ctx.fillStyle='#7495c0';ctx.font='5px monospace';if(Date.now()>=loungeEvent.until)ctx.fillText('z',zX,zY);
+ if(night){ctx.fillStyle='#f8ecc5';ctx.fillText('z',61,base(3)-29-Math.floor(t)%3)}
+ // A tiny butterfly loops through the roof garden in daylight; fireflies at night.
+ const bx=42+Math.sin(t*.45)*18,by=21+Math.sin(t*.9)*3;
+ if(night){ctx.globalAlpha=.55+.4*Math.sin(t*2);p(bx,by,1,1,'#fff0a2');p(146+Math.sin(t*.3)*8,17,1,1,'#fff0a2');ctx.globalAlpha=1}
+ else{p(bx,by,1,3,'#a8719c');p(bx-2,by+(Math.floor(t*6)%2),2,2,'#f28cb9');p(bx+1,by+(Math.floor(t*6)%2),2,2,'#f7b1ce')}
+}
+const motionButton=document.querySelector('#motion');
+function updateButton(){motionButton.textContent=paused?'เล่นการเคลื่อนไหว':'พักการเคลื่อนไหว';motionButton.setAttribute('aria-pressed',String(paused))}
+motionButton.onclick=()=>{paused=!paused;updateButton()};reduce.addEventListener('change',e=>{paused=e.matches;updateButton()});updateButton();
+function frame(now){if(last!==null&&!paused)elapsed+=Math.min(now-last,80)/1000;last=now;draw(elapsed);requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></html>

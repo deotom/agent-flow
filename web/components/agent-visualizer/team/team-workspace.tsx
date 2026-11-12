@@ -8,9 +8,12 @@ import { buildMissionView, type MissionView } from '@/lib/mission-model'
 import { formatModelName } from '@/lib/utils'
 import type { AnimationMode } from '@/lib/viewer-preferences'
 import { AgentLamp, ContextMeter, DeliveryTrack, TeamReactor } from './team-visuals'
+import { OfficeView } from '../office/office-view'
+import { officeKey } from '@/lib/office-model'
+import '../office/office.css'
 import './team.css'
 
-export type TeamPane = 'board' | 'graph'
+export type TeamPane = 'board' | 'graph' | 'office'
 
 interface TeamWorkspaceProps {
   widget: boolean
@@ -21,6 +24,7 @@ interface TeamWorkspaceProps {
   health: SourceHealth | null
   transport: TransportState
   animationMode: AnimationMode
+  visible?: boolean
   scope: TeamScope
   onScope: (scope: TeamScope) => void
   pane: TeamPane
@@ -291,7 +295,7 @@ function DetailPanel({ snapshot, agentId, live, now, onSelect, onClose }: { snap
   )
 }
 
-export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSession, teamSnapshots, health, transport, animationMode, scope, onScope, pane, onPane, viewerControls, renderGraph, promptBar }: TeamWorkspaceProps) {
+export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSession, teamSnapshots, health, transport, animationMode, visible = true, scope, onScope, pane, onPane, viewerControls, renderGraph, promptBar }: TeamWorkspaceProps) {
   const now = useClock(1000)
   const snapshot = selectedSessionId ? teamSnapshots[selectedSessionId] ?? null : null
   const connection = connectionView(transport, health, now)
@@ -313,6 +317,9 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
   const scrolls = useRef(new Map<string, number>())
   const list = useRef<HTMLDivElement>(null)
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
+  const [officeSelection, setOfficeSelection] = useState<{ sessionId: string; agentId: string } | null>(null)
+  const office = pane === 'office'
+  const officeSnapshots = useMemo(() => sessions.flatMap(session => teamSnapshots[session.id] ? [teamSnapshots[session.id]] : []), [sessions, teamSnapshots])
   const mission = useMemo(() => {
     if (!snapshot) return undefined
     const visible = new Set(snapshot.agents.filter(agent => !hiddenIds.has(agent.id)).map(agent => agent.id))
@@ -332,31 +339,34 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
     setSelectedAgentId(selectedSessionId ? selections.current.get(selectedSessionId) ?? null : null)
     if (list.current) list.current.scrollTop = selectedSessionId ? scrolls.current.get(selectedSessionId) ?? 0 : 0
   }, [selectedSessionId])
-  const selectedExists = Boolean(selectedAgentId && snapshot?.agents.some(agent => agent.id === selectedAgentId))
+  const detailSnapshot = office ? officeSelection ? teamSnapshots[officeSelection.sessionId] : null : snapshot
+  const detailAgentId = office ? officeSelection?.agentId : selectedAgentId
+  const selectedExists = Boolean(detailAgentId && detailSnapshot?.agents.some(agent => agent.id === detailAgentId))
   const dismiss = (id: string) => setDismissed(previous => new Set(previous).add(id))
-  const statuses = snapshot?.agents.map(agent => agent.status) ?? []
+  const statuses = office ? officeSnapshots.flatMap(team => team.agents.map(agent => agent.status)) : snapshot?.agents.map(agent => agent.status) ?? []
   const showGraph = pane === 'graph' && !widget && Boolean(snapshot)
 
   return (
     <div className="jv-root" data-widget={widget} data-motion={animationMode} data-live={live}>
       <div className="jv-backdrop" aria-hidden="true" />
       <header className="jv-bar">
-        <TeamReactor statuses={statuses} active={view?.counts.active ?? 0} live={live} size={widget ? 46 : 76} />
+        <TeamReactor statuses={statuses} active={office ? statuses.filter(status => ['running', 'thinking', 'background', 'waiting_approval', 'waiting_input'].includes(status)).length : view?.counts.active ?? 0} live={live} size={widget ? 46 : 76} />
         <div className="jv-bar-main">
           <div className="jv-bar-row">
-            <TeamPicker sessions={sessions} selectedSessionId={selectedSessionId} onSelect={onSelectSession} snapshots={teamSnapshots} compact={widget} />
+            {office ? <div className="jv-picker"><span className="jv-eyebrow">T3 Office · {officeSnapshots.length} loaded teams</span><span className="jv-picker-title">Agent Office</span></div> : <TeamPicker sessions={sessions} selectedSessionId={selectedSessionId} onSelect={onSelectSession} snapshots={teamSnapshots} compact={widget} />}
             {widget && <Legend />}
           </div>
-          {view && <Pipeline view={view} compact={widget} />}
+          {!office && view && <Pipeline view={view} compact={widget} />}
+          {widget && <Segmented label="View" value={office ? 'office' : 'board'} onChange={onPane} options={[{ value: 'board', label: 'Board' }, { value: 'office', label: 'Office' }]} />}
         </div>
         {!widget && (
           <div className="jv-bar-tools">
             <div className="jv-bar-row jv-end">
               <Segmented label="Which agents to show" value={scope} onChange={onScope} options={[
-                { value: 'active', label: 'Active team', title: 'Current work and results not yet sent' },
-                { value: 'session', label: 'Whole session', title: 'Every agent in this team, including finished work' },
+                { value: 'active', label: office ? 'Current work' : 'Active team', title: 'Current work and results not yet sent' },
+                { value: 'session', label: office ? 'All history' : 'Whole session', title: office ? 'Include finished agents across loaded teams' : 'Every agent in this team, including finished work' },
               ]} />
-              <Segmented label="View" value={pane} onChange={onPane} options={[{ value: 'board', label: 'Board' }, { value: 'graph', label: 'Graph' }]} />
+              <Segmented label="View" value={pane} onChange={onPane} options={[{ value: 'board', label: 'Board' }, { value: 'graph', label: 'Graph' }, { value: 'office', label: 'Office' }]} />
               <Legend />
               {viewerControls}
             </div>
@@ -369,10 +379,13 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
         <strong>{connection.label}</strong> {connection.detail}{snapshot && connection.tone === 'down' ? ' Showing the last known team.' : ''}
       </div>}
 
-      {view && <AttentionPanel items={view.attention} onOpen={select} onDismiss={dismiss} limit={widget ? 1 : 3} />}
+      {!office && view && <AttentionPanel items={view.attention} onOpen={select} onDismiss={dismiss} limit={widget ? 1 : 3} />}
 
       <main className="jv-main" data-detail={selectedExists}>
-        {showGraph ? <div className="jv-graph">{renderGraph(selectedAgentId, select, hiddenIds, mission)}</div> : (
+        {office ? <OfficeView snapshots={officeSnapshots} scope={scope} selectedKey={officeSelection ? officeKey(officeSelection.sessionId, officeSelection.agentId) : null}
+          onSelect={(sessionId, agentId) => setOfficeSelection(previous => previous?.sessionId === sessionId && previous.agentId === agentId ? null : { sessionId, agentId })}
+          onOpenTeam={(sessionId, agentId) => { selections.current.set(sessionId, agentId); setSelectedAgentId(agentId); onSelectSession(sessionId); onPane('board') }}
+          live={live} visible={visible} animationMode={animationMode} now={now} /> : showGraph ? <div className="jv-graph">{renderGraph(selectedAgentId, select, hiddenIds, mission)}</div> : (
           <div className="jv-board" ref={list} onScroll={event => { if (selectedSessionId) scrolls.current.set(selectedSessionId, event.currentTarget.scrollTop) }}>
             {view ? (
               <>
@@ -387,7 +400,9 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
             ) : <EmptyState connection={connection} hasSessions={sessions.length > 0} />}
           </div>
         )}
-        {selectedExists && snapshot && <DetailPanel snapshot={snapshot} agentId={selectedAgentId!} live={live} now={now} onSelect={select} onClose={() => select(null)} />}
+        {selectedExists && detailSnapshot && <DetailPanel snapshot={detailSnapshot} agentId={detailAgentId!} live={live} now={now}
+          onSelect={office ? id => setOfficeSelection({ sessionId: detailSnapshot.sessionId, agentId: id }) : select}
+          onClose={() => office ? setOfficeSelection(null) : select(null)} />}
       </main>
 
       {promptBar}
