@@ -1,5 +1,5 @@
 import type { OfficeAppearance, OfficeEvent, OfficeScene, OfficeActor, OfficeFloor } from './office-types'
-import type { TeamSnapshot, TeamTaskRow } from './team-types'
+import type { TeamAgentRow, TeamSnapshot } from './team-types'
 import { buildTeamView, describeActivity, isTerminal, isWorking, statusText, type TeamScope } from './team-model'
 
 export const officeKey = (sessionId: string, agentId: string): string => JSON.stringify([sessionId, agentId])
@@ -39,18 +39,10 @@ export function officeAppearance(slot: number): OfficeAppearance {
     gear: ['headset', 'glasses', 'visor', 'satchel', 'scarf', 'earpiece'][variant % 6] }
 }
 
-function latestTasks(snapshot: TeamSnapshot): Map<string, TeamTaskRow> {
-  const map = new Map<string, TeamTaskRow>()
-  for (const task of snapshot.tasks) {
-    const old = map.get(task.childId)
-    if (!old || (task.updatedAt ?? 0) > (old.updatedAt ?? 0) || ((task.updatedAt ?? 0) === (old.updatedAt ?? 0) && task.id.localeCompare(old.id) > 0)) map.set(task.childId, task)
-  }
-  return map
-}
+const activeInOffice = (agent: TeamAgentRow) => isWorking(agent.status) || agent.status === 'waiting_approval' || agent.status === 'waiting_input'
 function quiet(snapshot: TeamSnapshot): boolean {
-  const tasks = latestTasks(snapshot)
-  return !snapshot.agents.some(a => isWorking(a.status) || a.status === 'waiting_approval' || a.status === 'waiting_input')
-    && !snapshot.agents.some(a => (a.status === 'done' || a.status === 'failed') && !['delivered', 'received', 'discarded'].includes(tasks.get(a.id)?.delivery ?? 'none'))
+  // Delivery history belongs in Board/details, not in an otherwise empty office.
+  return !snapshot.agents.some(activeInOffice)
 }
 const floorColors = ['#f3a45b', '#66bd83', '#6da9d8', '#b18ad0', '#d6ae52', '#c57b83', '#5db7ad']
 const runtimeNames = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', copilot: 'Copilot', cursor: 'Cursor' }
@@ -70,9 +62,20 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
   const xs = [20, 64, 107]
   const teamActors: OfficeActor[] = [], lounge: OfficeActor[] = []
   for (const snap of included) {
-    const view = buildTeamView(snap, scope)
-    const rows = view.rows
+    const quietTeam = quiet(snap)
+    const view = buildTeamView(snap, showQuiet && quietTeam ? 'session' : scope)
     const agents = new Map(snap.agents.map(a => [a.id, a]))
+    const current = new Set<string>()
+    if (scope === 'active' && !quietTeam) {
+      for (const agent of snap.agents.filter(activeInOffice)) {
+        let next: TeamAgentRow | undefined = agent
+        while (next && !current.has(next.id)) {
+          current.add(next.id)
+          next = next.parentId ? agents.get(next.parentId) : undefined
+        }
+      }
+    }
+    const rows = scope === 'active' && !quietTeam ? view.rows.filter(row => current.has(row.agent.id)) : view.rows
     const childIds = new Set(snap.agents.filter(a => a.parentId && agents.has(a.parentId)).map(a => a.parentId!))
     const roots = new Map<string, typeof rows>()
     const groupRoot = (id: string): string => {

@@ -34,3 +34,26 @@ it('preserves an existing team floor identity when another team is inserted befo
   const prior=buildOfficeScene([b],'active',false,identities),next=buildOfficeScene([a,b],'active',false,identities)
   assert.equal(prior.actors.find(a=>a.sessionId==='b')?.floorId,next.actors.find(a=>a.sessionId==='b')?.floorId)
 })
+it('lets idle teams leave even when old results have no delivery acknowledgement', () => {
+  for(const delivery of ['none','pending','unknown'] as const){
+    const lead={...agent('lead'),status:'idle' as const},worker={...agent('worker','lead'),status:'done' as const}
+    const snapshot=team('s',[lead,worker],[task({status:'done',delivery})])
+    const ids=assignOfficeIdentities(snapshot.agents.map(a=>officeKey('s',a.id)))
+    const scene=buildOfficeScene([snapshot],'active',false,ids)
+    assert.equal(scene.actors.length,0)
+    assert.equal(scene.floors.filter(f=>f.kind==='team').length,0)
+    assert.equal(scene.floors.filter(f=>f.kind==='lounge').length,1)
+    assert.equal(scene.quietTeams.length,1)
+    assert.equal(buildOfficeScene([snapshot],'session',true,ids).actors.length,2)
+  }
+})
+it('does not create historical lounge floors in Current work while a sibling is active', () => {
+  const lead={...agent('lead'),status:'idle' as const}
+  const old=Array.from({length:10},(_,i)=>({...agent(`old-${i}`,'lead'),status:'done' as const}))
+  const snapshot=team('s',[lead,agent('worker','lead'),...old],old.map(a=>task({id:a.id,childId:a.id,status:'done',delivery:'pending'})))
+  const ids=assignOfficeIdentities(snapshot.agents.map(a=>officeKey('s',a.id)))
+  const current=buildOfficeScene([snapshot],'active',false,ids)
+  assert.deepEqual(current.actors.map(a=>a.agent.id).sort(),['lead','worker'])
+  assert.equal(current.floors.filter(f=>f.kind==='lounge').length,1)
+  assert.equal(buildOfficeScene([snapshot],'session',false,ids).actors.length,12)
+})
