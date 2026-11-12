@@ -1,6 +1,7 @@
 import type { OfficeActor, OfficeEvent, OfficePoint, OfficePose, OfficeScene } from './office-types'
 import type { TeamSnapshot } from './team-types'
 import { statusText } from './team-model'
+import type { AnimationMode } from './viewer-preferences'
 
 export type OfficePane = 'board' | 'graph' | 'office'
 export interface OfficeTripSegment { from: OfficePoint; to: OfficePoint; duration: number; kind: 'walk' | 'ride' | 'hold' }
@@ -109,6 +110,7 @@ export function officeDepartureScene(held: OfficeScene, next: OfficeScene, snaps
 }
 
 export function parseOfficePane(value: string | null): OfficePane { return value === 'office' || value === 'graph' ? value : 'board' }
+export function officeAllowsMotion(mode: AnimationMode, reduced: boolean, allowReduced: boolean): boolean { return mode !== 'off' && (!reduced || allowReduced) }
 
 export function parseOfficeIdentities(raw: string | null): Map<string, number> {
   const identities = new Map<string, number>()

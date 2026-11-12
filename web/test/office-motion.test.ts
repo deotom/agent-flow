@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { createOfficeTrip, officeDepartureScene, officeTripFrame, mergeOfficeEvents, officePresenceEvents, populatedOfficeTeams, parseOfficeIdentities, parseOfficePane } from '../lib/office-motion'
+import { createOfficeTrip, officeAllowsMotion, officeDepartureScene, officeTripFrame, mergeOfficeEvents, officePresenceEvents, populatedOfficeTeams, parseOfficeIdentities, parseOfficePane } from '../lib/office-motion'
 import type { OfficeActor, OfficeEvent, OfficeScene } from '../lib/office-types'
 
 const actor = (key: string, y: number, parentKey: string | null = null): OfficeActor => ({ key, x: 20, y, floorId: `floor:${y}`, parentKey, sessionId: 't3:a',
@@ -101,6 +101,13 @@ describe('Office evidence animation', () => {
 })
 
 describe('Office preferences', () => {
+  it('allows an explicit Office motion override without changing system or Effects off preferences', () => {
+    assert.equal(officeAllowsMotion('full',true,false),false)
+    assert.equal(officeAllowsMotion('full',true,true),true)
+    assert.equal(officeAllowsMotion('low',true,true),true)
+    assert.equal(officeAllowsMotion('off',true,true),false)
+    assert.equal(officeAllowsMotion('full',false,false),true)
+  })
   it('restores Office and safely falls back from unknown pane values', () => {
     assert.equal(parseOfficePane('office'), 'office')
     assert.equal(parseOfficePane('graph'), 'graph')

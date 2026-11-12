@@ -6,7 +6,7 @@ import { STATUS_LABEL, isWorking, type TeamScope } from '../../../lib/team-model
 import type { AnimationMode } from '../../../lib/viewer-preferences'
 import type { OfficeActor, OfficeEvent, OfficePet, OfficeScene } from '../../../lib/office-types'
 import { assignOfficeIdentities, buildOfficeScene, officeEvents, officeKey } from '../../../lib/office-model'
-import { createOfficeTrip, mergeOfficeEvents, officeDepartureScene, officePresenceEvents, populatedOfficeTeams, officeTripFrame, parseOfficeIdentities, type OfficeTrip } from '../../../lib/office-motion'
+import { createOfficeTrip, mergeOfficeEvents, officeAllowsMotion, officeDepartureScene, officePresenceEvents, populatedOfficeTeams, officeTripFrame, parseOfficeIdentities, type OfficeTrip } from '../../../lib/office-motion'
 import { drawOfficeFrame, officeAmbient } from './office-art'
 
 interface OfficeViewProps {
@@ -58,6 +58,8 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   }, [identities, savedIdentities])
   const [showQuiet, setShowQuiet] = useState(false)
   const [paused, setPaused] = useState(false)
+  const [allowReduced, setAllowReduced] = useState(() => { try { return localStorage.getItem('agent-flow-office-motion-override') === 'allow' } catch { return false } })
+  useEffect(() => { try { localStorage.setItem('agent-flow-office-motion-override', allowReduced ? 'allow' : 'system') } catch { /* In-memory selection remains available. */ } }, [allowReduced])
   const [pets] = useState(visitingPets)
   const [petEvent, setPetEvent] = useState<{ kind: 'coffee' | 'heart' | 'fish'; until: number } | null>(null)
   const [petNote, setPetNote] = useState('A resident cat and visiting pets share the lounge. Try greeting the cat.')
@@ -72,7 +74,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const held = useRef<OfficeScene | null>(null)
   const holdLayout = (value: OfficeScene | null) => { held.current = value; setHeldLayout(value) }
   const visualScene = useMemo(() => heldLayout ? officeDepartureScene(heldLayout, scene, snapshots) : scene, [heldLayout, scene, snapshots])
-  const enabled = visible && pageVisible && live && animationMode !== 'off' && !reduced && !paused
+  const enabled = visible && pageVisible && live && officeAllowsMotion(animationMode, reduced, allowReduced) && !paused
   const canvas = useRef<HTMLCanvasElement>(null)
   const queue = useRef<Pending[]>([])
   const active = useRef<OfficeTrip | null>(null)
@@ -173,7 +175,10 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     <section className="of-view" aria-label="Agent Office">
       <div className="of-toolbar">
         <span>{snapshots.length} teams · {working} working{needsYou > 0 && <strong className="of-waiting"> · {needsYou} need you</strong>}</span>
-        <button type="button" aria-pressed={paused} onClick={() => setPaused(value => !value)} disabled={animationMode === 'off' || reduced} title={reduced ? 'Motion follows your reduced motion preference' : 'Pause both work animations and decorative movement'}>{paused ? 'Resume motion' : 'Pause motion'}</button>
+        <button type="button" aria-pressed={paused} onClick={() => { if (reduced && !allowReduced) { setAllowReduced(true); setPaused(false) } else setPaused(value => !value) }} disabled={animationMode === 'off'}
+          title={animationMode === 'off' ? 'Choose Full effects or Low GPU in Animation settings' : reduced && !allowReduced ? 'Enable motion for Office only; your system setting stays unchanged' : 'Pause both work animations and decorative movement'}>
+          {animationMode === 'off' ? 'Effects off' : reduced && !allowReduced ? 'Enable Office motion' : paused ? 'Resume motion' : 'Pause motion'}</button>
+        {reduced && allowReduced && <button type="button" onClick={() => setAllowReduced(false)} title="Restore the system reduced motion preference for Office">Follow system</button>}
       </div>
       <div className="of-clock"><time dateTime={new Date(now).toISOString()}>{new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time><span>{ambient.name} · local time</span></div>
       {!live && <p className="of-caption">Last known positions. Work animations resume after fresh reads.</p>}
