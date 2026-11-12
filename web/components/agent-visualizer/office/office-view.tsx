@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { TeamSnapshot } from '../../../lib/team-types'
-import { STATUS_LABEL, isWorking, type TeamScope } from '../../../lib/team-model'
+import { isWorking, type TeamScope } from '../../../lib/team-model'
 import type { AnimationMode } from '../../../lib/viewer-preferences'
 import type { OfficeActor, OfficeEvent, OfficePet, OfficeScene } from '../../../lib/office-types'
 import { assignOfficeIdentities, buildOfficeScene, officeEvents, officeKey } from '../../../lib/office-model'
@@ -24,13 +24,6 @@ const IDENTITY_STORAGE = 'agent-flow-office-identities-v1'
 const readIdentities = () => { try { return parseOfficeIdentities(localStorage.getItem(IDENTITY_STORAGE)) } catch { return new Map<string, number>() } }
 const sameIdentities = (a: ReadonlyMap<string, number>, b: ReadonlyMap<string, number>) => a.size === b.size && [...a].every(([key, value]) => b.get(key) === value)
 
-function visitingPets(): OfficePet[] {
-  const choices: OfficePet[] = ['dog', 'rabbit', 'bird', 'turtle']
-  const pets: OfficePet[] = []
-  const count = 1 + Math.floor(Math.random() * 2)
-  for (let i = 0; i < count; i++) pets.push(choices.splice(Math.floor(Math.random() * choices.length), 1)[0])
-  return pets
-}
 function useDisplayPreferences() {
   const [reduced, setReduced] = useState(false)
   const [pageVisible, setPageVisible] = useState(true)
@@ -60,16 +53,12 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const [paused, setPaused] = useState(false)
   const [allowReduced, setAllowReduced] = useState(() => { try { return localStorage.getItem('agent-flow-office-motion-override') === 'allow' } catch { return false } })
   useEffect(() => { try { localStorage.setItem('agent-flow-office-motion-override', allowReduced ? 'allow' : 'system') } catch { /* In-memory selection remains available. */ } }, [allowReduced])
-  const [pets] = useState(visitingPets)
-  const [petEvent, setPetEvent] = useState<{ kind: 'coffee' | 'heart' | 'fish'; until: number } | null>(null)
-  const [petNote, setPetNote] = useState('A resident cat and visiting pets share the lounge. Try greeting the cat.')
-  useEffect(() => {
-    if (!petEvent) return
-    const timer = setTimeout(() => { setPetEvent(null); setPetNote('A resident cat and visiting pets share the lounge. Try greeting the cat.') }, Math.max(0, petEvent.until - Date.now()))
-    return () => clearTimeout(timer)
-  }, [petEvent])
+  const pets: OfficePet[] = []
+  const petEvent = null
   const { reduced, pageVisible } = useDisplayPreferences()
-  const scene = useMemo(() => buildOfficeScene(snapshots, scope, showQuiet, identities), [snapshots, scope, showQuiet, identities])
+  const viewport = useRef<HTMLDivElement>(null)
+  const sceneWidth = 450
+  const scene = useMemo(() => buildOfficeScene(snapshots, scope, showQuiet, identities, sceneWidth), [snapshots, scope, showQuiet, identities, sceneWidth])
   const [heldLayout, setHeldLayout] = useState<OfficeScene | null>(null)
   const held = useRef<OfficeScene | null>(null)
   const holdLayout = (value: OfficeScene | null) => { held.current = value; setHeldLayout(value) }
@@ -82,7 +71,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const motionClock = useRef(0)
   const elapsed = useRef(0)
   const [moving, setMoving] = useState<Moving | null>(null)
-  const [caption, setCaption] = useState('Decorative lounge movement is separate from observed work events.')
+  const [inspectedKey, setInspectedKey] = useState<string | null>(null)
   const current = useRef({ scene: visualScene, selectedKey, pets, petEvent, enabled, live })
   current.current = { scene: visualScene, selectedKey, pets, petEvent, enabled, live }
 
@@ -90,7 +79,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     const previous = baseline.current
     if (!enabled || !previous?.enabled) {
       queue.current = []; active.current = null; setMoving(null); holdLayout(null)
-    } else {
+    } else if (previous.snapshots !== snapshots) {
       const events = [...officeEvents(previous.snapshots, snapshots, Date.now()), ...officePresenceEvents(previous.scene, scene, populatedOfficeTeams(previous.snapshots), Date.now())]
       if (events.some(event => event.kind === 'left')) {
         if (!held.current) holdLayout(previous.scene)
@@ -110,6 +99,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     if (!context) return
     const input = current.current
     const actors = movement ? input.scene.actors.some(actor => actor.key === movement.actor.key) ? input.scene.actors.map(actor => actor.key === movement.actor.key ? movement.actor : actor) : [...input.scene.actors,movement.actor] : input.scene.actors
+    context.setTransform(2,0,0,2,0,0)
     drawOfficeFrame(context, { ...input.scene, actors }, { time: elapsed.current, date: new Date(), now: Date.now(), live: input.live,
       motion: input.enabled, pets: input.pets, petEvent: input.petEvent, selectedKey: input.selectedKey, elevatorY: movement?.elevatorY ?? null, doorOpen: Boolean(movement && movement.actor.y >= input.scene.height-35) })
   }
@@ -139,7 +129,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
           const pending = queue.current.splice(index, 1)[0]
           if (Date.now() - pending.event.at > 15_000) continue
           const trip = createOfficeTrip(pending.event, pending.before, input.scene, motionClock.current)
-          if (trip) { active.current = trip; setCaption(`${trip.caption} · ${input.scene.actors.find(actor => actor.key === pending.event.actorKey)?.agent.name ?? 'agent'}`); break }
+          if (trip) { active.current = trip; break }
         }
       }
       let movement: Moving | null = null
@@ -160,58 +150,57 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   }, [enabled, animationMode])
 
   const displayed = moving ? visualScene.actors.some(actor => actor.key === moving.actor.key) ? visualScene.actors.map(actor => actor.key === moving.actor.key ? moving.actor : actor) : [...visualScene.actors,moving.actor] : visualScene.actors
+
   const ambient = officeAmbient(new Date(now))
   const working = snapshots.reduce((sum, team) => sum + team.agents.filter(agent => isWorking(agent.status)).length, 0)
   const needsYou = snapshots.reduce((sum, team) => sum + team.agents.filter(agent => agent.status.startsWith('waiting_')).length, 0)
   const lounge = visualScene.floors.find(floor => floor.kind === 'lounge')
-  const closeEncounter = moving ? visualScene.actors.filter(actor => actor.key !== moving.actor.key && Math.abs(actor.y - moving.actor.y) < 8 && Math.abs(actor.x - moving.actor.x) < 38) : []
-  const greeting = () => {
-    if (petEvent && petEvent.until > Date.now()) return
-    const choices = ['heart', 'coffee', 'fish'] as const
-    const kind = choices[Math.floor(Math.random() * choices.length)]
-    setPetEvent({ kind, until: Date.now() + 6500 })
-    setPetNote(kind === 'coffee' ? 'Lounge surprise: the cat declares a coffee break.' : kind === 'fish' ? 'Lounge surprise: a tiny fish treasure!' : 'Lounge surprise: the cat approves a short break.')
-  }
+
   return (
-    <section className="of-view" aria-label="Agent Office">
+    <section className="of-view" data-motion={enabled} aria-label="Agent Office">
       <div className="of-toolbar">
-        <span>{snapshots.length} teams · {working} working{needsYou > 0 && <strong className="of-waiting"> · {needsYou} need you</strong>}</span>
-        <button type="button" aria-pressed={paused} onClick={() => { if (reduced && !allowReduced) { setAllowReduced(true); setPaused(false) } else setPaused(value => !value) }} disabled={animationMode === 'off'}
-          title={animationMode === 'off' ? 'Choose Full effects or Low GPU in Animation settings' : reduced && !allowReduced ? 'Enable motion for Office only; your system setting stays unchanged' : 'Pause both work animations and decorative movement'}>
-          {animationMode === 'off' ? 'Effects off' : reduced && !allowReduced ? 'Enable Office motion' : paused ? 'Resume motion' : 'Pause motion'}</button>
-        {reduced && allowReduced && <button type="button" onClick={() => setAllowReduced(false)} title="Restore the system reduced motion preference for Office">Follow system</button>}
+        <span className="of-counts">{working} working{needsYou > 0 && <strong className="of-waiting"> · {needsYou} need you</strong>}</span>
+        <time dateTime={new Date(now).toISOString()} title={`${ambient.name} · local time`}><span aria-hidden="true">{ambient.night ? '☾' : '☀'}</span> {new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</time>
+        <button type="button" aria-label={paused || (reduced && !allowReduced) ? 'Resume Office motion' : 'Pause Office motion'} aria-pressed={paused} disabled={animationMode === 'off'}
+          onClick={() => { if (reduced) { setAllowReduced(value => !value); setPaused(false) } else setPaused(value => !value) }}
+          title={animationMode === 'off' ? 'Effects off in Animation settings' : reduced ? allowReduced ? 'Pause and follow system reduced motion' : 'Enable Office motion despite system reduced motion' : paused ? 'Resume Office motion' : 'Pause Office motion'}>
+          <span aria-hidden="true">{paused || (reduced && !allowReduced) ? '▶' : 'Ⅱ'}</span></button>
+
       </div>
-      <div className="of-clock"><time dateTime={new Date(now).toISOString()}>{new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time><span>{ambient.name} · local time</span></div>
-      {!live && <p className="of-caption">Last known positions. Work animations resume after fresh reads.</p>}
-      {scene.quietTeams.length > 0 && <button className="of-quiet" type="button" aria-expanded={showQuiet} onClick={() => setShowQuiet(value => !value)}>{showQuiet ? 'Collapse quiet teams' : `Show ${scene.quietTeams.length} quiet teams`}</button>}
-      <div className="of-scroll">
-        {snapshots.length === 0 ? <p className="of-empty">Waiting for T3 team snapshots. No session selection is required.</p> : (
-          <div className="of-building" style={{ '--of-height': visualScene.height } as CSSProperties}>
-            <canvas ref={canvas} width={visualScene.width} height={visualScene.height} role="img" aria-label={`Office with ${visualScene.actors.length} visible agents from ${snapshots.length} T3 teams. Choose an agent label for details.`} />
-            {visualScene.floors.map(floor => {
-              const speaking = moving && Math.abs(moving.actor.y - (floor.y + 61)) < 8 && closeEncounter.length > 0
-              return <button key={floor.id} type="button" className="of-floor-label" style={{ top: `${floor.y / visualScene.height * 100}%`, borderLeftColor: floor.color, visibility: speaking ? 'hidden' : 'visible' }}
-                disabled={!floor.sessionId} title={`${floor.title}${floor.subtitle ? ` · ${floor.subtitle}` : ''}${floor.sessionId ? '\nOpen this team in Board' : '\nShared resting space; idle movement is decorative'}`}
-                onClick={() => floor.sessionId && onOpenTeam(floor.sessionId, null)}><strong>{floor.title}</strong><span>{floor.subtitle}</span></button>
-            })}
-            {displayed.map(actor => {
-              const raised = moving?.actor.key === actor.key && closeEncounter.length > 0
-              return <button key={actor.key} type="button" className="of-agent-label" data-runtime={actor.agent.runtime ?? 'unknown'} data-status={actor.agent.status} data-selected={selectedKey === actor.key}
-                aria-pressed={selectedKey === actor.key} aria-label={`${actor.agent.name}, ${actor.runtimeName}, ${actor.agent.role}, ${actor.activity}`}
-                title={`${actor.agent.name}\n${actor.runtimeName} · ${actor.agent.model ?? 'Model not reported'}\n${actor.activity}${actor.agent.task ? `\n${actor.agent.task}` : ''}`}
-                style={{ left: `${(actor.x + 6.5) / visualScene.width * 100}%`, top: `${(actor.y - 48 - (raised ? 20 : 0)) / visualScene.height * 100}%` }}
-                onClick={() => onSelect(actor.sessionId, actor.agent.id)}>
-                <strong>{actor.agent.name}</strong><span>{actor.runtimeName}{actor.agent.role === 'lead' ? ' · Lead' : ''}</span><em>{actor.activity || STATUS_LABEL[actor.agent.status]}</em>
+
+      <div className="of-scroll" ref={viewport}>
+        {snapshots.length === 0 ? <p className="of-empty">Your teams will appear here.</p> : (
+          <div className="of-building" style={{ width:'100%', maxWidth:900, aspectRatio:`${visualScene.width} / ${visualScene.height}` } as CSSProperties}>
+            {visualScene.floors.filter(f=>f.kind!=='quiet').map(floor=><div key={`art-${floor.id}`} aria-hidden="true" className={`of-art of-art-${floor.kind==='lounge'?'surface':floor.room}`} style={{top:`${floor.y/visualScene.height*100}%`,height:`${(floor.height??0)/visualScene.height*100}%`}} />)}
+            <div aria-hidden="true" className="of-art of-art-bottom" style={{bottom:0,height:`${visualScene.width/3/visualScene.height*100}%`}} />
+            <canvas ref={canvas} width={visualScene.width*2} height={visualScene.height*2} role="img" aria-label={`Office with ${visualScene.actors.filter(a=>!a.hidden).length} visible agents from ${snapshots.length} T3 teams. Choose an agent for details.`} />
+            {visualScene.floors.filter(f=>f.kind!=='lounge').map(floor => <div key={floor.id}>
+              <button type="button" className="of-floor-label" style={{ top:`${(floor.y+5)/visualScene.height*100}%`,right:floor.overflow?52:'7%' }}
+                aria-expanded={floor.kind === 'quiet' ? showQuiet : undefined}
+                title={floor.kind === 'quiet' ? showQuiet ? 'Collapse quiet teams' : 'Expand quiet teams' : floor.title}
+                onClick={() => floor.kind === 'quiet' ? setShowQuiet(v=>!v) : floor.sessionId && onOpenTeam(floor.sessionId,null)}>
+                <i aria-hidden="true" style={{background:floor.waiting ? '#ffc46b' : floor.working ? '#a8d78d' : floor.color}} />
+                <strong>{floor.title}</strong><span>{floor.kind === 'quiet' ? showQuiet ? '−' : '+' : floor.subtitle}</span>
+              </button>
+              {!!floor.overflow && <button className="of-overflow" style={{right:'7%',top:`${(floor.y+5)/visualScene.height*100}%`}} onClick={()=>floor.sessionId&&onOpenTeam(floor.sessionId,null)} aria-label={`Open team in Board: ${floor.overflow} more agents`}>+{floor.overflow}</button>}
+            </div>)}
+            {!!lounge?.overflow && <span className="of-resting">+{lounge.overflow} resting</span>}
+            {displayed.filter(actor=>!actor.hidden).map(actor => {
+              const waiting=actor.agent.status.startsWith('waiting_')
+              const activity=actor.agent.activities.at(-1)?.type ?? ''
+              const bubble=waiting ? '!' : actor.agent.status==='failed' ? '×' : /edit|write|file_change/.test(activity) ? '</>' : /search|read/.test(activity) ? '⌕' : /command|tool|shell/.test(activity) ? '>_' : '…'
+              return <button key={actor.key} type="button" className="of-agent" data-status={actor.agent.status} data-selected={selectedKey===actor.key}
+                aria-pressed={selectedKey===actor.key} aria-label={`${actor.agent.name}, ${actor.runtimeName}, ${actor.agent.role}, ${actor.activity}`}
+                style={{left:`${(actor.x-22)/visualScene.width*100}%`,top:`${(actor.y-72)/visualScene.height*100}%`,width:`${44/visualScene.width*100}%`,height:`${75/visualScene.height*100}%`}}
+                onMouseEnter={()=>setInspectedKey(actor.key)} onMouseLeave={()=>setInspectedKey(null)} onFocus={()=>setInspectedKey(actor.key)} onBlur={()=>setInspectedKey(null)}
+                onClick={()=>onSelect(actor.sessionId,actor.agent.id)}>
+                {actor.zone==='desk' && <span className="of-bubble" aria-hidden="true">{bubble}</span>}
+                <span className="of-name" data-visible={inspectedKey===actor.key||selectedKey===actor.key}>{actor.agent.name}</span>
               </button>
             })}
-            {lounge && <button type="button" className="of-cat" aria-label="Greet the lounge cat (decorative easter egg)" title="Greet the cat" style={{ top: `${(lounge.y + 44) / visualScene.height * 100}%`, height: `${22 / visualScene.height * 100}%` }} onClick={greeting} />}
+            {moving && <div className="of-toast" role="status" aria-live="polite">{moving.actor.agent.name} {moving.caption}</div>}
           </div>
         )}
-      </div>
-      <div className="of-footer">
-        <p className="of-caption" role="status" aria-live="polite">{caption}</p>
-        <p className="of-caption">{petNote}</p>
-        <span>{scene.totalAgents} agents · {scene.finishedCount} finished · Work paths follow newly observed T3 events.</span>
       </div>
     </section>
   )

@@ -1,3 +1,4 @@
+import { drawRuntimeMark } from '../canvas/runtime-mark'
 import type { OfficeAppearance, OfficePaintOptions, OfficePose, OfficeScene } from '../../../lib/office-types'
 
 type Ambient = { name: string; night: boolean; sky: string; horizon: string; rooms: string[]; glass: string; ground: string; sun: string }
@@ -10,161 +11,78 @@ export function officeAmbient(date: Date): Ambient {
 }
 
 type Ctx = CanvasRenderingContext2D
-const rect = (c: Ctx, x: number, y: number, w: number, h: number, color: string) => { c.fillStyle = color; c.fillRect(Math.round(x), Math.round(y), Math.max(0, Math.round(w)), Math.max(0, Math.round(h))) }
-function polygon(c: Ctx, points: Array<[number, number]>, color: string) {
-  c.fillStyle = color; c.beginPath()
-  points.forEach(([x, y], i) => i ? c.lineTo(Math.round(x), Math.round(y)) : c.moveTo(Math.round(x), Math.round(y)))
-  c.closePath(); c.fill()
+function oval(c: Ctx, x:number,y:number,rx:number,ry:number,color:string,outline=true) {
+  c.beginPath(); c.ellipse(x,y,rx,ry,0,0,Math.PI*2);c.fillStyle=color;c.fill()
+  if(outline){c.strokeStyle='#4b3025';c.lineWidth=1.6;c.stroke()}
 }
-const rounded = (c: Ctx, x: number, y: number, w: number, h: number, color: string) => { rect(c, x + 1, y, w - 2, h, color); rect(c, x, y + 1, w, h - 2, color) }
-function box(c: Ctx, x: number, y: number, w: number, h: number, depth: number, front: string, top: string, side: string) {
-  polygon(c, [[x,y],[x+depth,y-depth/2],[x+w+depth,y-depth/2],[x+w,y]], top); rect(c,x,y,w,h,front)
-  polygon(c, [[x+w,y],[x+w+depth,y-depth/2],[x+w+depth,y+h-depth/2],[x+w,y+h]],side)
-}
-function windowAt(c: Ctx, x: number, y: number, a: Ambient, time: number) {
-  rect(c,x-2,y-2,23,18,'#526b80'); rect(c,x,y,19,14,a.glass); rect(c,x+2,y+2,3,10,'#ffffff30'); rect(c,x+9,y,1,14,'#71889a')
-  if (!a.night) rect(c,x+3+Math.round(Math.sin(time*.2)*2),y+5,5,2,'#ffffff70')
-}
-function desk(c: Ctx, x: number, y: number, color: string, time: number) {
-  rounded(c,x-4,y+4,32,3,'#182939'); box(c,x-3,y-3,25,2,5,'#96744f','#ffe0a4','#b7806d')
-  rect(c,x-1,y-1,2,8,'#c18b6e'); rect(c,x+20,y-1,2,8,'#b47a64'); box(c,x+2,y-16,14,10,2,'#e4d2c1','#fff0d2','#af9eaf')
-  rect(c,x+3,y-15,12,7,'#273645'); for(let i=0;i<3;i++) rect(c,x+5,y-13+i*2,3+(Math.floor(time*2+i)%6),1,color)
-}
-
-/** Draw one appearance-driven, outlined pixel character. Feet rest at x,y. */
-export function drawOfficeAvatar(ctx: CanvasRenderingContext2D, appearance: OfficeAppearance, x: number, y: number, time: number, pose: OfficePose = {}): void {
-  const c = ctx as Ctx, ink = '#101d2b', step = Boolean(pose.walk && Math.floor(time*7)%2), bob = pose.walk && Math.sin(time*10)>0 ? 1 : 0
-  const top = y - 27 - bob, kind = appearance.kind
-  rounded(c,x-2,y,20,3,'#172535')
-  const limb = kind === 'robot' ? '#aec9d5' : appearance.skin
-  if (kind === 'human') {
-    rounded(c,x-1,top+5,16,11,ink); rounded(c,x,top+6,14,9,appearance.skin)
-    rect(c,x+1,top+4,12,4,appearance.hair)
-    if (appearance.cut === 'bun') rounded(c,x-3,top+2,6,6,appearance.hair)
-    else if (appearance.cut === 'crop') rect(c,x+1,top+5,12,3,appearance.hair)
-    else if (appearance.cut === 'cap') { rect(c,x,top+2,13,4,'#174f91'); rect(c,x+6,top+1,4,2,'#f8dc76') }
-    else if (appearance.cut === 'beanie') rounded(c,x-1,top+2,16,5,appearance.shirt)
-    else if (appearance.cut === 'ponytail') rounded(c,x-3,top+6,4,10,appearance.hair)
-    else if (appearance.cut === 'curly') { for (const dx of [1,5,9,12]) rounded(c,x+dx,top+2,4,4,appearance.hair) }
-    else if (appearance.cut === 'spike') { rect(c,x+2,top+1,2,4,appearance.hair); rect(c,x+7,top,2,5,appearance.hair); rect(c,x+11,top+2,2,3,appearance.hair) }
-    else rect(c,x+3,top+3,10,2,appearance.hair)
-    rect(c,x+4,top+10,1,2,ink); rect(c,x+10,top+10,1,2,ink); rounded(c,x+1,top+16,13,9,ink); rect(c,x+2,top+17,11,7,appearance.shirt)
-    if (appearance.gear === 'glasses' || appearance.gear === 'goggles') { rect(c,x+2,top+9,4,3,'#9be3ed'); rect(c,x+9,top+9,4,3,'#9be3ed') }
-    if (appearance.gear === 'headset' || appearance.gear === 'headphones') { rect(c,x-1,top+9,2,6,'#bfd1dd'); rect(c,x+14,top+9,2,6,'#bfd1dd') }
-    if (appearance.gear === 'scarf') rect(c,x+2,top+16,12,3,'#e9e3ce')
-    legs(c,x,top,appearance.pants,step,Boolean(pose.sit))
-  } else if (kind === 'robot') {
-    rect(c,x+6,top+1,3,4,ink); rect(c,x+7,top,1,2,'#ffcf5e'); box(c,x,top+5,16,12,2,'#b9d1dc','#f0f7f5','#789bb2')
-    rect(c,x+2,top+8,12,6,ink); rect(c,x+4,top+10,3,2,'#5deded'); rect(c,x+10,top+10,2,2,'#5deded'); box(c,x+2,top+18,12,7,2,appearance.shirt,'#79c9ec','#255474')
-    rect(c,x+5,top+20,5,3,'#f7d675'); rect(c,x+1,top+19,2,6,limb); rect(c,x+14,top+19,2,6,limb); legs(c,x,top,appearance.pants,step,Boolean(pose.sit))
-  } else {
-    const fur = kind==='raccoon'?'#9ca8b4':kind==='owl'?'#a97842':kind==='fox'?'#e58a40':'#50d7c1'
-    if (kind==='raccoon' || kind==='fox') { rect(c,x-3,top+16,4,9,fur); rect(c,x-3,top+21,4,3,kind==='raccoon'?'#425365':'#f2e6cf') }
-    if (kind==='owl') { rect(c,x,top+1,4,5,'#8a5d3c'); rect(c,x+12,top+1,4,5,'#8a5d3c') }
-    if (kind==='fox') { rect(c,x,top+1,4,7,ink); rect(c,x+11,top+1,4,7,ink) }
-    if (kind==='alien') { rect(c,x+1,top+2,2,5,'#2b9e95'); rect(c,x+12,top+2,2,5,'#2b9e95') }
-    rounded(c,x-2,top+6,19,12,ink); rounded(c,x-1,top+7,17,10,fur)
-    if(kind==='raccoon') rect(c,x-1,top+11,17,4,'#283b50')
-    if(kind==='owl') { rounded(c,x,top+9,7,7,'#f5deb0'); rounded(c,x+8,top+9,7,7,'#f5deb0'); rect(c,x+7,top+14,3,3,'#e4a03b') }
-    if(kind==='fox') polygon(c,[[x,top+14],[x+8,top+17],[x+16,top+14],[x+13,top+19],[x+3,top+19]],'#f4e6ce')
-    if(kind==='alien') { rounded(c,x+1,top+8,14,8,'#50d7c1'); rect(c,x+3,top+10,4,5,ink); rect(c,x+10,top+10,4,5,ink) }
-    if(kind==='raccoon'||kind==='owl'||kind==='fox') { rect(c,x+3,top+11,2,2,'#eef2e4'); rect(c,x+11,top+11,2,2,'#eef2e4') }
-    rounded(c,x+1,top+18,14,8,ink); rect(c,x+2,top+19,12,6,appearance.shirt); rect(c,x,top+20,2,5,fur); rect(c,x+15,top+20,2,5,fur)
-    if(appearance.gear==='scarf') rect(c,x+2,top+18,12,3,'#e9e3ce')
-    legs(c,x,top,appearance.pants,step,Boolean(pose.sit))
+function round(c:Ctx,x:number,y:number,w:number,h:number,color:string,r=4){c.beginPath();c.roundRect(x,y,w,h,r);c.fillStyle=color;c.fill();c.strokeStyle='#4b3025';c.lineWidth=1.4;c.stroke()}
+/** Original layered chibi human; local origin is the seat/feet. */
+export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time:number,p:OfficePose={}) {
+  c.save();c.translate(x,y)
+  const bob=p.walk ? Math.sin(time*9)*1.4 : 0;c.translate(0,bob)
+  oval(c,0,1,15,3,'#3d241c30',false)
+  // Short legs, soft shoes, torso and typing arms.
+  const step=p.walk ? Math.sin(time*9)*3 : 0
+  round(c,-10,p.mug?-10:-17,8,p.mug?9:17+step,a.pants);round(c,2,p.mug?-10:-17,8,p.mug?9:17-step,a.pants)
+  oval(c,-7,0+step,6,3,'#e4cfac');oval(c,7,0-step,6,3,'#e4cfac')
+  round(c,-14,-34,28,23,a.shirt,9)
+  oval(c,-14,-23,5,9,a.shirt);oval(c,14,p.hand||p.climb?-39:-24,5,9,a.shirt)
+  oval(c,-15,p.climb?-39:-21+(p.typing?Math.sin(time*10):0),4,4,a.skin)
+  oval(c,16,p.hand||p.climb?-48:-23+(p.typing?Math.cos(time*10):0),4,4,a.skin)
+  oval(c,0,-46,18,18,a.hair)
+  if(a.cut==='bun')oval(c,-12,-64,8,8,a.hair)
+  if(a.cut==='ponytail'||a.cut==='long')oval(c,-15,-39,7,17,a.hair)
+  oval(c,3,-44,15,14,a.skin)
+  oval(c,-12,-43,4,5,a.skin)
+  // Swept fringe keeps a visible three-quarter face even at a desk.
+  c.beginPath();c.moveTo(-17,-48);c.bezierCurveTo(-18,-69,21,-65,18,-47);c.quadraticCurveTo(10,-51,7,-57);c.quadraticCurveTo(0,-44,-17,-48);c.fillStyle=a.hair;c.fill();c.strokeStyle='#4b3025';c.stroke()
+  if(a.cut==='curly')for(const dx of [-12,-5,3,11])oval(c,dx,-60,5,5,a.hair)
+  oval(c,4,-44,1.7,2.4,'#38291f',false);oval(c,13,-44,1.5,2.3,'#38291f',false)
+  oval(c,0,-38,3.4,1.7,'#e79782',false);oval(c,14,-38,2.8,1.5,'#e79782',false)
+  if(p.sit&&!p.mug){
+    // At a desk we see the back of the head and a small turned profile.
+    oval(c,-5,-47,13,16,a.hair)
+    oval(c,11,-42,7,11,a.skin)
+    oval(c,15,-44,1.5,2.2,'#38291f',false)
+    oval(c,12,-37,2.5,1.5,'#e79782',false)
   }
-  if (pose.lead) { rect(c,x+10,top+18,2,2,'#ffe08a'); rect(c,x+11,top+17,1,4,'#ffe08a') }
-  if (pose.typing) rect(c,x+16,top+22+Math.floor(time*5)%2,2,1,appearance.skin)
-  if (pose.hand) { rect(c,x+15,top+12,2,7,ink); rect(c,x+15,top+13,2,5,appearance.shirt); rect(c,x+15,top+10,2,3,appearance.skin) }
-  if (pose.carry) { box(c,x+11,top+20,6,4,1,'#f5e7c9','#ffefce','#b59f79'); rect(c,x+12,top+21,4,1,'#5c8598') }
-  if (pose.mug) { rounded(c,x+12,top+21,4,4,'#f4e4c9'); rect(c,x+16,top+22,1,2,'#f4e4c9') }
+  if(a.gear==='glasses'&&(!p.sit||p.mug)){round(c,0,-48,8,8,'#ffffff20',3);round(c,10,-48,7,8,'#ffffff20',3)}
+  if(p.sit&&!p.mug&&!p.walk&&!p.climb){
+    // Chair back is the foreground layer, matching the empty chairs in the room art.
+    round(c,-12,-24,24,21,'#514a3c',6);round(c,-10,-22,20,16,'#625a48',5)
+  }
+  if(p.mug){round(c,9,-22,9,10,'#fff0cf',2);oval(c,19,-17,3,3,'#ead6ae')}
+  if(p.lead){c.fillStyle='#ffe08b';c.strokeStyle='#80511c';c.beginPath();c.moveTo(-8,-72);c.lineTo(-4,-68);c.lineTo(0,-75);c.lineTo(4,-68);c.lineTo(8,-72);c.lineTo(6,-64);c.lineTo(-6,-64);c.closePath();c.fill();c.stroke()}
+  c.restore()
 }
-function legs(c: Ctx, x: number, top: number, pants: string, step: boolean, sit: boolean) {
-  if (sit) { rect(c,x+4,top+24,4,2,pants); rect(c,x+9,top+24,4,2,pants); rect(c,x+5,top+26,3,1,'#dce4e7'); rect(c,x+10,top+26,3,1,'#dce4e7') }
-  else { rect(c,x+3,top+24,3,step?3:4,pants); rect(c,x+9,top+24,3,4,pants); rect(c,x+2,top+27-(step?1:0),4,1,'#dce4e7'); rect(c,x+8,top+27,4,1,'#dce4e7') }
-}
-
-function drawPlant(c: Ctx, x: number, y: number, time: number) {
-  const sway = Math.round(Math.sin(time*1.3+x)); box(c,x,y-5,7,5,2,'#e99c75','#ffd89a','#c57b68'); rect(c,x+3,y-13,1,9,'#54ac79'); rect(c,x+sway,y-11,3,3,'#7fce82'); rect(c,x+4+sway,y-15,3,4,'#a5e58b')
-}
-function drawLounge(c: Ctx, floor: OfficeScene['floors'][number], time: number, options: OfficePaintOptions, main: boolean) {
-  const y=floor.y+floorHeight-8
-  polygon(c,[[18,y-14],[94,y-14],[100,y-9],[24,y-9]],'#254c64'); box(c,25,y-13,55,10,5,'#426f82','#6b9ca8','#2b4e66'); rect(c,27,y-3,51,3,'#548396')
-  box(c,111,y-20,16,18,4,'#3b848c','#66a7a3','#28566c'); rect(c,115,y-16,9,7,'#fff1d5'); rect(c,120,y-8,2,3,'#ffda8a')
-  box(c,132,y-3,22,3,3,'#c2a3a9','#dec3c5','#9e7f91')
-  drawPlant(c,18,y,time)
-  if (!main) return
-  // One resident cat and 1–2 visitors across the building, not a duplicated pet per floor.
-  rounded(c,134,y-10,13,6,'#dfb891'); rounded(c,143,y-12,6,7,'#dfb891'); rect(c,143,y-15,2,4,'#dfb891'); rect(c,148,y-15,2,4,'#dfb891')
-  rect(c,145,y-8,1,1,options.petEvent && options.now < options.petEvent.until ? '#fff' : '#8c685e'); rect(c,149,y-8,1,1,options.petEvent && options.now < options.petEvent.until ? '#fff' : '#8c685e')
-  options.pets.forEach((pet,index)=>{
-    const x=42+index*24+Math.round(Math.sin(time*.35+index)*3), yy=y+1, ink='#374a54'
-    if(pet==='dog'){rounded(c,x,yy-6,11,6,'#d8a065');rounded(c,x+7,yy-11,7,7,'#ebbc83');rect(c,x+7,yy-11,2,5,'#8d6758');rect(c,x+12,yy-10,2,5,'#8d6758');rect(c,x+10,yy-8,1,1,ink);rect(c,x-2,yy-7+Math.round(Math.sin(time*3)),3,2,'#d8a065')}
-    else if(pet==='rabbit'){const hop=Math.sin(time*1.5+index)>.92?1:0;rounded(c,x,yy-6-hop,11,6,'#eee7d9');rounded(c,x+7,yy-10-hop,6,7,'#eee7d9');rect(c,x+7,yy-16-hop,2,7,'#eee7d9');rect(c,x+11,yy-15-hop,2,6,'#eee7d9');rect(c,x+8,yy-14-hop,1,4,'#bd8c92');rect(c,x+10,yy-8-hop,1,1,ink)}
-    else if(pet==='bird'){rounded(c,x+3,yy-8,7,7,'#f8d76c');rect(c,x+9,yy-5,3,2,'#e89642');rect(c,x+8,yy-7,1,1,ink);rect(c,x+2,yy-5+Math.round(Math.sin(time*2)),4,3,'#c79e47');rect(c,x+4,yy-1,1,2,'#d38c48');rect(c,x+7,yy-1,1,2,'#d38c48')}
-    else{rounded(c,x,yy-6,11,6,'#76b48a');rect(c,x+3,yy-6,4,2,'#a4cf85');rect(c,x+4,yy-3,4,2,'#487c68');rounded(c,x+10,yy-4,4,3,'#b2d58e');rect(c,x+12,yy-3,1,1,ink)}
-  })
-  rect(c,119,y-25-Math.floor(time*2)%4,1,2,'#d7e4d2'); rect(c,122,y-27-Math.floor(time*2)%4,1,2,'#d7e4d2')
-}
-const floorHeight = 68
-function paintFloor(c: Ctx, floor: OfficeScene['floors'][number], index: number, ambient: Ambient, time: number, options: OfficePaintOptions, scene: OfficeScene) {
-  const y=floor.y
-  rect(c,10,y,164,floorHeight+4,'#263c51'); rect(c,13,y+2,139,floorHeight-4,ambient.rooms[index%ambient.rooms.length])
-  polygon(c,[[13,y+8],[23,y],[23,y+37],[13,y+64]],'#172733')
-  polygon(c,[[23,y+39],[144,y+39],[153,y+64],[13,y+64]],'#967b5a')
-  for(let k=0;k<5;k++){const yy=y+42+k*5; polygon(c,[[22-k*2,yy],[146+k,yy],[146+k,yy+1],[22-k*2,yy+1]],'#715b48')}
-  for(let x=30;x<145;x+=23)polygon(c,[[x,y+39],[x-8,y+64],[x-7,y+64],[x+1,y+39]],'#b18b65')
-  polygon(c,[[144,y+2],[153,y+10],[153,y+64],[144,y+39]],'#122336'); windowAt(c,25,y+13,ambient,time); windowAt(c,119,y+13,ambient,time)
-  rect(c,10,y+floorHeight-4,164,4,'#71889a'); rect(c,10,y+floorHeight,164,4,'#25394f'); rect(c,13,y+2,2,floorHeight-6,floor.color)
-  polygon(c,[[174,y+floorHeight-4],[190,y+floorHeight-13],[190,y+floorHeight-8],[174,y+floorHeight+1]],'#1b2e44')
-  rect(c,153,y,18,65,ambient.night?'#142b3d':'#2b455d');rect(c,160,y+5,1,59,'#4a6277');rect(c,172,y,2,72,'#638094')
-  if (floor.kind==='team') {
-    drawPlant(c,137,y+floorHeight-7,time)
-    floor.actorKeys.forEach((key,slot)=>{const actor=scene.actors.find(a=>a.key===key);if(actor?.zone==='desk')desk(c,[35,79,122][slot%3],y+56,actor.agent.status==='thinking'?'#b9a1e7':actor.agent.status.startsWith('waiting_')?'#e1bb77':'#9fdcc6',options.live?time:0)})
-  } else drawLounge(c,floor,time,options,scene.floors.find(f=>f.kind==='lounge')?.id===floor.id)
-  if(ambient.night){rect(c,75,y+9,8,2,'#e6d49c')}
-}
-
-export function drawOfficeFrame(ctx: CanvasRenderingContext2D, scene: OfficeScene, options: OfficePaintOptions): void {
-  const c=ctx as Ctx, time=options.motion?options.time:0, ambient=officeAmbient(options.date)
-  rect(c,0,0,scene.width,scene.height,ambient.sky); rect(c,0,18,scene.width,Math.max(0,scene.height-18),ambient.horizon)
-  rounded(c,Math.min(scene.width-15,scene.width*.62),5,12,12,ambient.sun)
-  const cloudX=(offset:number)=>((time*1.4+offset)%(scene.width+30))-30
-  c.save(); c.globalAlpha=ambient.night?.45:.9
-  rounded(c,cloudX(28),7,25,6,'#fff8ed'); rounded(c,cloudX(28)+5,4,12,7,'#fff8ed')
-  rounded(c,cloudX(143),17,23,5,'#fff8ed'); c.restore()
-  // Building shell scales with the supplied floor list, including unusually tall offices.
-  const top=scene.floors[0]?.y??40, maxY=scene.floors.reduce((max,floor)=>Math.max(max,floor.y+72),top)
-  rect(c,10,top-4,164,Math.max(0,maxY-top+4),'#253b53')
-  polygon(c,[[174,top],[190,top-9],[190,maxY-9],[174,maxY]],'#253b53')
-  polygon(c,[[10,scene.floors.length?scene.floors[0].y-8:scene.height-60],[26,scene.floors.length?scene.floors[0].y-16:scene.height-68],[190,scene.floors.length?scene.floors[0].y-16:scene.height-68],[174,scene.floors.length?scene.floors[0].y-8:scene.height-60]],'#536c80')
-  scene.floors.forEach((floor,index)=>paintFloor(c,floor,index,ambient,time,options,scene))
-  // Shared shaft x=155 is also the motion model's passenger path. Draw the car first.
-  const ey=options.elevatorY??(scene.floors[0]?.y??40)+61
-  rounded(c,154,ey-24,16,25,'#6a8195');rect(c,155,ey-23,14,23,'#314a65');rect(c,155,ey-23,14,2,'#a6d7e4');rect(c,161,ey-20,1,17,'#4f6e84');rect(c,156,ey-2,12,1,'#c29a66')
-  // Ground-floor entrance, opening only for an entering/leaving character.
-  const doorY=scene.height-34
-  rect(c,150,doorY-2,23,27,'#617b8a');rect(c,152,doorY,19,25,'#122334');
-  rect(c,153,doorY,options.doorOpen?4:16,25,'#916e49');rect(c,154,doorY+2,options.doorOpen?2:13,8,'#6094a5');
-  if(!options.doorOpen)rect(c,166,doorY+14,1,2,'#e2bf69');
-  rect(c,148,scene.height-9,28,2,'#a1a995');
-  // Desks are only relevant to their team floor; actors are painted last for depth.
-  for(const actor of [...scene.actors].sort((a,b)=>a.y-b.y||a.x-b.x)) {
-    const stale=!options.live
-    const status=String(actor.agent.status).toLowerCase()
-    const pose: OfficePose={...actor.pose}
-    if(stale) { pose.typing=false; pose.hand=false;pose.walk=false }
-    else {
-      if(pose.typing===undefined)pose.typing=status==='running'&&!pose.walk&&!pose.carry&&actor.zone==='desk'
-      if(pose.hand===undefined)pose.hand=status==='waiting_approval'||status==='waiting_input'
+export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):void {
+  c.clearRect(0,0,scene.width,scene.height)
+  const scale=scene.width/450,time=o.motion?o.time:0
+  // Continuous ladder connects the artwork's separate sections, including their soil bands.
+  const x=scene.width*.945, top=scene.width*.335, bottom=scene.height-scene.width/3
+  c.save();c.beginPath()
+  const lounge=scene.floors.find(f=>f.kind==='lounge')
+  if(lounge)c.rect(0,(lounge.height??0)*.68,scene.width,(lounge.height??0)*.32)
+  for(const f of scene.floors){
+    if(f.kind==='team'){const h=f.height??0;c.rect(0,f.y,scene.width,h*(f.room==='room-c-big'?.10:.17));c.rect(0,f.y+h*.80,scene.width,h*.20)}
+    if(f.kind==='quiet')c.rect(0,f.y,scene.width,f.height??30)
+  }
+  c.clip()
+  c.strokeStyle='#5c351d';c.lineWidth=7*scale;c.beginPath();c.moveTo(x-11*scale,top);c.lineTo(x-11*scale,bottom);c.moveTo(x+11*scale,top);c.lineTo(x+11*scale,bottom);c.stroke()
+  c.strokeStyle='#c9924f';c.lineWidth=4*scale;c.stroke()
+  for(let y=top;y<bottom;y+=18*scale){c.strokeStyle='#976135';c.lineWidth=5*scale;c.beginPath();c.moveTo(x-11*scale,y);c.lineTo(x+11*scale,y);c.stroke()}
+  c.restore()
+  for(const actor of scene.actors.filter(a=>!a.hidden).sort((a,b)=>a.y-b.y)) {
+    const moving=actor.pose?.walk||actor.pose?.climb
+    const waiting=actor.agent.status.startsWith('waiting_'),failed=actor.agent.status==='failed'
+    if(actor.monitor&&!moving){
+      const m=actor.monitor,w=actor.floorId && scene.floors.find(f=>f.id===actor.floorId)?.room==='room-b-lead'&&actor.agent.role==='lead'?29:19
+      round(c,m.x-w*scale/2,m.y-7*scale,w*scale,12*scale,failed?'#b35956':waiting?'#dfb65d':'#92cad1',1)
+      c.fillStyle='#ecf8dc';for(let i=0;i<3;i++)c.fillRect(m.x-w*scale*.35,m.y+(-4+i*3)*scale,(i===1?8:12)*scale,scale)
+      if(actor.agent.runtime)drawRuntimeMark(c,actor.agent.runtime,m.x+(w/2+3)*scale,m.y+5*scale,6*scale)
     }
-    if(actor.agent.role==='lead') pose.lead=true
-    if(actor.zone==='lounge') { pose.typing=false;if(!pose.walk&&!pose.carry)pose.sit=true;pose.mug ||= status==='done'&&actor.appearance.slot%3===0 }
-    drawOfficeAvatar(ctx,actor.appearance,actor.x,actor.y,time,pose)
-  }
-  rect(c,0,scene.height-6,scene.width,6,ambient.ground)
-  if(options.petEvent && options.now<options.petEvent.until) {
-    const lounge=scene.floors.find(f=>f.kind==='lounge')
-    if(lounge) { const x=145,y=lounge.y+floorHeight-31; if(options.petEvent.kind==='heart') { rect(c,x,y,3,3,'#ef8fb4'); rect(c,x+4,y,3,3,'#ef8fb4'); rect(c,x+2,y+3,3,3,'#ef8fb4') } else if(options.petEvent.kind==='coffee') rect(c,x,y,7,6,'#f2c48a'); else rect(c,x,y,8,5,'#f7b65c') }
+    c.save();c.translate(actor.x,actor.y);c.scale(scale,scale)
+    drawOfficeAvatar(c,actor.appearance,0,0,time,{sit:!moving,typing:o.live&&o.motion&&actor.agent.status==='running'&&!moving,hand:o.live&&waiting,mug:actor.zone==='lounge'&&!moving,lead:actor.agent.role==='lead'||actor.pod,...actor.pose})
+    c.restore()
   }
 }

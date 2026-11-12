@@ -349,12 +349,12 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
   return (
     <div className="jv-root" data-widget={widget} data-motion={animationMode} data-live={live}>
       <div className="jv-backdrop" aria-hidden="true" />
-      <header className="jv-bar">
-        <TeamReactor statuses={statuses} active={office ? statuses.filter(status => ['running', 'thinking', 'background', 'waiting_approval', 'waiting_input'].includes(status)).length : view?.counts.active ?? 0} live={live} size={widget ? 46 : 76} />
+      <header className={office ? "jv-bar of-header" : "jv-bar"}>
+        {!office && <TeamReactor statuses={statuses} active={office ? statuses.filter(status => ['running', 'thinking', 'background', 'waiting_approval', 'waiting_input'].includes(status)).length : view?.counts.active ?? 0} live={live} size={widget ? 46 : 76} />}
         <div className="jv-bar-main">
           <div className="jv-bar-row">
-            {office ? <div className="jv-picker"><span className="jv-eyebrow">T3 Office · {officeSnapshots.length} loaded teams</span><span className="jv-picker-title">Agent Office</span></div> : <TeamPicker sessions={sessions} selectedSessionId={selectedSessionId} onSelect={onSelectSession} snapshots={teamSnapshots} compact={widget} />}
-            {widget && <Legend />}
+            {office ? <div className="jv-picker"><span className="jv-picker-title">Agent Office · {officeSnapshots.length} teams</span></div> : <TeamPicker sessions={sessions} selectedSessionId={selectedSessionId} onSelect={onSelectSession} snapshots={teamSnapshots} compact={widget} />}
+            {widget && !office && <Legend />}
           </div>
           {!office && view && <Pipeline view={view} compact={widget} />}
           {widget && <Segmented label="View" value={office ? 'office' : 'board'} onChange={onPane} options={[{ value: 'board', label: 'Board' }, { value: 'office', label: 'Office' }]} />}
@@ -362,15 +362,15 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
         {!widget && (
           <div className="jv-bar-tools">
             <div className="jv-bar-row jv-end">
-              <Segmented label="Which agents to show" value={scope} onChange={onScope} options={[
+              {!office && <Segmented label="Which agents to show" value={scope} onChange={onScope} options={[
                 { value: 'active', label: office ? 'Current work' : 'Active team', title: 'Current work and results not yet sent' },
                 { value: 'session', label: office ? 'All history' : 'Whole session', title: office ? 'Include finished agents across loaded teams' : 'Every agent in this team, including finished work' },
-              ]} />
+              ]} />}
               <Segmented label="View" value={pane} onChange={onPane} options={[{ value: 'board', label: 'Board' }, { value: 'graph', label: 'Graph' }, { value: 'office', label: 'Office' }]} />
-              <Legend />
+              {!office && <Legend />}
               {viewerControls}
             </div>
-            <ConnectionPill connection={connection} health={health} now={now} compact={false} />
+            {!office && <ConnectionPill connection={connection} health={health} now={now} compact={false} />}
           </div>
         )}
       </header>

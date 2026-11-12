@@ -138,3 +138,19 @@ test('all-projects scope (null) takes teams from every project and names each pr
   assert.equal(project('t3:lead'), 'vrm', 'Untitled projects fall back to the folder name')
   assert.equal(project('t3:unrelated'), 'Other app')
 })
+
+test('reports the current provider after a lead switches from Claude to Codex', () => {
+  const data = fixture()
+  data.threads[0] = row({ ...data.threads[0], default_provider: 'claudeAgent', active_provider_thread_id: 'p-codex' },
+    { modelSelection: { model: 'gpt-test' }, activeProviderThreadId: 'p-codex' })
+  data.providerThreads.push({ provider_thread_id: 'p-codex', thread_id: 'lead', driver: 'codex', provider: 'codex' })
+  data.runs.push(row({ run_id: 'r-current', thread_id: 'lead', ordinal: 3, status: 'completed', provider_thread_id: 'p-codex' },
+    { modelSelection: { model: 'gpt-test' } }))
+  const team = projectT3Teams(data, ['D:/Project/TH']).find(t => t.session.id === 't3:lead')!
+  const graphLead = (team.event.payload.agents as T3Row[]).find(a => a.isMain)!
+  const officeAndBoardLead = (team.event.payload.team as TeamSnapshot).agents.find(a => a.role === 'lead')!
+  assert.equal(graphLead.runtime, 'codex')
+  assert.equal(graphLead.model, 'gpt-test')
+  assert.equal(officeAndBoardLead.runtime, 'codex')
+  assert.equal(officeAndBoardLead.model, 'gpt-test')
+})

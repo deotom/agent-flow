@@ -12,7 +12,7 @@ export interface OfficeAppearance {
   gear: string
 }
 export interface OfficePoint { x: number; y: number }
-export interface OfficePose { walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean }
+export interface OfficePose { climb?: boolean; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean }
 export interface OfficeActor extends OfficePoint {
   key: string
   sessionId: string
@@ -24,6 +24,9 @@ export interface OfficeActor extends OfficePoint {
   zone: 'desk' | 'lounge'
   activity: string
   runtimeName: string
+  hidden?: boolean
+  monitor?: OfficePoint
+  pod?: boolean
   pose?: OfficePose
 }
 export interface OfficeFloor {
@@ -34,7 +37,12 @@ export interface OfficeFloor {
   color: string
   y: number
   actorKeys: string[]
-  kind: 'team' | 'lounge'
+  kind: 'team' | 'lounge' | 'quiet'
+  height?: number
+  room?: 'room-a' | 'room-b-lead' | 'room-c-big'
+  overflow?: number
+  working?: number
+  waiting?: number
 }
 export interface OfficeScene {
   width: number

@@ -1,6 +1,6 @@
 import type { OfficeAppearance, OfficeEvent, OfficeScene, OfficeActor, OfficeFloor } from './office-types'
 import type { TeamAgentRow, TeamSnapshot } from './team-types'
-import { buildTeamView, describeActivity, isTerminal, isWorking, statusText, type TeamScope } from './team-model'
+import { buildTeamView, describeActivity, isWorking, type TeamScope } from './team-model'
 
 export const officeKey = (sessionId: string, agentId: string): string => JSON.stringify([sessionId, agentId])
 
@@ -20,103 +20,75 @@ export function assignOfficeIdentities(keys: readonly string[], previous: Readon
   return result
 }
 
-const looks: OfficeAppearance[] = [
-  { slot: 0, kind: 'human', hair: '#713c24', skin: '#f2bd91', shirt: '#e87532', pants: '#354c70', cut: 'bun', gear: 'headset' },
-  { slot: 1, kind: 'human', hair: '#34251f', skin: '#c98d64', shirt: '#54a65d', pants: '#344c6a', cut: 'crop', gear: 'glasses' },
-  { slot: 2, kind: 'robot', hair: '#b9d4dc', skin: '#b9d4dc', shirt: '#4b9ed0', pants: '#405d78', cut: 'antenna', gear: 'visor' },
-  { slot: 3, kind: 'raccoon', hair: '#504b54', skin: '#c3a890', shirt: '#9563c4', pants: '#42404b', cut: 'mask', gear: 'satchel' },
-  { slot: 4, kind: 'owl', hair: '#b17a32', skin: '#ead9b1', shirt: '#d5a33c', pants: '#61513a', cut: 'feathers', gear: 'round-glasses' },
-  { slot: 5, kind: 'fox', hair: '#a84435', skin: '#edb58e', shirt: '#9a4051', pants: '#483b50', cut: 'ears', gear: 'scarf' },
-  { slot: 6, kind: 'alien', hair: '#37a99a', skin: '#90d9c1', shirt: '#36a99b', pants: '#345c5c', cut: 'antenna', gear: 'earpiece' },
-]
+const looks: OfficeAppearance[] = ['#613b28','#292124','#a54f29','#d6aa59','#453126','#713d36','#252e39'].map((hair, slot) => ({
+  slot, kind: 'human', hair, skin: ['#f2c6a0','#bb805c','#dfaa82','#f6d5b5'][slot % 4],
+  shirt: ['#df8845','#7a9b61','#648fa7','#ac7197','#e4bb66','#637a9b','#bc6d58'][slot], pants: '#485264',
+  cut: ['bun','crop','bob','curly','ponytail','spike','long'][slot], gear: slot % 3 === 0 ? 'glasses' : '',
+}))
 export function officeAppearance(slot: number): OfficeAppearance {
   const safe = Number.isSafeInteger(slot) && slot >= 0 ? slot : 0
   const base = looks[safe % looks.length]
-  if (safe < looks.length) return { ...base }
-  const variant = Math.floor(safe / looks.length)
-  const hue = ((variant * 137.508 + safe % 7 * 41) % 360).toFixed(3)
-  return { ...base, slot: safe, shirt: `hsl(${hue} 64% 54%)`, pants: `hsl(${hue} 28% 27%)`,
-    gear: ['headset', 'glasses', 'visor', 'satchel', 'scarf', 'earpiece'][variant % 6] }
+  return { ...base, slot: safe, ...(safe >= 7 ? { shirt: `hsl(${safe * 137.508 % 360} 42% 57%)` } : {}) }
 }
 
 const activeInOffice = (agent: TeamAgentRow) => isWorking(agent.status) || agent.status === 'waiting_approval' || agent.status === 'waiting_input'
 function quiet(snapshot: TeamSnapshot): boolean {
-  // Delivery history belongs in Board/details, not in an otherwise empty office.
-  return !snapshot.agents.some(activeInOffice)
+  return !snapshot.agents.some(a => activeInOffice(a) || a.status === 'failed')
 }
 const floorColors = ['#f3a45b', '#66bd83', '#6da9d8', '#b18ad0', '#d6ae52', '#c57b83', '#5db7ad']
 const runtimeNames = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', copilot: 'Copilot', cursor: 'Cursor' }
 const teamColor = (id: string) => floorColors[[...id].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) >>> 0, 7) % floorColors.length]
 
-export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: TeamScope, showQuiet: boolean, identities: ReadonlyMap<string, number>): OfficeScene {
-  const sorted = [...new Map([...snapshots].sort((a,b) => a.sessionId.localeCompare(b.sessionId)).map(s => [s.sessionId, s])).values()]
-  const quietTeams = sorted.filter(quiet)
-  const included = sorted.filter(s => showQuiet || !quiet(s))
-  const floors: OfficeFloor[] = [], actors: OfficeActor[] = []
-  let index = 0
-  const addFloor = (sessionId: string | null, title: string, subtitle: string, kind: 'team'|'lounge', keys: string[], color: string, identity: string) => {
-    const floorIndex = index++, id = JSON.stringify([kind, sessionId, identity])
-    floors.push({ id, sessionId, title, subtitle, color, y: 40 + 72 * floorIndex, actorKeys: keys, kind })
-    return { id, y: floors[floorIndex].y }
-  }
-  const xs = [20, 64, 107]
-  const teamActors: OfficeActor[] = [], lounge: OfficeActor[] = []
-  for (const snap of included) {
-    const quietTeam = quiet(snap)
-    const view = buildTeamView(snap, showQuiet && quietTeam ? 'session' : scope)
-    const agents = new Map(snap.agents.map(a => [a.id, a]))
-    const current = new Set<string>()
-    if (scope === 'active' && !quietTeam) {
-      for (const agent of snap.agents.filter(activeInOffice)) {
-        let next: TeamAgentRow | undefined = agent
-        while (next && !current.has(next.id)) {
-          current.add(next.id)
-          next = next.parentId ? agents.get(next.parentId) : undefined
-        }
-      }
+// Coordinates measured against the supplied source artwork, as fractions of its full bounds.
+export const OFFICE_SLOTS = {
+  'room-a': { chairs: [[.19,.68],[.365,.68],[.595,.68],[.783,.68]], monitors: [[.223,.48],[.394,.48],[.624,.48],[.807,.48]], aspect: 864/1536 },
+  'room-b-lead': { chairs: [[.31,.69],[.542,.69],[.682,.69],[.84,.69]], monitors: [[.287,.425],[.54,.465],[.685,.465],[.833,.465]], aspect: 864/1536 },
+  'room-c-big': { chairs: [[.162,.55],[.378,.55],[.601,.55],[.815,.55],[.148,.765],[.375,.765],[.603,.765],[.826,.765]], monitors: [[.172,.421],[.386,.421],[.602,.421],[.815,.421],[.153,.622],[.382,.622],[.607,.622],[.832,.622]], aspect: 1 },
+} as const
+export const LOUNGE_CAP = 5
+export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: TeamScope, showQuiet: boolean, identities: ReadonlyMap<string, number>, width = 450): OfficeScene {
+  const priority = (s: TeamSnapshot) => s.agents.some(a => a.status.startsWith('waiting_')) ? 0 : quiet(s) ? 2 : 1
+  const sorted = [...new Map(snapshots.map(s => [s.sessionId, s])).values()].sort((a,b) => priority(a)-priority(b) || a.sessionId.localeCompare(b.sessionId))
+  const quietTeams = sorted.filter(quiet), floors: OfficeFloor[] = [], actors: OfficeActor[] = [], resting: OfficeActor[] = []
+  const surfaceHeight = width * 864/1536
+  const lounge: OfficeFloor = { id:'lounge', sessionId:null, title:'Surface lounge', subtitle:'', color:'#a88b70', y:0, height:surfaceHeight, actorKeys:[], kind:'lounge' }
+  floors.push(lounge)
+  let y = surfaceHeight * .90
+  for (const snap of sorted) {
+    const agents = new Map(snap.agents.map(a => [a.id,a]))
+    // Team view provides safe display names and ancestry order, including orphan/cycle handling.
+    const rows = buildTeamView(snap, 'session').rows
+    const ordered = [...rows].sort((a,b) => Number(b.agent.role === 'lead' && !b.agent.parentId)-Number(a.agent.role === 'lead' && !a.agent.parentId))
+    const done = (a: TeamAgentRow) => a.status === 'done' || a.status === 'cancelled'
+    const desks = ordered.filter(r => !done(r.agent))
+    const room = desks.length > 4 ? 'room-c-big' : desks.some(r => r.agent.role === 'lead' && !r.agent.parentId) ? 'room-b-lead' : 'room-a'
+    const slots = OFFICE_SLOTS[room], height = width * slots.aspect
+    const id = JSON.stringify(['team',snap.sessionId]), included = showQuiet || !quiet(snap)
+    const working = snap.agents.filter(a => isWorking(a.status)).length, waiting = snap.agents.filter(a => a.status.startsWith('waiting_')).length
+    const clean = (v: string) => v.replace(/(?:[A-Za-z]:[\\/]|\/root\/|\/Users\/|\/home\/)[^ ·]+/g, '').trim()
+    const project = clean(snap.project ?? ''), title = [project, clean(snap.title)].filter((v,i,a) => v && a.indexOf(v)===i).join(' · ') || 'Team'
+    if (included) floors.push({ id, sessionId:snap.sessionId, title, subtitle:[working ? `${working} working` : '', waiting ? `${waiting} needs you` : ''].filter(Boolean).join(' · '), working, waiting, overflow:Math.max(0,desks.length-slots.chairs.length), color:teamColor(snap.sessionId), y, height, room, actorKeys:desks.map(r => officeKey(snap.sessionId,r.agent.id)), kind:'team' })
+    for (const row of ordered) {
+      const terminal = done(row.agent), slot = desks.indexOf(row), key = officeKey(snap.sessionId,row.agent.id)
+      if (!terminal && !included) continue
+      const chair = slots.chairs[Math.max(0,slot) % slots.chairs.length], monitor = slots.monitors[Math.max(0,slot) % slots.monitors.length]
+      const activity = row.agent.activities.at(-1)
+      const actor: OfficeActor = { key, sessionId:snap.sessionId, agent:row.agent, task:row.task,
+        parentKey:row.agent.parentId && agents.has(row.agent.parentId) ? officeKey(snap.sessionId,row.agent.parentId) : null,
+        appearance:officeAppearance(identities.get(key) ?? 0), floorId:id, zone:terminal ? 'lounge' : 'desk',
+        x:chair[0]*width, y:y+chair[1]*height, monitor:{x:monitor[0]*width,y:y+monitor[1]*height},
+        hidden:!terminal && slot>=slots.chairs.length, pod:snap.agents.some(a=>a.parentId===row.agent.id),
+        activity:activity && row.agent.status === 'running' ? describeActivity(activity).label : row.statusText,
+        runtimeName:row.agent.runtime ? runtimeNames[row.agent.runtime] : 'Unknown AI' }
+      if (terminal) resting.push(actor); else actors.push(actor)
     }
-    const rows = scope === 'active' && !quietTeam ? view.rows.filter(row => current.has(row.agent.id)) : view.rows
-    const childIds = new Set(snap.agents.filter(a => a.parentId && agents.has(a.parentId)).map(a => a.parentId!))
-    const roots = new Map<string, typeof rows>()
-    const groupRoot = (id: string): string => {
-      let cur = agents.get(id), last = cur?.id ?? id, seen = new Set<string>()
-      if (cur && (cur.role === 'lead' || childIds.has(cur.id))) return cur.id
-      while (cur && cur.parentId && agents.has(cur.parentId) && !seen.has(cur.id)) {
-        seen.add(cur.id); const parent = agents.get(cur.parentId)!; if (parent.role === 'lead' || childIds.has(parent.id)) return parent.id; last = parent.id; cur = parent
-      }
-      return last
-    }
-    for (const row of rows) { const root = groupRoot(row.agent.id); const arr = roots.get(root) ?? []; arr.push(row); roots.set(root, arr) }
-    const groups = [...roots.entries()].sort(([a],[b]) => a.localeCompare(b))
-    for (const [rootId, group] of groups) {
-      group.sort((a,b) => Number(b.agent.id === rootId) - Number(a.agent.id === rootId) || (a.agent.startedAt ?? 0) - (b.agent.startedAt ?? 0) || a.agent.id.localeCompare(b.agent.id))
-      for (const row of group) {
-        if (isTerminal(row.agent.status)) {
-          const key=officeKey(snap.sessionId,row.agent.id), parent=row.agent.parentId && row.agent.parentId !== row.agent.id && agents.has(row.agent.parentId) ? officeKey(snap.sessionId,row.agent.parentId) : null
-          lounge.push({ key, sessionId:snap.sessionId, agent:row.agent, task:row.task, parentKey:parent, appearance:officeAppearance(identities.get(key) ?? 0), floorId:'', zone:'lounge', x:0,y:0,
-            activity:row.statusText,runtimeName:row.agent.runtime ? runtimeNames[row.agent.runtime] : 'Unknown AI' })
-        }
-      }
-      const deskGroup=group.filter(row=>!isTerminal(row.agent.status))
-      for (let start=0; start<deskGroup.length; start+=3) {
-        const chunk = deskGroup.slice(start,start+3)
-        const floor = addFloor(snap.sessionId, snap.title, [snap.project, agents.get(rootId)?.name].filter(Boolean).join(' · '), 'team', chunk.map(r => officeKey(snap.sessionId,r.agent.id)), teamColor(snap.sessionId), JSON.stringify([rootId,start/3]))
-        chunk.forEach((row, i) => {
-          const key = officeKey(snap.sessionId,row.agent.id), slot = identities.get(key) ?? 0
-          const parent = row.agent.parentId && row.agent.parentId !== row.agent.id && agents.has(row.agent.parentId) ? officeKey(snap.sessionId,row.agent.parentId) : null
-          const current = row.agent.activities.at(-1)
-          teamActors.push({ key, sessionId:snap.sessionId, agent:row.agent, task:row.task, parentKey:parent, appearance:officeAppearance(slot), floorId:floor.id, zone:'desk', x:xs[i], y:floor.y+61,
-            activity: current && row.agent.status === 'running' ? describeActivity(current).label : row.statusText, runtimeName:row.agent.runtime ? runtimeNames[row.agent.runtime] : 'Unknown AI' })
-        })
-      }
-    }
+    if (included) y += height * .90
   }
-  for (let start=0; start<Math.max(1,lounge.length); start+=3) {
-    const chunk=lounge.slice(start,start+3), floor=addFloor(null,'Shared lounge','Finished agents','lounge',chunk.map(a=>a.key),'#a88b70',String(start/3))
-    chunk.forEach((a,i)=>actors.push({...a,floorId:floor.id,x:xs[i],y:floor.y+61}))
-  }
-  actors.push(...teamActors)
-  return { width:200, height:Math.max(116, floors.length * 72 + 76), floors, actors, quietTeams, totalAgents:sorted.reduce((n,s)=>n+s.agents.length,0), finishedCount:sorted.reduce((n,s)=>n+s.agents.filter(a=>isTerminal(a.status)).length,0) }
+  if (quietTeams.length) { floors.push({id:'quiet',sessionId:null,title:`${quietTeams.length} quiet teams`,subtitle:'',color:'#aa9168',y,height:30,actorKeys:[],kind:'quiet'}); y+=30 }
+  const seats = [[.338,.61],[.495,.61],[.64,.57],[.78,.58],[.57,.77]]
+  resting.forEach((actor,i) => { const seat=seats[i%seats.length]; actors.push({...actor, floorId:'lounge',monitor:undefined,x:seat[0]*width,y:seat[1]*surfaceHeight,hidden:i>=LOUNGE_CAP}); lounge.actorKeys.push(actor.key) })
+  lounge.overflow=Math.max(0,resting.length-LOUNGE_CAP)
+  return { width, height:y+width/3, floors, actors, quietTeams, totalAgents:sorted.reduce((n,s)=>n+s.agents.length,0), finishedCount:resting.length }
 }
 
 export function officeEvents(previous: readonly TeamSnapshot[] | null, next: readonly TeamSnapshot[], now: number): OfficeEvent[] {

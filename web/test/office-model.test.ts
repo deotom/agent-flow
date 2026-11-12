@@ -35,9 +35,9 @@ test('scene aggregates sessions, scopes through team view, lays out desks and te
   assert.equal(scene.totalAgents, 5); assert.equal(scene.finishedCount, 1)
   assert.equal(scene.actors.length, 5)
   assert.equal(scene.actors.find(x => x.key === officeKey('a','w2'))?.zone, 'lounge')
-  assert.equal(scene.actors.find(x => x.key === officeKey('a','lead'))?.x, 20)
-  assert.equal(officeAppearance(2).kind, 'robot')
-  assert.equal(buildOfficeScene([a], 'active', false, ids).actors.some(x => x.agent.id === 'w2'), false)
+  assert.equal(scene.actors.find(x => x.key === officeKey('a','lead'))?.x, .31*450)
+  assert.equal(officeAppearance(2).kind, 'human')
+  assert.equal(buildOfficeScene([a], 'active', false, ids).actors.some(x => x.agent.id === 'w2'), true)
   const quiet = team('quiet', [agent('q', 'idle')])
   assert.deepEqual(buildOfficeScene([quiet], 'session', false, assignOfficeIdentities([officeKey('quiet','q')])).quietTeams.map(x => x.sessionId), ['quiet'])
   assert.equal(buildOfficeScene([quiet], 'session', true, assignOfficeIdentities([officeKey('quiet','q')])).actors.length, 1)
@@ -49,15 +49,15 @@ test('nested, orphaned and cyclic agents remain visible exactly once', () => {
   assert.equal(scene.actors.length, snap.agents.length)
   assert.equal(new Set(scene.actors.map(a => a.agent.id)).size, snap.agents.length)
   assert.ok(scene.actors.find(a => a.agent.id === 'orphan'))
-  assert.ok(scene.actors.find(a => a.agent.id === 'leaf')!.y > scene.actors.find(a => a.agent.id === 'lead')!.y)
+  assert.ok(scene.actors.find(a => a.agent.id === 'leaf')!.x > scene.actors.find(a => a.agent.id === 'lead')!.x)
 })
 
-test('large teams use extra floors while retaining every desk actor', () => {
+test('large teams use one eight-seat room with overflow while retaining actor identities', () => {
   const agents = [agent('lead'), ...Array.from({length:8},(_,i)=>agent(`w${i}`,'thinking','lead',i+2))]
   const snap = team('large', agents)
   const scene = buildOfficeScene([snap], 'session', true, assignOfficeIdentities(agents.map(a=>officeKey('large',a.id))))
   assert.equal(scene.actors.length, 9)
-  assert.ok(scene.floors.filter(f=>f.kind==='team').length >= 3)
+  assert.ok(scene.floors.filter(f=>f.kind==='team').length === 1)
   assert.equal(new Set(scene.actors.map(a=>a.key)).size, 9)
 })
 
@@ -78,4 +78,29 @@ test('events avoid initial replay, detect strongest task transitions, and ignore
   assert.deepEqual(officeEvents(sent,pending,22), [])
   const discarded = [team('s',[agent('lead'),agent('w','done')],[task('new','w','done','discarded',4)])]
   assert.deepEqual(officeEvents(pending,discarded,23), [])
+})
+
+
+test('room choice, priority, failed seating, quiet strip and capped surface lounge', () => {
+  const waiting=team('z-wait',[agent('lead','waiting_input')])
+  const small=team('a-work',[agent('lead'),agent('w','running','lead')])
+  const noLead=team('no-lead',[{...agent('solo'),role:'worker'}])
+  const large=team('big',[agent('lead'),...Array.from({length:10},(_,i)=>agent(`w${i}`,'running','lead'))])
+  const quiet=team('quiet',[agent('idle','idle'),...Array.from({length:8},(_,i)=>agent(`done${i}`,'done','idle'))])
+  const failed=team('failed',[agent('error','failed')])
+  const all=[small,large,quiet,waiting,noLead,failed]
+  const scene=buildOfficeScene(all,'active',false,assignOfficeIdentities(all.flatMap(s=>s.agents.map(a=>officeKey(s.sessionId,a.id)))))
+  assert.equal(scene.floors[0].kind,'lounge')
+  const rooms=scene.floors.filter(f=>f.kind==='team')
+  assert.equal(rooms[0].sessionId,'z-wait')
+  assert.equal(rooms.find(f=>f.sessionId==='a-work')?.room,'room-b-lead')
+  assert.equal(rooms.find(f=>f.sessionId==='no-lead')?.room,'room-a')
+  assert.equal(rooms.find(f=>f.sessionId==='big')?.room,'room-c-big')
+  assert.equal(rooms.find(f=>f.sessionId==='big')?.overflow,3)
+  assert.equal(scene.actors.filter(a=>a.zone==='lounge'&&!a.hidden).length,5)
+  assert.equal(scene.floors[0].overflow,3)
+  assert.equal(scene.actors.find(a=>a.agent.id==='error')?.zone,'desk')
+  assert.equal(scene.floors.at(-1)?.kind,'quiet')
+  assert.equal(rooms.some(f=>f.sessionId==='quiet'),false)
+  assert.equal(buildOfficeScene(all,'active',true,new Map()).floors.filter(f=>f.kind==='team').length,6)
 })

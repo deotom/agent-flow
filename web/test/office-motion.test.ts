@@ -41,13 +41,13 @@ describe('Office evidence animation', () => {
     assert.ok(trip.segments.every(segment => segment.kind === 'hold'))
     assert.match(trip.caption, /received/i)
   })
-  it('walks finished work to the lounge and skips a floor that disappeared', () => {
+  it('climbs finished work to the lounge even when its quiet room collapses', () => {
     const old = scene(actor('worker', 173, 'lead'), actor('lead', 101))
     const resting = { ...actor('worker', 245, 'lead'), zone: 'lounge' as const }
     const next = scene(resting, actor('lead', 101), { ...actor('anchor', 173), x: 100 })
     const trip = createOfficeTrip(event('finished'), old, next, 0)!
     assert.equal(officeTripFrame(trip, trip.endsAt + 1).point.y, 245)
-    assert.equal(createOfficeTrip(event('finished'), old, scene(resting), 0), null)
+    assert.ok(createOfficeTrip(event('finished'), old, scene(resting), 0)?.segments.some(s=>s.kind==='ride'))
   })
   it('keeps every sampled position finite and every ride inside the shaft', () => {
     const building = scene(actor('lead', 101), actor('worker', 1109, 'lead'))
@@ -55,7 +55,7 @@ describe('Office evidence animation', () => {
     for (let time = 0; time <= trip.endsAt + 100; time += 20) {
       const frame = officeTripFrame(trip, time)
       assert.ok(Number.isFinite(frame.point.x) && Number.isFinite(frame.point.y))
-      if (frame.elevatorY !== null) assert.equal(frame.point.x, 155)
+      if (frame.elevatorY !== null) assert.equal(frame.point.x, 189)
     }
   })
   it('coalesces actor events, expires old work and never requeues duplicates', () => {
@@ -71,12 +71,12 @@ describe('Office evidence animation', () => {
     assert.equal(trip.actorKey,'worker')
     assert.equal(officeTripFrame(trip,0).point.y,173)
     assert.ok(trip.segments.some(segment=>segment.kind==='ride'))
-    assert.equal(officeTripFrame(trip,trip.endsAt+1).point.x,210)
+    assert.equal(officeTripFrame(trip,trip.endsAt+1).point.x,189)
   })
   it('enters from outside before taking the elevator to a desk', () => {
     const building=scene(actor('worker',173,'lead'))
     const trip=createOfficeTrip(event('arrived'),scene(),building,0)!
-    assert.equal(officeTripFrame(trip,0).point.x,210)
+    assert.equal(officeTripFrame(trip,0).point.x,189)
     assert.ok(trip.segments.some(segment=>segment.kind==='ride'))
     assert.equal(officeTripFrame(trip,trip.endsAt+1).point.y,173)
   })
