@@ -31,7 +31,8 @@ interface TeamWorkspaceProps {
   promptBar?: ReactNode
 }
 
-const providerName = (runtime: TeamAgentRow['runtime']) => runtime === 'claude' ? 'Claude' : runtime === 'codex' ? 'Codex' : null
+const PROVIDER_NAME: Record<NonNullable<TeamAgentRow['runtime']>, string> = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', copilot: 'Copilot', cursor: 'Cursor' }
+const providerName = (runtime: TeamAgentRow['runtime']) => runtime ? PROVIDER_NAME[runtime] : null
 const modelName = (agent: TeamAgentRow) => agent.model ? formatModelName(agent.model) : 'Model not reported'
 const stamp = (time: number | null) => time ? new Date(time).toLocaleString() : 'Not reported'
 

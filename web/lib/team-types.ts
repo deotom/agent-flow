@@ -8,6 +8,9 @@
  */
 
 /** Separate from Agent.state, which also drives the canvas animation. */
+/** Which AI runs an agent. Copilot covers T3's GitHub Copilot ACP provider; Gemini covers Antigravity. */
+export type AgentRuntime = 'claude' | 'codex' | 'gemini' | 'copilot' | 'cursor'
+
 export type TeamAgentStatus =
   | 'running'           // A tool item is in progress on the latest run.
   | 'thinking'          // Run or task is in progress with no tool in progress.
@@ -39,7 +42,7 @@ export interface TeamAgentRow {
   role: 'lead' | 'worker'
   /** Uncapped display name (the canvas name is capped at 80 characters). */
   name: string
-  runtime: 'claude' | 'codex' | null
+  runtime: AgentRuntime | null
   model: string | null
   status: TeamAgentStatus
   /** Delegated prompt, capped by the adapter. Null when T3 has none. */

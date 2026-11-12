@@ -1,60 +1,49 @@
 /**
- * Small vector marks that tell which AI runs an agent: a warm starburst for Claude, a terminal prompt for Codex.
- * Simple original glyphs drawn on canvas, not the vendors' logos.
+ * The logo of the AI that runs an agent, drawn on canvas. Marks are the vendors' own logomarks
+ * (Claude and OpenAI as in the local graph; Gemini, GitHub Copilot and Cursor from Simple Icons, CC0).
  */
-export type Runtime = 'claude' | 'codex'
+import type { AgentRuntime } from '@/lib/team-types'
+import { CLAUDE_SPARK_D, OPENAI_LOGO_D } from './draw-misc'
 
-export const RUNTIME_COLORS: Record<Runtime, string> = { claude: '#f0a070', codex: '#c3f5ff' }
+export type Runtime = AgentRuntime
 
-export function isRuntime(value: unknown): value is Runtime {
-  return value === 'claude' || value === 'codex'
+export const RUNTIME_COLORS: Record<Runtime, string> = {
+  claude: '#e8865f', codex: '#f2f8ff', gemini: '#7fa8ff', copilot: '#eef3f8', cursor: '#eef3f8',
 }
 
-/** Draw the mark centred on (x, y), fitting a box `size` wide. */
+const RUNTIMES: readonly string[] = Object.keys(RUNTIME_COLORS)
+export function isRuntime(value: unknown): value is Runtime {
+  return typeof value === 'string' && RUNTIMES.includes(value)
+}
+
+/** Path data, its viewBox size, and how much of the box the visible mark fills. */
+const LOGOS: Record<Runtime, { d: string; box: number; fill: number }> = {
+  claude: { d: CLAUDE_SPARK_D, box: 512, fill: 0.82 },
+  codex: { d: OPENAI_LOGO_D, box: 24, fill: 1 },
+  gemini: { d: 'M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81', box: 24, fill: 1 },
+  copilot: { d: 'M23.922 16.997C23.061 18.492 18.063 22.02 12 22.02 5.937 22.02.939 18.492.078 16.997A.641.641 0 0 1 0 16.741v-2.869a.883.883 0 0 1 .053-.22c.372-.935 1.347-2.292 2.605-2.656.167-.429.414-1.055.644-1.517a10.098 10.098 0 0 1-.052-1.086c0-1.331.282-2.499 1.132-3.368.397-.406.89-.717 1.474-.952C7.255 2.937 9.248 1.98 11.978 1.98c2.731 0 4.767.957 6.166 2.093.584.235 1.077.546 1.474.952.85.869 1.132 2.037 1.132 3.368 0 .368-.014.733-.052 1.086.23.462.477 1.088.644 1.517 1.258.364 2.233 1.721 2.605 2.656a.841.841 0 0 1 .053.22v2.869a.641.641 0 0 1-.078.256Zm-11.75-5.992h-.344a4.359 4.359 0 0 1-.355.508c-.77.947-1.918 1.492-3.508 1.492-1.725 0-2.989-.359-3.782-1.259a2.137 2.137 0 0 1-.085-.104L4 11.746v6.585c1.435.779 4.514 2.179 8 2.179 3.486 0 6.565-1.4 8-2.179v-6.585l-.098-.104s-.033.045-.085.104c-.793.9-2.057 1.259-3.782 1.259-1.59 0-2.738-.545-3.508-1.492a4.359 4.359 0 0 1-.355-.508Zm2.328 3.25c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm-5 0c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm3.313-6.185c.136 1.057.403 1.913.878 2.497.442.544 1.134.938 2.344.938 1.573 0 2.292-.337 2.657-.751.384-.435.558-1.15.558-2.361 0-1.14-.243-1.847-.705-2.319-.477-.488-1.319-.862-2.824-1.025-1.487-.161-2.192.138-2.533.529-.269.307-.437.808-.438 1.578v.021c0 .265.021.562.063.893Zm-1.626 0c.042-.331.063-.628.063-.894v-.02c-.001-.77-.169-1.271-.438-1.578-.341-.391-1.046-.69-2.533-.529-1.505.163-2.347.537-2.824 1.025-.462.472-.705 1.179-.705 2.319 0 1.211.175 1.926.558 2.361.365.414 1.084.751 2.657.751 1.21 0 1.902-.394 2.344-.938.475-.584.742-1.44.878-2.497Z', box: 24, fill: 1 },
+  cursor: { d: 'M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23', box: 24, fill: 1 },
+}
+
+const paths = new Map<Runtime, Path2D>()
+function logoPath(runtime: Runtime) {
+  let path = paths.get(runtime)
+  if (!path) paths.set(runtime, path = new Path2D(LOGOS[runtime].d))
+  return path
+}
+
+/** Draw the logo centred on (x, y), fitting a box `size` wide. */
 export function drawRuntimeMark(ctx: CanvasRenderingContext2D, runtime: Runtime, x: number, y: number, size: number, color = RUNTIME_COLORS[runtime]) {
+  // Path2D is missing outside a browser (unit tests); the mark is decoration only.
+  if (typeof Path2D === 'undefined') return
+  const logo = LOGOS[runtime]
+  const scale = size / (logo.box * logo.fill)
   ctx.save()
   ctx.translate(x, y)
+  ctx.scale(scale, scale)
+  ctx.translate(-logo.box / 2, -logo.box / 2)
   ctx.fillStyle = color
-  ctx.strokeStyle = color
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
-  const r = size / 2
-  if (runtime === 'claude') {
-    // Twelve tapered rays of two lengths around a small hub.
-    for (let i = 0; i < 12; i++) {
-      const angle = (i / 12) * Math.PI * 2 + 0.13
-      const outer = r * (i % 2 ? 0.72 : 1)
-      const width = r * 0.13
-      ctx.save()
-      ctx.rotate(angle)
-      ctx.beginPath()
-      ctx.moveTo(r * 0.18, -width)
-      ctx.lineTo(outer, -width * 0.35)
-      ctx.lineTo(outer, width * 0.35)
-      ctx.lineTo(r * 0.18, width)
-      ctx.closePath()
-      ctx.fill()
-      ctx.restore()
-    }
-    ctx.beginPath()
-    ctx.arc(0, 0, r * 0.24, 0, Math.PI * 2)
-    ctx.fill()
-  } else {
-    // A rounded terminal frame with a ">_" prompt.
-    const w = r * 1.9, h = r * 1.5, corner = r * 0.3
-    ctx.lineWidth = Math.max(1, r * 0.14)
-    ctx.beginPath()
-    ctx.roundRect(-w / 2, -h / 2, w, h, corner)
-    ctx.stroke()
-    ctx.lineWidth = Math.max(1.1, r * 0.17)
-    ctx.beginPath()
-    ctx.moveTo(-r * 0.55, -r * 0.3)
-    ctx.lineTo(-r * 0.15, 0)
-    ctx.lineTo(-r * 0.55, r * 0.3)
-    ctx.moveTo(r * 0.08, r * 0.34)
-    ctx.lineTo(r * 0.55, r * 0.34)
-    ctx.stroke()
-  }
+  ctx.fill(logoPath(runtime))
   ctx.restore()
 }
 

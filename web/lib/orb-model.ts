@@ -3,11 +3,11 @@
  * Pure selection and summary logic; drawing lives in components/orb.
  */
 import { buildTeamView, isWorking, statusText } from './team-model'
-import type { TeamAgentStatus, TeamSnapshot } from './team-types'
+import type { AgentRuntime, TeamAgentStatus, TeamSnapshot } from './team-types'
 
 export const ORB_MAX_DOTS = 8
 
-export interface OrbDot { id: string; status: TeamAgentStatus; working: boolean; name: string; runtime: 'claude' | 'codex' | null }
+export interface OrbDot { id: string; status: TeamAgentStatus; working: boolean; name: string; runtime: AgentRuntime | null }
 export interface OrbSummary {
   snapshot: TeamSnapshot
   /** Workers in the open team, working ones first, at most ORB_MAX_DOTS. */

@@ -1,7 +1,7 @@
 import * as path from 'node:path'
 import type { AgentEvent, SessionInfo } from './protocol'
 // @ts-ignore -- shared web contract intentionally lives outside extension/rootDir.
-import type { TeamActivity, TeamAgentRow, TeamDelivery, TeamSnapshot, TeamTaskRow } from '../../web/lib/team-types'
+import type { AgentRuntime, TeamActivity, TeamAgentRow, TeamDelivery, TeamSnapshot, TeamTaskRow } from '../../web/lib/team-types'
 
 export type T3Row = Record<string, unknown>
 export interface T3Projection {
@@ -42,7 +42,25 @@ export function t3WorkspaceMatches(workspace: string, candidate: string): boolea
 }
 const running = (status: unknown): boolean => ['running', 'starting', 'queued', 'pending', 'in_progress'].includes(text(status))
 const toolTypes = new Set(['command_execution', 'dynamic_tool', 'file_change', 'web_search', 'mcp_tool_call'])
-const runtime = (driver: unknown): 'claude' | 'codex' | undefined => driver === 'codex' ? 'codex' : driver === 'claudeAgent' || driver === 'claude' ? 'claude' : undefined
+/** Which AI runs a T3 agent, from its driver and provider ids (e.g. driver "acpRegistry", provider "acpRegistry_github_copilot"). */
+/** The first id that names a known AI wins, so a thread's own driver outranks the project default. */
+const teamRuntime = (...ids: unknown[]): AgentRuntime | undefined => {
+  for (const id of ids) {
+    const value = text(id).toLowerCase()
+    if (!value) continue
+    if (/codex/.test(value)) return 'codex'
+    if (/claude/.test(value)) return 'claude'
+    if (/copilot/.test(value)) return 'copilot'
+    if (/antigravity|gemini/.test(value)) return 'gemini'
+    if (/cursor/.test(value)) return 'cursor'
+  }
+  return undefined
+}
+/** The local graph only knows Claude and Codex. */
+const runtime = (...ids: unknown[]): 'claude' | 'codex' | undefined => {
+  const value = teamRuntime(...ids)
+  return value === 'claude' || value === 'codex' ? value : undefined
+}
 const terminalSuccess = new Set(['completed', 'complete', 'succeeded', 'success', 'done'])
 const terminalFailure = new Set(['failed', 'error'])
 const terminalCancelled = new Set(['cancelled', 'canceled', 'interrupted'])
@@ -152,7 +170,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
       const reported = usedTokens > 0 && maxTokens > 0
       agents.push({ id: nodeForThread.get(id), name: text(task && t3Payload(task).title) || text(row.title),
         parentId: task ? taskParent(task) : parentId ? nodeForThread.get(parentId) : null, isMain: id === rootId,
-        runtime: runtime(provider?.driver || provider?.provider || row.default_provider), model, state,
+        runtime: runtime(provider?.driver, provider?.provider, row.default_provider), model, state,
         spawnTime: relative(row.created_at), timeAlive: Math.max(0, (now - timestamp(row.created_at)) / 1000),
         tools: pending, currentTool: pending.at(-1)?.tool, toolCalls: tools.length,
         tokensUsed: reported ? usedTokens : 0, tokensMax: reported ? maxTokens : 0,
@@ -175,7 +193,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
       teamAgents.push({
         id: nodeForThread.get(id)!, parentId: task ? taskParent(task) ?? null : parentId ? nodeForThread.get(parentId) ?? null : null,
         role: id === rootId ? 'lead' : 'worker', name: text(task && t3Payload(task).title) || text(row.title),
-        runtime: runtime(provider?.driver || provider?.provider || row.default_provider) ?? null, model: model ?? null,
+        runtime: teamRuntime(provider?.driver, provider?.provider, row.default_provider) ?? null, model: model ?? null,
         status: shownStatus, task: capped(task && t3Payload(task).prompt), activities: shownStatus === 'background' ? background : activities,
         requestKind: openRequest ? requestKind || null : null,
         context: usedTokens > 0 && maxTokens > 0 ? { used: usedTokens, max: maxTokens } : null,
@@ -197,7 +215,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
       const usedTokens = Number(contextUsage.usedTokens), maxTokens = Number(contextUsage.maxTokens)
       const reported = usedTokens > 0 && maxTokens > 0
       agents.push({ id: nodeForThread.get(`task:${text(task.subagent_id)}`), name: text(p.title) || 'Subagent',
-        parentId: taskParent(task), isMain: false, runtime: runtime(task.driver || task.provider),
+        parentId: taskParent(task), isMain: false, runtime: runtime(task.driver, task.provider),
         model: text(p.model) || undefined, state: tools.length ? 'tool_calling' : running(task.status) || backgroundActivities(provider).length ? 'thinking' : task.status === 'failed' ? 'error' : 'complete',
         task: text(p.prompt), spawnTime: relative(task.started_at), tools, currentTool: tools.at(-1)?.tool,
         tokensUsed: reported ? usedTokens : 0, tokensMax: reported ? maxTokens : 0, toolCalls: items.length })
@@ -217,7 +235,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
       const background = backgroundActivities(provider)
       const teamStatus: TeamAgentRow['status'] = background.length && baseStatus === 'done' ? 'background' : baseStatus
       teamAgents.push({ id: nodeForThread.get(`task:${text(task.subagent_id)}`)!, parentId: taskParent(task) ?? null,
-        role: 'worker', name: text(p.title) || 'Subagent', runtime: runtime(task.driver || task.provider) ?? null,
+        role: 'worker', name: text(p.title) || 'Subagent', runtime: teamRuntime(task.driver, task.provider) ?? null,
         model: text(p.model) || null, status: teamStatus, task: capped(p.prompt), activities: teamStatus === 'background' ? background : activities,
         requestKind: openRequest ? requestKind || null : null,
         context: usedTokens > 0 && maxTokens > 0 ? { used: usedTokens, max: maxTokens } : null,

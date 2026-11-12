@@ -107,7 +107,7 @@ function missionStandIn(node: MissionNode): Agent {
     id: node.id, name: node.name, state: STAND_IN_STATE[node.status], parentId: node.parentId, isMain: node.role === 'lead',
     tokensUsed: node.context?.used ?? 0, tokensMax: node.context?.max ?? 0, contextBreakdown: emptyContextBreakdown(),
     toolCalls: 0, timeAlive: 0, x: node.x, y: node.y, vx: 0, vy: 0, pinned: true,
-    ...(node.runtime ? { runtime: node.runtime } : {}), ...(node.model ? { model: node.model } : {}),
+    ...(node.runtime === 'claude' || node.runtime === 'codex' ? { runtime: node.runtime } : {}), ...(node.model ? { model: node.model } : {}),
     spawnTime: 0, opacity: 1, scale: 1, messageBubbles: [],
   }
 }
