@@ -510,21 +510,35 @@
 /* Lamp glow while running. */
 .jv-lamp[data-live="true"][data-status="running"] svg { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--jv-run) 70%, transparent)); }
 
-/* Delegation link: a data packet travels down the connector to a working worker. */
+/* Delegation link: a comet of light runs down the trunk, turns along the branch and flashes the card's port. */
 .jv-row-wrap::after {
-  content: ""; position: absolute; width: 5px; height: 5px; border-radius: 50%; pointer-events: none; opacity: 0;
-  --jv-packet-x: calc((var(--jv-depth, 0) - 1) * var(--jv-indent) + var(--jv-trunk) - 2px);
-  left: var(--jv-packet-x); top: calc(-1 * var(--jv-gap));
-  background: var(--c, var(--jv-cyan)); box-shadow: 0 0 8px var(--c, var(--jv-cyan));
+  content: ""; position: absolute; pointer-events: none; opacity: 0; border-radius: 2px;
+  --jv-packet-x: calc((var(--jv-depth, 0) - 1) * var(--jv-indent) + var(--jv-trunk) - 0.5px);
+  --jv-tail: 22px;
+  left: var(--jv-packet-x); top: calc(-1 * var(--jv-gap) - var(--jv-tail)); width: 2px; height: var(--jv-tail);
+  background: linear-gradient(transparent, color-mix(in srgb, var(--c, var(--jv-cyan)) 70%, transparent) 70%, #fff);
+  filter: drop-shadow(0 0 3px var(--c, var(--jv-cyan)));
 }
-.jv-row-wrap:not([data-depth="0"])[data-live="true"]:is([data-status="running"], [data-status="thinking"])::after { animation: jv-packet calc(1.8s * var(--jv-speed)) ease-in-out infinite; }
-/* Down the trunk, then along the branch into the card. */
+.jv-row-wrap:not([data-depth="0"])[data-live="true"]:is([data-status="running"], [data-status="thinking"])::after { animation: jv-packet calc(1.8s * var(--jv-speed)) ease-in infinite; }
+.jv-row-wrap:not([data-depth="0"])[data-live="true"]:is([data-status="running"], [data-status="thinking"]) > .jv-guide:is([data-guide="tee"], [data-guide="last"])::after { animation: jv-port-flash calc(1.8s * var(--jv-speed)) ease-out infinite; }
+/* The head is the bright end: bottom edge on the trunk, right edge on the branch. */
 @keyframes jv-packet {
-  0% { top: calc(-1 * var(--jv-gap)); left: var(--jv-packet-x); opacity: 0; }
+  0% { top: calc(-1 * var(--jv-gap) - var(--jv-tail)); left: var(--jv-packet-x); width: 2px; height: var(--jv-tail); opacity: 0;
+    background: linear-gradient(transparent, color-mix(in srgb, var(--c, var(--jv-cyan)) 70%, transparent) 70%, #fff); }
   12% { opacity: 1; }
-  65% { top: calc(50% - 2px); left: var(--jv-packet-x); }
-  90% { opacity: 1; }
-  100% { top: calc(50% - 2px); left: calc(var(--jv-depth, 0) * var(--jv-indent) - 3px); opacity: 0; }
+  62% { top: calc(50% - var(--jv-tail)); left: var(--jv-packet-x); width: 2px; height: var(--jv-tail); opacity: 1;
+    background: linear-gradient(transparent, color-mix(in srgb, var(--c, var(--jv-cyan)) 70%, transparent) 70%, #fff); }
+  63% { top: calc(50% - 1px); left: var(--jv-packet-x); width: 2px; height: 2px;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--c, var(--jv-cyan)) 70%, transparent) 70%, #fff); }
+  92% { opacity: 1; }
+  100% { top: calc(50% - 1px); left: var(--jv-packet-x); width: calc(var(--jv-indent) - var(--jv-trunk) + 1px); height: 2px; opacity: 0;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--c, var(--jv-cyan)) 70%, transparent) 70%, #fff); }
+}
+/* The port lights up as the comet arrives. */
+@keyframes jv-port-flash {
+  0%, 84% { transform: scale(1); }
+  92% { transform: scale(1.9); box-shadow: 0 0 10px #fff, 0 0 18px var(--c, var(--jv-cyan)); background: #fff; }
+  100% { transform: scale(1); }
 }
 
 /* Pipeline: the Working stage shimmers while it has work. */
