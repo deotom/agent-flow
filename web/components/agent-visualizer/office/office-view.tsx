@@ -4,13 +4,14 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { TeamSnapshot } from '../../../lib/team-types'
 import { isWorking, type TeamScope } from '../../../lib/team-model'
 import type { AnimationMode } from '../../../lib/viewer-preferences'
-import type { OfficeActor, OfficeEvent, OfficePet, OfficeScene } from '../../../lib/office-types'
+import type { OfficeActor, OfficeEvent, OfficePet, OfficeScene, OfficeWorkStation } from '../../../lib/office-types'
 import { assignOfficeIdentities, buildOfficeScene, currentOfficeBoard, officeEvents, officeKey } from '../../../lib/office-model'
 import { createOfficeTrip, mergeOfficeEvents, officeAllowsMotion, officeDepartureScene, officePresenceEvents, populatedOfficeTeams, officeTripFrame, parseOfficeIdentities, type OfficeTrip } from '../../../lib/office-motion'
 import { deriveOfficeParties, emptyOfficePartyHistory } from '../../../lib/office-parties'
 import { drawOfficeFrame, officeAmbient } from './office-art'
 import { drawOfficeDaylight } from './office-daylight-art'
 import { officeDaylight } from '../../../lib/office-daylight'
+import { officeWorkEvents, officeWorkPulse, OFFICE_STATION_LABELS } from '../../../lib/office-work'
 
 interface OfficeViewProps {
   snapshots: readonly TeamSnapshot[]
@@ -41,7 +42,7 @@ function usePageVisible() {
 const PAUSE_STORAGE = 'agent-flow-office-paused'
 const BOARD_MARKS = { waiting: '!', failed: '✗', working: '○', done: '✓' } as const
 const BOARD_STATES = { waiting: 'Needs you', failed: 'Failed', working: 'Working', done: 'Done' } as const
-type Moving = { actor: OfficeActor; caption: string; elevatorY: number | null }
+type Moving = { actor: OfficeActor; caption: string; elevatorY: number | null; station?:OfficeWorkStation }
 type Pending = { event: OfficeEvent; before: OfficeScene }
 
 export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam, live, visible, animationMode, now }: OfficeViewProps) {
@@ -78,6 +79,8 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const active = useRef<OfficeTrip | null>(null)
   const baseline = useRef<{ snapshots: readonly TeamSnapshot[]; scene: OfficeScene; enabled: boolean; scope: TeamScope; showQuiet: boolean } | null>(null)
   const motionClock = useRef(0)
+  const nextWorkAt = useRef(0)
+  const workCursor = useRef(0)
   const elapsed = useRef(0)
   const [moving, setMoving] = useState<Moving | null>(null)
   // Overlay buttons follow life offsets via a per-frame transform; React only owns seats and content.
@@ -106,7 +109,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     if (!enabled || !previous?.enabled || (previous.snapshots === snapshots && (previous.scope !== scope || previous.showQuiet !== showQuiet))) {
       queue.current = []; active.current = null; setMoving(null); holdLayout(null)
     } else if (previous.scene !== scene) {
-      const events = [...officeEvents(previous.snapshots, snapshots, Date.now()), ...officePresenceEvents(previous.scene, scene, populatedOfficeTeams(previous.snapshots), Date.now())]
+      const events = [...officeEvents(previous.snapshots, snapshots, Date.now()), ...officePresenceEvents(previous.scene, scene, populatedOfficeTeams(previous.snapshots), Date.now()), ...officeWorkEvents(previous.scene,scene,Date.now())]
       if (events.some(event => event.kind === 'left')) {
         if (!held.current) holdLayout(previous.scene)
         active.current = null; setMoving(null)
@@ -116,7 +119,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
         createOfficeTrip(event, pendingBefore.get(event.id) ?? previous.scene, scene, 0) !== null)
       const old = new Map(queue.current.map(item => [item.event.id, item]))
       queue.current = merged.map(event => old.get(event.id) ?? { event, before: previous.scene })
-      if (active.current && events.some(event => event.actorKey === active.current!.event.actorKey)) { active.current = null; setMoving(null) }
+      if (active.current && events.some(event => event.kind!=='activity'&&event.actorKey === active.current!.event.actorKey)) { active.current = null; setMoving(null) }
       if (active.current && active.current.event.kind !== 'left' && !scene.actors.some(actor => actor.key === active.current!.actorKey)) { active.current = null; setMoving(null) }
     }
     baseline.current = { snapshots, scene, enabled, scope, showQuiet }
@@ -197,15 +200,20 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
         }
       }
       let movement: Moving | null = null
+      if(!active.current&&!held.current&&motionClock.current>=nextWorkAt.current){
+        nextWorkAt.current=motionClock.current+5000
+        const work=officeWorkPulse(input.scene,workCursor.current++,Date.now())
+        if(work)active.current=createOfficeTrip(work,input.scene,input.scene,motionClock.current)
+      }
       if (active.current) {
         const trip = active.current, frame = officeTripFrame(trip, motionClock.current)
         const actor = input.scene.actors.find(actor => actor.key === trip.actorKey) ?? (trip.event.kind === 'left' ? trip.actor : null)
-        if (frame.done || !actor) {
+        if (frame.done || !actor || (trip.event.kind==='activity'&&!isWorking(actor.agent.status))) {
           if (frame.done) greetArrival(trip, input.scene)
           if (trip.event.kind === 'left' && held.current) holdLayout({ ...held.current, actors: held.current.actors.filter(item => item.key !== trip.actorKey) })
           active.current = null; setMoving(null)
         }
-        else movement = { actor: { ...actor, ...frame.point, pose: { ...frame.pose, lead: actor.agent.role === 'lead' } }, caption: trip.caption, elevatorY: frame.elevatorY }
+        else movement = { actor: { ...actor, ...frame.point, pose: { ...frame.pose, lead: actor.agent.role === 'lead' } }, caption: trip.caption, elevatorY: frame.elevatorY, station:trip.event.station }
       }
       paint(movement)
       if (time - lastLabels >= 80) { setMoving(movement); lastLabels = time }
@@ -250,15 +258,16 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
             <canvas ref={skyCanvas} aria-hidden="true" style={{height:`${(visualScene.floors.find(f=>f.kind==='lounge')?.height??0)/visualScene.height*100}%`,zIndex:0}} />
             {visualScene.floors.filter(f=>f.kind!=='quiet').map(floor=><div key={`art-${floor.id}`} aria-hidden="true" className={`of-art of-art-${floor.kind==='lounge'?'surface':floor.room}`} style={{top:`${floor.y/visualScene.height*100}%`,height:`${(floor.height??0)/visualScene.height*100}%`,filter:floor.kind==='lounge'?`brightness(${.32+.68*daylight.light}) saturate(${.7+.3*daylight.light})`:undefined}} />)}
             <div aria-hidden="true" className="of-art of-art-bottom" style={{bottom:0,height:`${visualScene.width/3/visualScene.height*100}%`}} />
-            {/* Library blackboard: team goal, task progress and what matters now, in chalk. */}
-            {visualScene.floors.filter(floor => floor.room === 'room-c-big').map(floor => {
+            {/* Every office has a progress board; compact rooms use a smaller wall panel. */}
+            {visualScene.floors.filter(floor => floor.kind === 'team').map(floor => {
               // Geometry may be held during departures; content always comes from the current scene.
               const board = currentOfficeBoard(floor, scene), h = floor.height ?? 0
+              const compact = floor.room !== 'room-c-big'
               if (!board) return null
               const progress = board.total ? `${board.done} of ${board.total} tasks done` : 'No tasks yet'
-              return <div key={`board-${floor.id}`} className="of-board" role="note"
+              return <div key={`board-${floor.id}`} className="of-board" data-compact={compact} role="note"
                 aria-label={`Team board: ${board.goal}. ${progress}.${board.items.map(item => ` ${BOARD_STATES[item.state]}: ${item.label}.`).join('')}`}
-                style={{ top:`${(floor.y + h * .19) / visualScene.height * 100}%`, height:`${h * .132 / visualScene.height * 100}%` }}>
+                style={{ top:`${(floor.y + h * (compact ? .24 : .19)) / visualScene.height * 100}%`, height:`${h * (compact ? .19 : .132) / visualScene.height * 100}%` }}>
                 <div className="of-board-inner">
                 <div className="of-board-goal" aria-hidden="true">{board.goal}</div>
                 <div className="of-board-progress" aria-hidden="true">
@@ -310,6 +319,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
                 </span>
               </button>
             })}
+            {moving?.station && <div className="of-work-station" aria-hidden="true" style={{left:`${moving.actor.x/visualScene.width*100}%`,top:`${(moving.actor.y-82)/visualScene.height*100}%`}}>{OFFICE_STATION_LABELS[moving.station]}</div>}
             {moving && <div className="of-toast" role="status" aria-live="polite">{moving.actor.agent.name} {moving.caption}</div>}
           </div>
         )}

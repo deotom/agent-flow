@@ -6,6 +6,12 @@ import { officeKey } from '../lib/office-model'
 import type { TeamSnapshot } from '../lib/team-types'
 const team = (sessionId:string,name:string):TeamSnapshot => ({sessionId,title:name,active:true,updatedAt:1000,tasks:[],agents:[{id:'lead',parentId:null,role:'lead',name,runtime:'codex',model:null,status:'thinking',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1000,updatedAt:1000,completedAt:null}]})
 const props={scope:'active' as const,selectedKey:null,onSelect:()=>{},onOpenTeam:()=>{},live:true,visible:true,animationMode:'off' as const,now:1000}
+it('gives each small office its own compact progress board',()=>{
+  const html=renderToStaticMarkup(<OfficeView {...props} snapshots={[team('small-a','Small A'),team('small-b','Small B')]}/>)
+  assert.equal((html.match(/role="note"/g)??[]).length,2)
+  assert.equal((html.match(/data-compact="true"/g)??[]).length,2)
+  assert.ok(html.includes('Team board: Small A')&&html.includes('Team board: Small B'))
+})
 it('keeps cross-session selection and accessible display names without developer notes',()=>{
   const html=renderToStaticMarkup(<OfficeView {...props} snapshots={[team('a','Maya'),team('b','Theo')]} selectedKey={officeKey('a','lead')} />)
   assert.ok(html.includes('Maya, Lead, Codex, team Maya')&&html.includes('Theo, Lead, Codex, team Theo'))

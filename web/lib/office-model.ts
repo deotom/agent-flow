@@ -70,7 +70,7 @@ export const officeBreakRoom = (sessionId: string): OfficeBreakRoom =>
 /** The same team keeps its office decor even when other teams enter or leave. */
 export const officeWorkRoom = (sessionId: string, desks: number): keyof typeof OFFICE_SLOTS => {
   if (desks > 4) return 'room-c-big'
-  const rooms = ['room-a', 'room-b-lead', 'room-c-big'] as const
+  const rooms = ['room-a', 'room-b-lead'] as const
   return rooms[[...sessionId].reduce((hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261) % rooms.length]
 }
 /** Spots in the default cozy break room. */

@@ -27,11 +27,13 @@ test('break rooms match inactive people still visible in the team Flow, with no 
   assert.ok(buildOfficeScene([a,b], 'session', false, new Map()).actors.some(a => a.agent.id === 'old'))
 })
 
-test('small teams have stable varied office decor rather than every lead getting the same room', () => {
+test('small teams keep varied compact offices; only teams needing more seats get the big room', () => {
   const snapshots = Array.from({length:30},(_,i)=>team(`style-${i}`,[agent('lead')]))
   const build = (teams: TeamSnapshot[]) => buildOfficeScene(teams,'active',false,new Map()).floors.filter(f=>f.kind==='team')
   const rooms = build(snapshots)
-  assert.equal(new Set(rooms.map(f=>f.room)).size,3)
+  assert.equal(new Set(rooms.map(f=>f.room)).size,2)
+  assert.ok(rooms.every(f=>f.room!=='room-c-big'))
+  assert.equal(officeWorkRoom('style-0',5),'room-c-big')
   for (const room of rooms) assert.equal(build(snapshots.filter(s=>s.sessionId===room.sessionId))[0].room,room.room)
 })
 

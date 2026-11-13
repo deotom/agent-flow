@@ -46,3 +46,5 @@
 }
 
 .of-resting-muted{background:#ede5d0d9;color:#655e50;border:1px solid #b6ae98;font-size:9px}
+.of-board[data-compact="true"]{left:36.5%;width:27%;background:linear-gradient(135deg,#2c3b36,#172b2c);border:3px solid #8f6037;border-radius:3px;box-shadow:0 2px 4px #1b130f80;color:#e9f2df;z-index:2}.of-board[data-compact="true"] .of-board-inner{padding:5cqh 5cqw}
+.of-work-station{position:absolute;transform:translate(-50%,-100%);z-index:4;pointer-events:none;padding:3px 5px;border:1px solid #d2ac68;border-radius:5px;background:#263e38ed;color:#fff0cb;font:9px/1.2 "Segoe UI",sans-serif;white-space:nowrap;box-shadow:0 2px 4px #17130e60}

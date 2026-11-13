@@ -12,7 +12,7 @@ export interface OfficeAppearance {
   gear: string
 }
 export interface OfficePoint { x: number; y: number }
-export interface OfficePose { climb?: boolean; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean }
+export interface OfficePose { climb?: boolean; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean; face?: 1 | -1 }
 export interface OfficeActor extends OfficePoint {
   key: string
   sessionId: string
@@ -69,11 +69,13 @@ export interface OfficeScene {
 }
 export interface OfficeEvent {
   id: string
-  kind: 'assigned' | 'finished' | 'sent' | 'received' | 'arrived' | 'left'
+  kind: 'assigned' | 'finished' | 'sent' | 'received' | 'arrived' | 'left' | 'activity'
+  station?: OfficeWorkStation
   actorKey: string
   parentKey: string | null
   at: number
 }
+export type OfficeWorkStation = 'planning' | 'research' | 'build' | 'terminal'
 export type OfficePet = 'dog' | 'rabbit' | 'bird' | 'turtle'
 export interface OfficePaintOptions {
   time: number
