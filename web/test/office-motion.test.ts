@@ -102,11 +102,9 @@ describe('Office evidence animation', () => {
 
 describe('Office preferences', () => {
   it('allows an explicit Office motion override without changing system or Effects off preferences', () => {
-    assert.equal(officeAllowsMotion('full',true,false),false)
-    assert.equal(officeAllowsMotion('full',true,true),true)
-    assert.equal(officeAllowsMotion('low',true,true),true)
-    assert.equal(officeAllowsMotion('off',true,true),false)
-    assert.equal(officeAllowsMotion('full',false,false),true)
+    assert.equal(officeAllowsMotion('full'),true)
+    assert.equal(officeAllowsMotion('low'),true)
+    assert.equal(officeAllowsMotion('off'),false)
   })
   it('restores Office and safely falls back from unknown pane values', () => {
     assert.equal(parseOfficePane('office'), 'office')

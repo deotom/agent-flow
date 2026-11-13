@@ -113,7 +113,8 @@ export function officeDepartureScene(held: OfficeScene, next: OfficeScene, snaps
 }
 
 export function parseOfficePane(value: string | null): OfficePane { return value === 'office' || value === 'graph' ? value : 'board' }
-export function officeAllowsMotion(mode: AnimationMode, reduced: boolean, allowReduced: boolean): boolean { return mode !== 'off' && (!reduced || allowReduced) }
+/** Office motion follows the app's own Animation setting only; the OS reduced-motion flag does not override it. */
+export function officeAllowsMotion(mode: AnimationMode): boolean { return mode !== 'off' }
 
 export function parseOfficeIdentities(raw: string | null): Map<string, number> {
   const identities = new Map<string, number>()

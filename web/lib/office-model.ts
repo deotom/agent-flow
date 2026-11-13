@@ -45,7 +45,7 @@ export const OFFICE_SLOTS = {
   'room-b-lead': { chairs: [[.31,.69],[.542,.69],[.682,.69],[.84,.69]], monitors: [[.287,.425],[.54,.465],[.685,.465],[.833,.465]], aspect: 864/1536 },
   'room-c-big': { chairs: [[.162,.55],[.378,.55],[.601,.55],[.815,.55],[.148,.765],[.375,.765],[.603,.765],[.826,.765]], monitors: [[.172,.421],[.386,.421],[.602,.421],[.815,.421],[.153,.622],[.382,.622],[.607,.622],[.832,.622]], aspect: 1 },
 } as const
-export const LOUNGE_CAP = 5
+export const LOUNGE_CAP = 4
 export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: TeamScope, showQuiet: boolean, identities: ReadonlyMap<string, number>, width = 450): OfficeScene {
   const priority = (s: TeamSnapshot) => s.agents.some(a => a.status.startsWith('waiting_')) ? 0 : quiet(s) ? 2 : 1
   const sorted = [...new Map(snapshots.map(s => [s.sessionId, s])).values()].sort((a,b) => priority(a)-priority(b) || a.sessionId.localeCompare(b.sessionId))
@@ -60,7 +60,9 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
     const rows = buildTeamView(snap, 'session').rows
     const ordered = [...rows].sort((a,b) => Number(b.agent.role === 'lead' && !b.agent.parentId)-Number(a.agent.role === 'lead' && !a.agent.parentId))
     const done = (a: TeamAgentRow) => a.status === 'done' || a.status === 'cancelled'
-    const desks = ordered.filter(r => !done(r.agent))
+    // Limited desks go to whoever most needs to be seen: root lead, waiting, failed, working, then idle.
+    const rank = (r: (typeof ordered)[number]) => r.agent.role === 'lead' && !r.agent.parentId ? 0 : r.agent.status.startsWith('waiting_') ? 1 : r.agent.status === 'failed' ? 2 : isWorking(r.agent.status) ? 3 : 4
+    const desks = ordered.filter(r => !done(r.agent)).sort((a,b) => rank(a)-rank(b))
     const room = desks.length > 4 ? 'room-c-big' : desks.some(r => r.agent.role === 'lead' && !r.agent.parentId) ? 'room-b-lead' : 'room-a'
     const slots = OFFICE_SLOTS[room], height = width * slots.aspect
     const id = JSON.stringify(['team',snap.sessionId]), included = showQuiet || !quiet(snap)
@@ -79,13 +81,13 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
         x:chair[0]*width, y:y+chair[1]*height, monitor:{x:monitor[0]*width,y:y+monitor[1]*height},
         hidden:!terminal && slot>=slots.chairs.length, pod:snap.agents.some(a=>a.parentId===row.agent.id),
         activity:activity && row.agent.status === 'running' ? describeActivity(activity).label : row.statusText,
-        runtimeName:row.agent.runtime ? runtimeNames[row.agent.runtime] : 'Unknown AI' }
+        runtimeName:row.agent.runtime ? runtimeNames[row.agent.runtime] : 'Unknown AI', team:{ title, color:teamColor(snap.sessionId) } }
       if (terminal) resting.push(actor); else actors.push(actor)
     }
     if (included) y += height * .90
   }
-  if (quietTeams.length) { floors.push({id:'quiet',sessionId:null,title:`${quietTeams.length} quiet teams`,subtitle:'',color:'#aa9168',y,height:30,actorKeys:[],kind:'quiet'}); y+=30 }
-  const seats = [[.338,.61],[.495,.61],[.64,.57],[.78,.58],[.57,.77]]
+  if (quietTeams.length) { floors.push({id:'quiet',sessionId:null,title:`${quietTeams.length} quiet teams`,subtitle:'',color:'#aa9168',y,height:34,actorKeys:[],kind:'quiet'}); y+=34 }
+  const seats = [[.338,.61],[.495,.61],[.64,.57],[.78,.58]]
   resting.forEach((actor,i) => { const seat=seats[i%seats.length]; actors.push({...actor, floorId:'lounge',monitor:undefined,x:seat[0]*width,y:seat[1]*surfaceHeight,hidden:i>=LOUNGE_CAP}); lounge.actorKeys.push(actor.key) })
   lounge.overflow=Math.max(0,resting.length-LOUNGE_CAP)
   return { width, height:y+width/3, floors, actors, quietTeams, totalAgents:sorted.reduce((n,s)=>n+s.agents.length,0), finishedCount:resting.length }

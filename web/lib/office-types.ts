@@ -24,6 +24,8 @@ export interface OfficeActor extends OfficePoint {
   zone: 'desk' | 'lounge'
   activity: string
   runtimeName: string
+  /** Team identity, kept even when the actor rests in the shared lounge. */
+  team?: { title: string; color: string }
   hidden?: boolean
   monitor?: OfficePoint
   pod?: boolean
@@ -72,4 +74,10 @@ export interface OfficePaintOptions {
   elevatorY?: number | null
   doorOpen?: boolean
   petEvent?: { kind: 'coffee' | 'heart' | 'fish'; until: number } | null
+  /** Actor owned by a real office-motion trip (walk, ride or hold); life is suppressed. */
+  tripKey?: string | null
+  /** Actor currently waving hello to an arriving teammate. */
+  greetKey?: string | null
 }
+/** Where an actor's body is drawn this frame, relative to its seat (scene units). */
+export interface OfficeDrawnOffset { dx: number; dy: number }

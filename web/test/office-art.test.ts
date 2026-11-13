@@ -26,6 +26,9 @@ class RecordingContext {
   stroke() { this.calls.push({op:'stroke',args:[],fill:String(this.fillStyle)}) }
   restore() { this.calls.push({ op: 'restore', args: [], fill: String(this.fillStyle) }) }
   translate(...args: number[]) { this.calls.push({ op: 'translate', args, fill: String(this.fillStyle) }) }
+  rotate(...args: number[]) { this.calls.push({ op: 'rotate', args, fill: String(this.fillStyle) }) }
+  fillText(...args: unknown[]) { this.calls.push({ op: 'text', args, fill: String(this.fillStyle) }) }
+  strokeText(...args: unknown[]) { this.calls.push({ op: 'strokeText', args, fill: String(this.fillStyle) }) }
 }
 const ctx = () => new RecordingContext() as unknown as CanvasRenderingContext2D & RecordingContext
 const appearance = (kind: OfficeAppearance['kind'], slot = 0): OfficeAppearance => ({
