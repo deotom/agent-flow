@@ -67,6 +67,12 @@ const BREAK_VARIANTS = Object.keys(BREAK_ROOMS) as OfficeBreakRoom[]
 /** Stable decor per team so its break room looks the same every time. */
 export const officeBreakRoom = (sessionId: string): OfficeBreakRoom =>
   BREAK_VARIANTS[[...sessionId].reduce((hash, char) => (hash * 33 + char.charCodeAt(0)) >>> 0, 5381) % BREAK_VARIANTS.length]
+/** The same team keeps its office decor even when other teams enter or leave. */
+export const officeWorkRoom = (sessionId: string, desks: number): keyof typeof OFFICE_SLOTS => {
+  if (desks > 4) return 'room-c-big'
+  const rooms = ['room-a', 'room-b-lead', 'room-c-big'] as const
+  return rooms[[...sessionId].reduce((hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261) % rooms.length]
+}
 /** Spots in the default cozy break room. */
 export const BREAK_SEATS = BREAK_ROOMS['room-break']
 export const BREAK_ASPECT = 864/1536
@@ -97,17 +103,17 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
   for (const snap of sorted) {
     const agents = new Map(snap.agents.map(a => [a.id,a]))
     // Team view provides safe display names and ancestry order, including orphan/cycle handling.
-    const rows = buildTeamView(snap, 'session').rows
+    const rows = buildTeamView(snap, scope).rows
     const ordered = [...rows].sort((a,b) => Number(b.agent.role === 'lead' && !b.agent.parentId)-Number(a.agent.role === 'lead' && !a.agent.parentId))
     const rootLead = (a: TeamAgentRow) => a.role === 'lead' && !a.parentId
-    const done = (a: TeamAgentRow) => a.status === 'done' || a.status === 'cancelled' || (a.status === 'failed' && !rootLead(a))
+    const done = (a: TeamAgentRow) => a.status === 'done' || a.status === 'cancelled' || ((a.status === 'failed' || a.status === 'idle') && !rootLead(a))
     const teamQuiet = quiet(snap)
     const partying = teamQuiet && parties.has(snap.sessionId) && snap.agents.some(a => a.status === 'done')
     if (partying) partyTitles.push(clean(snap.title) || 'Team')
     // Limited desks go to whoever most needs to be seen: root lead, waiting, failed, working, then idle.
     const rank = (r: (typeof ordered)[number]) => r.agent.role === 'lead' && !r.agent.parentId ? 0 : r.agent.status.startsWith('waiting_') ? 1 : r.agent.status === 'failed' ? 2 : isWorking(r.agent.status) ? 3 : 4
     const desks = ordered.filter(r => !done(r.agent)).sort((a,b) => rank(a)-rank(b))
-    const room = desks.length > 4 ? 'room-c-big' : desks.some(r => r.agent.role === 'lead' && !r.agent.parentId) ? 'room-b-lead' : 'room-a'
+    const room = officeWorkRoom(snap.sessionId, desks.length)
     const slots = OFFICE_SLOTS[room], height = width * slots.aspect
     const id = JSON.stringify(['team',snap.sessionId]), included = showQuiet || !quiet(snap)
     const working = snap.agents.filter(a => isWorking(a.status)).length, waiting = snap.agents.filter(a => a.status.startsWith('waiting_')).length
@@ -135,7 +141,7 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
     if (included && teamResting.length) {
       const breakHeight = width * BREAK_ASPECT, breakId = JSON.stringify(['break', snap.sessionId])
       const decor = officeBreakRoom(snap.sessionId), spots = BREAK_ROOMS[decor]
-      const breakFloor: OfficeFloor = { id:breakId, sessionId:snap.sessionId, title:"☕ Break room", subtitle:`${teamResting.length} resting`,
+      const breakFloor: OfficeFloor = { id:breakId, sessionId:snap.sessionId, title:`☕ ${clean(snap.title) || 'Team'} · Break room`, subtitle:`${teamResting.length} resting`,
         color:teamColor(snap.sessionId), y, height:breakHeight, room:decor, actorKeys:[], kind:'break', overflow:Math.max(0, teamResting.length - spots.length) }
       floors.push(breakFloor)
       teamResting.forEach((actor, i) => {

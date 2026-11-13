@@ -9,6 +9,8 @@ import { assignOfficeIdentities, buildOfficeScene, currentOfficeBoard, officeEve
 import { createOfficeTrip, mergeOfficeEvents, officeAllowsMotion, officeDepartureScene, officePresenceEvents, populatedOfficeTeams, officeTripFrame, parseOfficeIdentities, type OfficeTrip } from '../../../lib/office-motion'
 import { deriveOfficeParties, emptyOfficePartyHistory } from '../../../lib/office-parties'
 import { drawOfficeFrame, officeAmbient } from './office-art'
+import { drawOfficeDaylight } from './office-daylight-art'
+import { officeDaylight } from '../../../lib/office-daylight'
 
 interface OfficeViewProps {
   snapshots: readonly TeamSnapshot[]
@@ -71,6 +73,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const visualScene = useMemo(() => heldLayout ? officeDepartureScene(heldLayout, scene, snapshots) : scene, [heldLayout, scene, snapshots])
   const enabled = visible && pageVisible && live && officeAllowsMotion(animationMode) && !paused
   const canvas = useRef<HTMLCanvasElement>(null)
+  const skyCanvas = useRef<HTMLCanvasElement>(null)
   const queue = useRef<Pending[]>([])
   const active = useRef<OfficeTrip | null>(null)
   const baseline = useRef<{ snapshots: readonly TeamSnapshot[]; scene: OfficeScene; enabled: boolean; scope: TeamScope; showQuiet: boolean } | null>(null)
@@ -129,6 +132,13 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     if (element.width !== w || element.height !== h) { element.width = w; element.height = h }
     const actors = movement ? input.scene.actors.some(actor => actor.key === movement.actor.key) ? input.scene.actors.map(actor => actor.key === movement.actor.key ? movement.actor : actor) : [...input.scene.actors,movement.actor] : input.scene.actors
     context.setTransform(ratio,0,0,ratio,0,0)
+    const skyElement=skyCanvas.current, skyContext=skyElement?.getContext('2d')
+    const surfaceHeight=input.scene.floors.find(f=>f.kind==='lounge')?.height??0
+    if(skyElement&&skyContext){
+      if(skyElement.width!==w||skyElement.height!==Math.round(surfaceHeight*ratio)){skyElement.width=w;skyElement.height=Math.round(surfaceHeight*ratio)}
+      skyContext.setTransform(ratio,0,0,ratio,0,0)
+      drawOfficeDaylight(skyContext,input.scene,new Date(),input.enabled?elapsed.current:0)
+    }
     const greeting = greet.current && greet.current.until > elapsed.current ? greet.current.key : null
     const offsets = drawOfficeFrame(context, { ...input.scene, actors }, { time: elapsed.current, date: new Date(), now: Date.now(), live: input.live,
       motion: input.enabled, pets: input.pets, petEvent: input.petEvent, selectedKey: input.selectedKey, elevatorY: movement?.elevatorY ?? null, doorOpen: Boolean(movement && movement.actor.y >= input.scene.height-35),
@@ -217,6 +227,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const displayed = moving ? visualScene.actors.some(actor => actor.key === moving.actor.key) ? visualScene.actors.map(actor => actor.key === moving.actor.key ? moving.actor : actor) : [...visualScene.actors,moving.actor] : visualScene.actors
 
   const ambient = officeAmbient(new Date(now))
+  const daylight = officeDaylight(new Date(now))
   const working = snapshots.reduce((sum, team) => sum + team.agents.filter(agent => isWorking(agent.status)).length, 0)
   const needsYou = snapshots.reduce((sum, team) => sum + team.agents.filter(agent => agent.status.startsWith('waiting_')).length, 0)
   const lounge = visualScene.floors.find(floor => floor.kind === 'lounge')
@@ -236,7 +247,8 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
       <div className="of-scroll" ref={viewport}>
         {snapshots.length === 0 ? <p className="of-empty">Your teams will appear here.</p> : (
           <div className="of-building" style={{ width:'100%', maxWidth:900, aspectRatio:`${visualScene.width} / ${visualScene.height}` } as CSSProperties}>
-            {visualScene.floors.filter(f=>f.kind!=='quiet').map(floor=><div key={`art-${floor.id}`} aria-hidden="true" className={`of-art of-art-${floor.kind==='lounge'?'surface':floor.room}`} style={{top:`${floor.y/visualScene.height*100}%`,height:`${(floor.height??0)/visualScene.height*100}%`}} />)}
+            <canvas ref={skyCanvas} aria-hidden="true" style={{height:`${(visualScene.floors.find(f=>f.kind==='lounge')?.height??0)/visualScene.height*100}%`,zIndex:0}} />
+            {visualScene.floors.filter(f=>f.kind!=='quiet').map(floor=><div key={`art-${floor.id}`} aria-hidden="true" className={`of-art of-art-${floor.kind==='lounge'?'surface':floor.room}`} style={{top:`${floor.y/visualScene.height*100}%`,height:`${(floor.height??0)/visualScene.height*100}%`,filter:floor.kind==='lounge'?`brightness(${.32+.68*daylight.light}) saturate(${.7+.3*daylight.light})`:undefined}} />)}
             <div aria-hidden="true" className="of-art of-art-bottom" style={{bottom:0,height:`${visualScene.width/3/visualScene.height*100}%`}} />
             {/* Library blackboard: team goal, task progress and what matters now, in chalk. */}
             {visualScene.floors.filter(floor => floor.room === 'room-c-big').map(floor => {

@@ -1,4 +1,5 @@
 import { drawRuntimeMark, type Runtime } from '../canvas/runtime-mark'
+import { officeDaylight } from '../../../lib/office-daylight'
 import type { OfficeActor, OfficeAppearance, OfficeDrawnOffset, OfficePaintOptions, OfficePose, OfficeScene } from '../../../lib/office-types'
 import { officeLife, officeLifeCanChat, officeLifePairs, officeSeed, type OfficeLifePair, type OfficeMood } from '../../../lib/office-life'
 
@@ -180,16 +181,26 @@ const pairsFor=(actors:readonly OfficeActor[])=>{let p=pairCache.get(actors);if(
 export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Map<string,OfficeDrawnOffset> {
   c.clearRect(0,0,scene.width,scene.height)
   const scale=scene.width/450,time=o.motion?o.time:0
-  // Continuous ladder connects the artwork's separate sections, including their soil bands.
-  const x=scene.width*.945, top=scene.width*.335, bottom=scene.height-scene.width/3
-  c.save();c.beginPath()
-  const lounge=scene.floors.find(f=>f.kind==='lounge')
-  if(lounge)c.rect(0,(lounge.height??0)*.68,scene.width,(lounge.height??0)*.32)
-  for(const f of scene.floors){
-    if(f.kind==='team'||f.kind==='break'){const h=f.height??0;c.rect(0,f.y,scene.width,h*(f.room==='room-c-big'?.10:.17));c.rect(0,f.y+h*.80,scene.width,h*.20)}
-    if(f.kind==='quiet')c.rect(0,f.y,scene.width,f.height??30)
+  const daylight=officeDaylight(o.date),surface=scene.floors.find(f=>f.kind==='lounge')
+  if(surface?.height&&daylight.sun){
+    c.fillStyle=`rgba(31,43,38,${.08+daylight.light*.06})`
+    c.beginPath();c.ellipse(scene.width*(.14+daylight.shadow*.07),surface.height*.60,scene.width*(.06+Math.abs(daylight.shadow)*.09),surface.height*.022,daylight.shadow*.12,0,Math.PI*2);c.fill()
   }
-  c.clip()
+  // One shaft covers the incompatible ladders baked into the individual artworks.
+  // Its centre is also the actor's climbing path in office-motion.ts.
+  const x=scene.width*.945, top=scene.width*.335
+  const rooms=scene.floors.filter(f=>f.kind==='team'||f.kind==='break')
+  const bottom=Math.max(top,...rooms.map(f=>f.y+(f.height??0)*.83))
+  c.save()
+  if(rooms.length){
+    c.fillStyle='#38281c';c.fillRect(scene.width*.905,top,scene.width*.095,bottom-top+6*scale)
+    c.fillStyle='#503721';c.fillRect(scene.width*.91,top,scene.width*.09,bottom-top)
+    c.fillStyle='#77502c';c.fillRect(scene.width*.905,top,3*scale,bottom-top)
+    for(const f of rooms){
+      const landing=f.y+(f.height??0)*.78
+      c.fillStyle='#b58a50';c.fillRect(scene.width*.905,landing,13*scale,4*scale)
+    }
+  }
   c.strokeStyle='#5c351d';c.lineWidth=7*scale;c.beginPath();c.moveTo(x-11*scale,top);c.lineTo(x-11*scale,bottom);c.moveTo(x+11*scale,top);c.lineTo(x+11*scale,bottom);c.stroke()
   c.strokeStyle='#c9924f';c.lineWidth=4*scale;c.stroke()
   for(let y=top;y<bottom;y+=18*scale){c.strokeStyle='#976135';c.lineWidth=5*scale;c.beginPath();c.moveTo(x-11*scale,y);c.lineTo(x+11*scale,y);c.stroke()}

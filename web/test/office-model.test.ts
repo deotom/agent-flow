@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { assignOfficeIdentities, buildOfficeScene, officeEvents, officeKey, officeAppearance, officeDisplayName, officeBreakRoom, BREAK_ROOMS } from '../lib/office-model'
+import { assignOfficeIdentities, buildOfficeScene, officeEvents, officeKey, officeAppearance, officeDisplayName, officeBreakRoom, officeWorkRoom, OFFICE_SLOTS, BREAK_ROOMS } from '../lib/office-model'
 import type { TeamAgentRow, TeamSnapshot, TeamTaskRow } from '../lib/team-types'
 
 const agent = (id: string, status: TeamAgentRow['status'] = 'thinking', parentId: string | null = null, startedAt = 1): TeamAgentRow => ({
@@ -12,6 +12,28 @@ const task = (id: string, childId: string, status: TeamTaskRow['status'], delive
   completedAt: null, updatedAt,
 })
 const team = (sessionId: string, agents: TeamAgentRow[], tasks: TeamTaskRow[] = []): TeamSnapshot => ({ sessionId, title: sessionId, active: true, updatedAt: 1, agents, tasks })
+
+test('break rooms match inactive people still visible in the team Flow, with no historical crowd', () => {
+  const a = team('a', [agent('lead'), agent('pending','done','lead'), agent('old','done','lead')], [task('p','pending','done','pending'),task('o','old','done','received')])
+  const b = team('b', [agent('lead'),agent('other','done','lead')], [task('b','other','done','none')])
+  const scene = buildOfficeScene([a,b], 'active', false, new Map())
+  assert.deepEqual(scene.actors.filter(a => a.zone === 'lounge').map(a => a.agent.id).sort(), ['other','pending'])
+  for (const room of scene.floors.filter(f => f.kind === 'break')) {
+    assert.ok(scene.actors.filter(a => a.floorId === room.id).every(a => a.sessionId === room.sessionId))
+  }
+  a.tasks[0].delivery = 'received'
+  const after = buildOfficeScene([a,b], 'active', false, new Map())
+  assert.equal(after.floors.some(f => f.kind === 'break' && f.sessionId === 'a'), false)
+  assert.ok(buildOfficeScene([a,b], 'session', false, new Map()).actors.some(a => a.agent.id === 'old'))
+})
+
+test('small teams have stable varied office decor rather than every lead getting the same room', () => {
+  const snapshots = Array.from({length:30},(_,i)=>team(`style-${i}`,[agent('lead')]))
+  const build = (teams: TeamSnapshot[]) => buildOfficeScene(teams,'active',false,new Map()).floors.filter(f=>f.kind==='team')
+  const rooms = build(snapshots)
+  assert.equal(new Set(rooms.map(f=>f.room)).size,3)
+  for (const room of rooms) assert.equal(build(snapshots.filter(s=>s.sessionId===room.sessionId))[0].room,room.room)
+})
 
 test('identity allocation preserves slots, sorts newcomers, and repairs invalid persisted slots', () => {
   assert.equal(officeKey('s1', 'x'), JSON.stringify(['s1', 'x']))
@@ -35,9 +57,9 @@ test('scene aggregates sessions, scopes through team view, lays out desks and te
   assert.equal(scene.totalAgents, 5); assert.equal(scene.finishedCount, 1)
   assert.equal(scene.actors.length, 5)
   assert.equal(scene.actors.find(x => x.key === officeKey('a','w2'))?.zone, 'lounge')
-  assert.equal(scene.actors.find(x => x.key === officeKey('a','lead'))?.x, .31*450)
+  assert.equal(scene.actors.find(x => x.key === officeKey('a','lead'))?.x, OFFICE_SLOTS[officeWorkRoom('a',2)].chairs[0][0]*450)
   assert.equal(officeAppearance(2).kind, 'human')
-  assert.equal(buildOfficeScene([a], 'active', false, ids).actors.some(x => x.agent.id === 'w2'), true)
+  assert.equal(buildOfficeScene([a], 'active', false, ids).actors.some(x => x.agent.id === 'w2'), false)
   const quiet = team('quiet', [agent('q', 'idle')])
   assert.deepEqual(buildOfficeScene([quiet], 'session', false, assignOfficeIdentities([officeKey('quiet','q')])).quietTeams.map(x => x.sessionId), ['quiet'])
   assert.equal(buildOfficeScene([quiet], 'session', true, assignOfficeIdentities([officeKey('quiet','q')])).actors.length, 1)
@@ -94,8 +116,8 @@ test('room choice, priority, failed lead seating, quiet teams going home and lou
   assert.equal(scene.floors[0].kind,'lounge')
   const rooms=scene.floors.filter(f=>f.kind==='team')
   assert.equal(rooms[0].sessionId,'z-wait')
-  assert.equal(rooms.find(f=>f.sessionId==='a-work')?.room,'room-b-lead')
-  assert.equal(rooms.find(f=>f.sessionId==='no-lead')?.room,'room-a')
+  assert.equal(rooms.find(f=>f.sessionId==='a-work')?.room,officeWorkRoom('a-work',2))
+  assert.equal(rooms.find(f=>f.sessionId==='no-lead')?.room,officeWorkRoom('no-lead',1))
   assert.equal(rooms.find(f=>f.sessionId==='big')?.room,'room-c-big')
   assert.equal(rooms.find(f=>f.sessionId==='big')?.overflow,3)
   // The quiet team went home: nobody from it rests in the lounge.

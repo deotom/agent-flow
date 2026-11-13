@@ -20,6 +20,13 @@ The concept image is not included. Encoded with Electron canvas WebP quality .83
 
 Seat and monitor coordinates are normalized against the original full image in
 `OFFICE_SLOTS` in `web/lib/office-model.ts`. Rooms overlap their soil bands by
-10%; the cap crops its sky margin in CSS. Canvas bridges the ladder only over
-soil, preserving the painted room ladders. CSS URLs bundle into the desktop and
+10%; the cap crops its sky margin in CSS. Canvas draws one continuous side shaft
+over the incompatible ladders in the separate artworks. CSS URLs bundle into the desktop and
 extension builds, without absolute filesystem or HTTP paths.
+
+`surface-foreground.webp` (136,796 bytes) is an imagegen edit of `surface.webp`,
+with the sky, clouds and painted sun removed to alpha. It preserves the garden
+composition and was encoded to 1000 × 563 WebP with alpha. A separate canvas behind
+it draws local-clock daylight; the foreground brightness changes with the same clock.
+The original opaque surface remains as the source asset. The sun follows a decorative
+06:00–18:00 arc; it does not request location permission or claim astronomical accuracy.
