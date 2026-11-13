@@ -6,6 +6,11 @@ import { officeKey } from '../lib/office-model'
 import type { TeamSnapshot } from '../lib/team-types'
 const team = (sessionId:string,name:string):TeamSnapshot => ({sessionId,title:name,active:true,updatedAt:1000,tasks:[],agents:[{id:'lead',parentId:null,role:'lead',name,runtime:'codex',model:null,status:'thinking',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1000,updatedAt:1000,completedAt:null}]})
 const props={scope:'active' as const,selectedKey:null,onSelect:()=>{},onOpenTeam:()=>{},live:true,visible:true,animationMode:'off' as const,now:1000}
+it('keeps reconnect status in the existing Office toolbar while retaining the last known scene',()=>{
+ const html=renderToStaticMarkup(<OfficeView {...props} live={false} snapshots={[team('s','Lead')]} connection={{label:'Reconnecting',tone:'warn',detail:'Last read 12 seconds ago'}}/>)
+ assert.ok(html.includes('class="of-link"')&&html.includes('Reconnecting'))
+ assert.ok(html.includes('of-building')&&html.includes('Lead'))
+})
 it('gives each small office its own compact progress board',()=>{
   const html=renderToStaticMarkup(<OfficeView {...props} snapshots={[team('small-a','Small A'),team('small-b','Small B')]}/>)
   assert.equal((html.match(/role="note"/g)??[]).length,2)

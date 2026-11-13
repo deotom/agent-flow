@@ -1,4 +1,4 @@
-import type { OfficeActor } from './office-types'
+import type { OfficeActor, OfficeLeisureAction } from './office-types'
 
 /**
  * Ambient "life" for Office actors, layered on top of real status.
@@ -8,6 +8,7 @@ import type { OfficeActor } from './office-types'
  */
 export type OfficeMood = 'zzz' | 'chat' | 'idea' | 'note' | 'sigh' | null
 export interface OfficeLifeFrame {
+  objectAction?: OfficeLeisureAction
   /** Scene-unit lateral offset from the seat. */
   dx: number
   /** Upward hop in avatar units. */
@@ -31,6 +32,7 @@ export interface OfficeLifeFrame {
   typing: boolean
 }
 export interface OfficeLifeContext {
+  objectAction?: OfficeLeisureAction
   /** Scene-unit vector to the paired neighbour. */
   partnerDx?: number
   /** Partner can join a conversation right now. */
@@ -59,6 +61,8 @@ const ease = (k: number) => k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k)
 const bump = (k: number) => k <= 0 || k >= 1 ? 0 : Math.sin(k * Math.PI)
 const sign = (v: number): 1 | -1 => v < 0 ? -1 : 1
 const frame = (patch: Partial<OfficeLifeFrame>): OfficeLifeFrame => ({ ...OFFICE_STILL, ...patch })
+const objectFrame=(kind:OfficeLeisureAction,time:number,party=false)=>frame({objectAction:kind,cup:kind==='coffee',stand:kind==='water'||kind==='music',
+  wave:kind==='music',lean:kind==='water'?.06:0,hop:party?Math.max(0,Math.sin(time*3))*1.5:0,mood:kind==='music'?'note':null})
 
 /** 2s out, `pause`s away, 2s back; null outside the trip. */
 function stroll(t: number, start: number, reach: number, pause: number, away: Partial<OfficeLifeFrame>): OfficeLifeFrame | null {
@@ -76,7 +80,9 @@ export const officeLifeCanChat = (actor: OfficeActor) => actor.zone === 'lounge'
 export function officeLife(actor: OfficeActor, time: number, context: OfficeLifeContext = {}): OfficeLifeFrame {
   const status = actor.agent.status
   const still = frame({ typing: status === 'running' && actor.zone === 'desk' })
-  if (!time || context.tripActive || actor.pose?.walk || actor.pose?.climb) return still
+  if (context.tripActive || actor.pose?.walk || actor.pose?.climb) return still
+  if(actor.zone==='lounge'&&context.objectAction&&(RESTING.has(status)||status==='failed'))return objectFrame(context.objectAction,time,actor.party)
+  if(!time)return actor.zone==='lounge'&&actor.objectAction?objectFrame(actor.objectAction,0,actor.party):still
   if (context.greet) return frame({ wave: true, turn: .5 })
   const s = officeSeed(actor.key)
   const partner = context.partnerDx, paired = partner !== undefined && context.partnerAwake !== false && officeLifeCanChat(actor)
@@ -89,11 +95,12 @@ export function officeLife(actor: OfficeActor, time: number, context: OfficeLife
       // Party: bob to the beat, throw arms up now and then, the odd note. Seated, no wandering.
       const beat = time * 2.2 + s * 6
       return frame({ hop: Math.max(0, Math.sin(beat * Math.PI)) * 2, stretch: at(time, 4, s) < 1 ? bump(at(time, 4, s)) : 0,
-        turn: Math.sin(time * 1.3 + s * 5) * .7, mood: at(time, 6, s) < 1.2 ? 'note' : null, cup: at(time, 4, s) >= 1 })
+        turn: Math.sin(time * 1.3 + s * 5) * .7, mood: at(time, 6, s) < 1.2 ? 'note' : null, cup:(!actor.objectAction||actor.objectAction==='coffee')&&at(time, 4, s) >= 1,objectAction:actor.objectAction })
     }
     // Failed workers rest too, but they look it: slumped with an occasional sigh.
     if (status === 'failed') return frame({ slump: true, cup: true, mood: at(time, 12, s) < 1.2 ? 'sigh' : null })
     if (!RESTING.has(status)) return still
+    if(actor.objectAction&&at(time,16,s)<10)return objectFrame(actor.objectAction,time)
     if (paired) {
       const t = at(time, 20, pairSeed), reach = sign(partner!) * Math.max(0, (Math.abs(partner!) - OFFICE_CHAT_GAP) / 2)
       if (t < 2) return frame({ walk: reach !== 0, stand: true, dx: reach * ease(t / 2), face: sign(partner!), cup: true })

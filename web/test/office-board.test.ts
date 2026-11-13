@@ -39,7 +39,7 @@ test('scene attaches a board to every team floor using the session title as the 
   const big = team([agent('lead', 'thinking', null), ...Array.from({ length: 6 }, (_, i) => agent(`w${i}`))], [task('a', 'w0', 'working')])
   const scene = buildOfficeScene([{ ...big, project: 'Portal' }], 'active', false, new Map())
   const floor = scene.floors.find(f => f.kind === 'team')!
-  assert.equal(floor.room, 'room-c-big')
+  assert.equal(floor.room, 'room-stations-large')
   assert.equal(floor.board?.goal, 'Ship the vendor portal')
   assert.equal(floor.board?.total, 1)
 })

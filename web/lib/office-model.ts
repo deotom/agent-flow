@@ -1,6 +1,8 @@
 import type { OfficeAppearance, OfficeEvent, OfficeScene, OfficeActor, OfficeFloor, OfficeBoard, OfficeBoardItem, OfficeBreakRoom } from './office-types'
 import type { TeamAgentRow, TeamSnapshot } from './team-types'
 import { buildTeamView, describeActivity, isWorking, type TeamScope } from './team-model'
+import { agentWorkStation } from './office-stations'
+import { officeLeisureForSpot } from './office-leisure'
 
 export const officeKey = (sessionId: string, agentId: string): string => JSON.stringify([sessionId, agentId])
 
@@ -28,12 +30,19 @@ const looks: OfficeAppearance[] = ['#613b28','#292124','#a54f29','#d6aa59','#453
 export function officeAppearance(slot: number): OfficeAppearance {
   const safe = Number.isSafeInteger(slot) && slot >= 0 ? slot : 0
   const base = looks[safe % looks.length]
-  return { ...base, slot: safe, ...(safe >= 7 ? { shirt: `hsl(${safe * 137.508 % 360} 42% 57%)` } : {}) }
+  const outfits=['jacket','hoodie','overalls','vest','coat','poncho','striped','shirt'] as const
+  const gears=['glasses','cap','headphones','beanie','goggles','earrings','headset','scarf','none']
+  return { ...base, slot: safe,
+    hair:['#402d26','#192d39','#bd713b','#e0bd78','#744341','#503e71','#e4e0d3','#a38c74','#24252a','#327a79','#994f75','#b9a0c8'][safe%12],
+    skin:['#f4c6a2','#d7a078','#a66b48','#edbb91','#714934','#deb08b','#f2d8bd'][Math.floor(safe/2)%7],
+    outfit:outfits[safe%outfits.length],face:(['round','square','oval'] as const)[Math.floor(safe/3)%3],
+    gear:gears[(safe*3+Math.floor(safe/7))%gears.length],
+    ...(safe >= 7 ? { shirt: `hsl(${safe * 137.508 % 360} 42% 57%)` } : {}) }
 }
 
 const activeInOffice = (agent: TeamAgentRow) => isWorking(agent.status) || agent.status === 'waiting_approval' || agent.status === 'waiting_input'
 function quiet(snapshot: TeamSnapshot): boolean {
-  return !snapshot.agents.some(a => activeInOffice(a) || a.status === 'failed')
+  return !snapshot.agents.some(activeInOffice)
 }
 const floorColors = ['#f3a45b', '#66bd83', '#6da9d8', '#b18ad0', '#d6ae52', '#c57b83', '#5db7ad']
 const runtimeNames = { claude: 'Claude', codex: 'Codex', gemini: 'Gemini', copilot: 'Copilot', cursor: 'Cursor' }
@@ -41,6 +50,8 @@ const teamColor = (id: string) => floorColors[[...id].reduce((hash, char) => (ha
 
 // Coordinates measured against the supplied source artwork, as fractions of its full bounds.
 export const OFFICE_SLOTS = {
+  'room-stations': {chairs:[[.13,.79],[.35,.79],[.57,.79],[.79,.79]],monitors:[[.13,.55],[.35,.55],[.57,.55],[.79,.55]],aspect:864/1536},
+  'room-stations-large': {chairs:[[.13,.72],[.35,.72],[.57,.72],[.79,.72],[.13,.79],[.35,.79],[.57,.79],[.79,.79]],monitors:[[.13,.55],[.35,.55],[.57,.55],[.79,.55]],aspect:.75},
   'room-a': { chairs: [[.19,.68],[.365,.68],[.595,.68],[.783,.68]], monitors: [[.223,.48],[.394,.48],[.624,.48],[.807,.48]], aspect: 864/1536 },
   'room-b-lead': { chairs: [[.31,.69],[.542,.69],[.682,.69],[.84,.69]], monitors: [[.287,.425],[.54,.465],[.685,.465],[.833,.465]], aspect: 864/1536 },
   'room-c-big': { chairs: [[.162,.55],[.378,.55],[.601,.55],[.815,.55],[.148,.765],[.375,.765],[.603,.765],[.826,.765]], monitors: [[.172,.421],[.386,.421],[.602,.421],[.815,.421],[.153,.622],[.382,.622],[.607,.622],[.832,.622]], aspect: 1 },
@@ -68,15 +79,11 @@ const BREAK_VARIANTS = Object.keys(BREAK_ROOMS) as OfficeBreakRoom[]
 export const officeBreakRoom = (sessionId: string): OfficeBreakRoom =>
   BREAK_VARIANTS[[...sessionId].reduce((hash, char) => (hash * 33 + char.charCodeAt(0)) >>> 0, 5381) % BREAK_VARIANTS.length]
 /** The same team keeps its office decor even when other teams enter or leave. */
-export const officeWorkRoom = (sessionId: string, desks: number): keyof typeof OFFICE_SLOTS => {
-  if (desks > 4) return 'room-c-big'
-  const rooms = ['room-a', 'room-b-lead'] as const
-  return rooms[[...sessionId].reduce((hash, char) => Math.imul(hash ^ char.charCodeAt(0), 16777619) >>> 0, 2166136261) % rooms.length]
-}
+export const officeWorkRoom = (_sessionId: string, desks: number): keyof typeof OFFICE_SLOTS => desks>4?'room-stations-large':'room-stations'
 /** Spots in the default cozy break room. */
 export const BREAK_SEATS = BREAK_ROOMS['room-break']
 export const BREAK_ASPECT = 864/1536
-/** True when a team has nobody working, waiting or failed. */
+/** Failed work is terminal history; only current work or a live request keeps a room open. */
 export const officeTeamQuiet = (snapshot: TeamSnapshot) => quiet(snapshot)
 /** Replace recognizable filesystem tokens, preserving URLs and ordinary slash-separated names. */
 export function officeDisplayName(name: string): string {
@@ -123,12 +130,14 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
     for (const row of ordered) {
       const terminal = done(row.agent), slot = desks.indexOf(row), key = officeKey(snap.sessionId,row.agent.id)
       if (!terminal && !included) continue
-      const chair = slots.chairs[Math.max(0,slot) % slots.chairs.length], monitor = slots.monitors[Math.max(0,slot) % slots.monitors.length]
-      const activity = row.agent.activities.at(-1)
+      const chair = slots.chairs[Math.max(0,slot) % slots.chairs.length]
+      const activity = row.agent.activities.at(-1), station=agentWorkStation(row.agent)
       const actor: OfficeActor = { key, sessionId:snap.sessionId, agent:{ ...row.agent, name:officeDisplayName(row.agent.name) }, task:row.task,
         parentKey:row.agent.parentId && agents.has(row.agent.parentId) ? officeKey(snap.sessionId,row.agent.parentId) : null,
         appearance:officeAppearance(identities.get(key) ?? 0), floorId:id, zone:terminal ? 'lounge' : 'desk',
-        x:chair[0]*width, y:y+chair[1]*height, monitor:{x:monitor[0]*width,y:y+monitor[1]*height},
+        // Stable staging spots are independent of tool changes. Motion owns the trip to a station.
+        x:chair[0]*width,y:y+chair[1]*height,
+        monitor:undefined, workStation:terminal?undefined:station,stand:!terminal,
         hidden:!terminal && slot>=slots.chairs.length, pod:snap.agents.some(a=>a.parentId===row.agent.id),
         activity:activity && row.agent.status === 'running' ? describeActivity(activity).label : row.statusText,
         runtimeName:row.agent.runtime ? runtimeNames[row.agent.runtime] : 'Unknown AI', team:{ title, color:teamColor(snap.sessionId) } }
@@ -146,7 +155,7 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
       floors.push(breakFloor)
       teamResting.forEach((actor, i) => {
         const [sx, sy, stand] = spots[i % spots.length]
-        actors.push({ ...actor, floorId:breakId, monitor:undefined, x:sx*width, y:y+sy*breakHeight, stand:stand === 1, hidden:i >= spots.length })
+        actors.push({ ...actor, floorId:breakId, monitor:undefined, x:sx*width, y:y+sy*breakHeight, stand:stand === 1, objectAction:officeLeisureForSpot(decor,i), hidden:i >= spots.length })
         breakFloor.actorKeys.push(actor.key)
       })
       resting.push(...teamResting)
@@ -157,7 +166,7 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
   // The surface lawn is the party garden.
   const seats = [[.338,.61],[.495,.61],[.64,.57],[.78,.58]]
   if (partyTitles.length) lounge.party = partyTitles
-  guests.forEach((actor,i) => { const seat=seats[i%seats.length]; actors.push({...actor, floorId:'lounge',monitor:undefined,x:seat[0]*width,y:seat[1]*surfaceHeight,hidden:i>=LOUNGE_CAP}); lounge.actorKeys.push(actor.key) })
+  guests.forEach((actor,i) => { const seat=seats[i%seats.length]; actors.push({...actor, floorId:'lounge',monitor:undefined,x:seat[0]*width,y:seat[1]*surfaceHeight,stand:i%4===1||i%4===3,objectAction:(['snack','music','snack','coffee'] as const)[i%4],hidden:i>=LOUNGE_CAP}); lounge.actorKeys.push(actor.key) })
   lounge.overflow=Math.max(0,guests.length-LOUNGE_CAP)
   return { width, height:y+width/3, floors, actors, quietTeams, totalAgents:sorted.reduce((n,s)=>n+s.agents.length,0), finishedCount:resting.length + guests.length }
 }

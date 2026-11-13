@@ -10,9 +10,11 @@ export interface OfficeAppearance {
   pants: string
   cut: string
   gear: string
+  outfit?: 'shirt' | 'jacket' | 'hoodie' | 'overalls' | 'vest' | 'coat' | 'poncho' | 'striped'
+  face?: 'round' | 'square' | 'oval'
 }
 export interface OfficePoint { x: number; y: number }
-export interface OfficePose { climb?: boolean; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean; face?: 1 | -1 }
+export interface OfficePose { objectAction?:OfficeLeisureAction;climb?: boolean; climbStep?:number; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean; face?: 1 | -1 }
 export interface OfficeActor extends OfficePoint {
   key: string
   sessionId: string
@@ -32,6 +34,8 @@ export interface OfficeActor extends OfficePoint {
   team?: { title: string; color: string }
   hidden?: boolean
   monitor?: OfficePoint
+  workStation?: OfficeWorkStation
+  objectAction?: OfficeLeisureAction
   pod?: boolean
   pose?: OfficePose
 }
@@ -45,7 +49,7 @@ export interface OfficeFloor {
   actorKeys: string[]
   kind: 'team' | 'lounge' | 'quiet' | 'break'
   height?: number
-  room?: 'room-a' | 'room-b-lead' | 'room-c-big' | OfficeBreakRoom
+  room?: 'room-a' | 'room-b-lead' | 'room-c-big' | 'room-stations' | 'room-stations-large' | OfficeBreakRoom
   overflow?: number
   working?: number
   waiting?: number
@@ -75,9 +79,11 @@ export interface OfficeEvent {
   parentKey: string | null
   at: number
 }
-export type OfficeWorkStation = 'planning' | 'research' | 'build' | 'terminal'
+export type OfficeWorkStation = 'planning' | 'research' | 'build' | 'quality' | 'terminal'
+export type OfficeLeisureAction = 'coffee' | 'book' | 'game' | 'water' | 'music' | 'snack'
 export type OfficePet = 'dog' | 'rabbit' | 'bird' | 'turtle'
 export interface OfficePaintOptions {
+  objectCue?: {actorKey:string;kind:OfficeLeisureAction;until:number}|null
   time: number
   date: Date
   now: number
@@ -85,11 +91,10 @@ export interface OfficePaintOptions {
   motion: boolean
   pets: readonly OfficePet[]
   selectedKey: string | null
-  elevatorY?: number | null
-  doorOpen?: boolean
   petEvent?: { kind: 'coffee' | 'heart' | 'fish'; until: number } | null
   /** Actor owned by a real office-motion trip (walk, ride or hold); life is suppressed. */
   tripKey?: string | null
+  leisureKeys?: ReadonlySet<string>
   /** Actor currently waving hello to an arriving teammate. */
   greetKey?: string | null
 }

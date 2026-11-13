@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { drawOfficeAvatar, drawOfficeFrame, officeAmbient } from '../components/agent-visualizer/office/office-art'
 import type { OfficeAppearance, OfficePaintOptions, OfficePose, OfficeScene } from '../lib/office-types'
+import { officeAppearance } from '../lib/office-model'
 
 type Call = { op: string; args: unknown[]; fill: string }
 class RecordingContext {
@@ -31,6 +32,16 @@ class RecordingContext {
   strokeText(...args: unknown[]) { this.calls.push({ op: 'strokeText', args, fill: String(this.fillStyle) }) }
 }
 const ctx = () => new RecordingContext() as unknown as CanvasRenderingContext2D & RecordingContext
+it('renders the actual varied character profiles with distinct geometry and valid poses',()=>{
+  const silhouettes=new Set<string>()
+  for(let slot=0;slot<28;slot++)for(const pose of [{},{sit:true,mug:true},{walk:true},{climb:true},{hand:true},...(['coffee','book','game','water','music','snack'] as const).map(objectAction=>({objectAction}))]){
+    const c=ctx();drawOfficeAvatar(c,officeAppearance(slot),0,0,2,pose)
+    if(!Object.keys(pose).length)silhouettes.add(JSON.stringify(c.calls.map(call=>[call.op,call.args])))
+    for(const call of c.calls)for(const v of call.args)assert.ok(typeof v!=='number'||Number.isFinite(v))
+    for(const call of c.calls.filter(call=>call.op==='rect'))assert.ok((call.args[2] as number)>=0&&(call.args[3] as number)>=0)
+  }
+  assert.ok(silhouettes.size>=20)
+})
 const appearance = (kind: OfficeAppearance['kind'], slot = 0): OfficeAppearance => ({
   slot, kind, hair: '#30273e', skin: '#edbb91', shirt: '#ee8640', pants: '#253249', cut: 'bun', gear: 'headset',
 })
@@ -68,8 +79,9 @@ describe('office art painter', () => {
 
   it('paints arbitrary dynamic floors and freezes decorative frames when motion is off', () => {
     const floors = Array.from({ length: 9 }, (_, index) => ({ id: `f${index}`, sessionId: `s${index}`, title: 'Team', subtitle: '', color: '#53c4d1', y: index * 72, actorKeys: [], kind: 'team' as const }))
-    const a = ctx(); drawOfficeFrame(a, scene(floors), options({ motion: false, time: 0 }))
-    const b = ctx(); drawOfficeFrame(b, scene(floors), options({ motion: false, time: 75 }))
+    const occupant={key:'worker',sessionId:'s0',agent:{status:'running',role:'worker',runtime:null},task:null,parentKey:null,appearance:appearance('human'),floorId:'f0',zone:'desk',activity:'Running',runtimeName:'',x:70,y:80} as unknown as OfficeScene['actors'][number]
+    const a = ctx(); drawOfficeFrame(a, scene(floors,[occupant]), options({ motion: false, time: 0 }))
+    const b = ctx(); drawOfficeFrame(b, scene(floors,[occupant]), options({ motion: false, time: 75 }))
     assert.ok(a.calls.length > 10)
     assert.deepEqual(a.calls, b.calls)
   })

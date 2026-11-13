@@ -1,13 +1,22 @@
 import type { OfficeActor, OfficeEvent, OfficePoint, OfficePose, OfficeScene } from './office-types'
 import type { TeamSnapshot } from './team-types'
-import { statusText } from './team-model'
+import { isWorking, statusText } from './team-model'
 import type { AnimationMode } from './viewer-preferences'
 import { officeWorkTarget, OFFICE_STATION_LABELS } from './office-work'
+import { officeNavigation, officeLanding } from './office-navigation'
 
 export type OfficePane = 'board' | 'graph' | 'office'
 export interface OfficeTripSegment { from: OfficePoint; to: OfficePoint; duration: number; kind: 'walk' | 'ride' | 'hold' }
-export interface OfficeTrip { event: OfficeEvent; actorKey: string; actor: OfficeActor; segments: OfficeTripSegment[]; startedAt: number; endsAt: number; caption: string }
+export interface OfficeTrip { event: OfficeEvent; actorKey: string; actor: OfficeActor; segments: OfficeTripSegment[]; startedAt: number; endsAt: number; caption: string; shaftX:number; rungPitch:number }
 export interface OfficeTripFrame { point: OfficePoint; pose: OfficePose; elevatorY: number | null; done: boolean }
+
+/** Resume only trips whose destination still agrees with the latest snapshot. */
+export function officeCanResumeTrip(trip: OfficeTrip | null, scene: OfficeScene): boolean {
+  if (!trip) return false
+  const actor = scene.actors.find(item => item.key === trip.actorKey && !item.hidden)
+  if (trip.event.kind === 'left') return !actor
+  return Boolean(actor && actor.floorId === trip.actor.floorId && (trip.event.kind !== 'activity' || isWorking(actor.agent.status)))
+}
 
 const point = (value: OfficePoint): OfficePoint => ({ x: value.x, y: value.y })
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value))
@@ -27,8 +36,8 @@ export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: 
   const old = before.actors.find(actor => actor.key === moving.key)
   // A collapsed/relaid floor is no longer a valid place to start an animation.
   if (!presence && !changedRoom && old && !next.floors.some(floor => floor.id === old.floorId)) return null
-  const liftX = next.width * .945
-  const door = { x: liftX, y: next.width * .335 }
+  const nav=officeNavigation(next),liftX=nav.shaftX
+  const door=nav.hatch
   const from = event.kind === 'arrived' && !old ? { x: liftX, y: door.y } : point(old ?? moving)
   const home = point(moving)
   const destination = changedRoom ? point(child) : event.kind === 'activity' ? officeWorkTarget(child,next,event.station??'terminal') : event.kind === 'assigned' ? { x: child.x > 65 ? child.x - 18 : child.x + 18, y: child.y }
@@ -36,29 +45,38 @@ export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: 
     : event.kind === 'left' ? { x: liftX, y: door.y } : point(moving)
   const segments: OfficeTripSegment[] = []
   let cursor = from
+  let cursorFloor=event.kind==='arrived'&&!old?'lounge':old?.floorId??moving.floorId
+  let cursorScene=old?before:next
   const leg = (to: OfficePoint, duration: number, kind: OfficeTripSegment['kind']) => {
     segments.push({ from: point(cursor), to: point(to), duration, kind })
     cursor = point(to)
   }
-  const travel = (to: OfficePoint) => {
-    if (cursor.y !== to.y) {
-      leg({ x: liftX, y: cursor.y }, clamp(Math.abs(liftX - cursor.x) / 65 * 1000, 200, 1500), 'walk')
-      leg({ x: liftX, y: to.y }, clamp(Math.abs(to.y - cursor.y) / 160 * 1000, 350, 2200), 'ride')
-    }
-    if (cursor.x !== to.x || cursor.y !== to.y) leg(to, clamp(Math.abs(to.x - cursor.x) / 65 * 1000, 200, 1500), 'walk')
+  const walk=(to:OfficePoint)=>{const distance=Math.hypot(to.x-cursor.x,to.y-cursor.y);if(distance>.01)leg(to,Math.max(180,distance/(75*nav.scale)*1000),'walk')}
+  const travel = (to: OfficePoint,toFloor:string) => {
+    const target=officeLanding(next,toFloor)??{x:liftX-28*nav.scale,y:to.y}
+    if(cursorFloor!==toFloor){
+      const source=officeLanding(cursorScene,cursorFloor)??{x:liftX-28*nav.scale,y:cursor.y}
+      walk({x:cursor.x,y:source.y});walk(source);walk({x:liftX,y:source.y});leg(cursor,280,'hold')
+      const distance=Math.abs(target.y-cursor.y)
+      if(distance>.01)leg({x:liftX,y:target.y},distance/(80*nav.scale)*1000,'ride')
+      leg(cursor,280,'hold');walk(target)
+      cursorFloor=toFloor;cursorScene=next
+    }else{walk({x:cursor.x,y:target.y})}
+    walk({x:to.x,y:target.y});walk(to)
   }
+  const destinationFloor=event.kind==='left'?'lounge':event.kind==='sent'&&!changedRoom?parent!.floorId:event.kind==='assigned'&&!changedRoom?child.floorId:moving.floorId
   const captions: Record<OfficeEvent['kind'], string> = {
     activity:`is working at the ${OFFICE_STATION_LABELS[event.station??'terminal']}`,
     assigned: 'is sharing an assignment', finished: child.floorId === 'lounge' ? 'is joining the celebration' : child.zone === 'lounge' ? 'is heading to the break room' : 'is heading to their desk', sent: 'has sent their work', received: 'has received the work', arrived: 'is heading to their desk', left: 'is heading home',
   }
   if (event.kind === 'received' && !changedRoom) leg(home, 1800, 'hold')
   else {
-    if (event.kind === 'left') { travel(door); leg(door, 250, 'hold') }
-    travel(destination)
+    if (event.kind === 'left') { travel(door,'lounge'); leg(door, 250, 'hold') }
+    travel(destination,destinationFloor)
     leg(destination, event.kind === 'finished' ? 300 : event.kind==='activity'?2200:1400, 'hold')
-    if (event.kind !== 'finished' && !presence && !changedRoom) travel(home)
+    if (event.kind !== 'finished' && !presence && !changedRoom) travel(home,moving.floorId)
   }
-  return { event, actorKey: moving.key, actor: moving, segments, startedAt: now, endsAt: now + segments.reduce((sum, segment) => sum + segment.duration, 0), caption: changedRoom && event.kind !== 'left' ? captions.finished : captions[event.kind] }
+  return { event, actorKey: moving.key, actor: moving, segments, startedAt: now, endsAt: now + segments.reduce((sum, segment) => sum + segment.duration, 0), caption: changedRoom && event.kind !== 'left' ? captions.finished : captions[event.kind],shaftX:nav.shaftX,rungPitch:nav.rungPitch }
 }
 
 export function officeTripFrame(trip: OfficeTrip, now: number): OfficeTripFrame {
@@ -70,9 +88,10 @@ export function officeTripFrame(trip: OfficeTrip, now: number): OfficeTripFrame 
       const ratio = clamp(elapsed / segment.duration, 0, 1)
       const position = { x: segment.from.x + (segment.to.x - segment.from.x) * ratio, y: segment.from.y + (segment.to.y - segment.from.y) * ratio }
       return { point: position, done: false, elevatorY: segment.kind === 'ride' ? position.y : null,
-        pose: { climb: segment.kind === 'ride', walk: segment.kind === 'walk', face:segment.to.x<segment.from.x?-1:1, sit: false, carry: trip.event.kind === 'sent' || trip.event.kind === 'assigned',
+        pose: { climb: segment.kind === 'ride'||(segment.kind==='hold'&&Math.abs(position.x-trip.shaftX)<.01),climbStep:position.y/trip.rungPitch,walk: segment.kind === 'walk', face:segment.to.x<segment.from.x?-1:1, sit: false, carry: trip.event.kind === 'sent' || trip.event.kind === 'assigned',
+          objectAction:segment.kind==='hold'&&trip.event.kind==='activity'&&trip.event.station==='research'?'book':undefined,
           typing:segment.kind==='hold'&&trip.event.kind==='activity'&&(trip.event.station==='build'||trip.event.station==='terminal'),
-          hand:segment.kind==='hold'&&(trip.event.kind==='received'||(trip.event.kind==='activity'&&trip.event.station==='planning')) } }
+          hand:segment.kind==='hold'&&(trip.event.kind==='received'||(trip.event.kind==='activity'&&(trip.event.station==='planning'||trip.event.station==='quality'))) } }
     }
     elapsed -= segment.duration
   }

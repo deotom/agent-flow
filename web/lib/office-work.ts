@@ -1,21 +1,13 @@
 import type { OfficeActor, OfficeEvent, OfficeScene, OfficeWorkStation } from './office-types'
 import { isWorking } from './team-model'
+import { agentWorkStation, officeStationPoint } from './office-stations'
+export { OFFICE_STATION_LABELS } from './office-stations'
 
-export const OFFICE_STATION_LABELS: Record<OfficeWorkStation,string> = {
-  planning:'planning board',research:'reference corner',build:'development desk',terminal:'tools station',
-}
 const eligible=(actor:OfficeActor)=>!actor.hidden&&actor.zone==='desk'&&isWorking(actor.agent.status)
-export function officeWorkStation(actor:OfficeActor):OfficeWorkStation {
-  const activity=actor.agent.activities.at(-1)
-  if(!activity)return actor.agent.status==='thinking'?'planning':'terminal'
-  const tool=`${activity.type} ${activity.toolName??''}`.toLowerCase()
-  if(/file_change|write|edit|patch/.test(tool))return 'build'
-  if(/web_search|search|fetch|browse|read|query/.test(tool))return 'research'
-  if(/compaction|plan|reason/.test(tool))return 'planning'
-  return 'terminal'
-}
+export const officeWorkStation=(actor:Pick<OfficeActor,'agent'>):OfficeWorkStation=>agentWorkStation(actor.agent)
 export function officeWorkTarget(actor:OfficeActor,scene:OfficeScene,station:OfficeWorkStation) {
-  return {x:scene.width*({planning:.49,research:.11,build:.64,terminal:.82}[station]),y:actor.y}
+  const floor=scene.floors.find(f=>f.id===actor.floorId)
+  return floor?officeStationPoint(floor,scene.width,station):{x:scene.width*.49,y:actor.y}
 }
 /** New observed activities get priority; no command text, output or prompts enter an event. */
 export function officeWorkEvents(before:OfficeScene|null,next:OfficeScene,now:number):OfficeEvent[] {

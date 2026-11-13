@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { assignOfficeIdentities, buildOfficeScene, officeEvents, officeKey, officeAppearance, officeDisplayName, officeBreakRoom, officeWorkRoom, OFFICE_SLOTS, BREAK_ROOMS } from '../lib/office-model'
 import type { TeamAgentRow, TeamSnapshot, TeamTaskRow } from '../lib/team-types'
+import { officeStations } from '../lib/office-stations'
 
 const agent = (id: string, status: TeamAgentRow['status'] = 'thinking', parentId: string | null = null, startedAt = 1): TeamAgentRow => ({
   id, parentId, role: parentId ? 'worker' : 'lead', name: id, runtime: null, model: null, status, task: null,
@@ -12,6 +13,28 @@ const task = (id: string, childId: string, status: TeamTaskRow['status'], delive
   completedAt: null, updatedAt,
 })
 const team = (sessionId: string, agents: TeamAgentRow[], tasks: TeamTaskRow[] = []): TeamSnapshot => ({ sessionId, title: sessionId, active: true, updatedAt: 1, agents, tasks })
+
+test('agent identities vary in silhouette, clothing and accessories, not just shirt colour',()=>{
+ const people=Array.from({length:28},(_,i)=>officeAppearance(i))
+ assert.ok(new Set(people.map(p=>p.outfit)).size>=6)
+ assert.ok(new Set(people.map(p=>p.gear)).size>=5)
+ assert.equal(new Set(people.map(p=>JSON.stringify([p.cut,p.gear,p.outfit,p.face]))).size,people.length)
+ assert.deepEqual(officeAppearance(19),officeAppearance(19))
+})
+
+test('historical failures cannot keep an idle team office or break room open',()=>{
+  const snap=team('finished',[agent('lead','idle'),agent('old-failure','failed','lead'),agent('pending','done','lead')],
+    [task('failed','old-failure','failed','received'),task('pending','pending','done','pending')])
+  const scene=buildOfficeScene([snap],'active',false,new Map())
+  assert.equal(scene.floors.some(f=>f.kind==='team'||f.kind==='break'),false)
+  assert.equal(scene.actors.length,0)
+  assert.equal(scene.quietTeams[0].sessionId,'finished')
+  // If real work resumes, its own office and currently visible resting people return.
+  snap.agents[0].status='thinking'
+  const resumed=buildOfficeScene([snap],'active',false,new Map())
+  assert.equal(resumed.floors.filter(f=>f.kind==='team').length,1)
+  assert.equal(resumed.floors.filter(f=>f.kind==='break').length,1)
+})
 
 test('break rooms match inactive people still visible in the team Flow, with no historical crowd', () => {
   const a = team('a', [agent('lead'), agent('pending','done','lead'), agent('old','done','lead')], [task('p','pending','done','pending'),task('o','old','done','received')])
@@ -27,13 +50,13 @@ test('break rooms match inactive people still visible in the team Flow, with no 
   assert.ok(buildOfficeScene([a,b], 'session', false, new Map()).actors.some(a => a.agent.id === 'old'))
 })
 
-test('small teams keep varied compact offices; only teams needing more seats get the big room', () => {
+test('small teams keep compact workshops with varied stable station layouts; larger teams get more floor space', () => {
   const snapshots = Array.from({length:30},(_,i)=>team(`style-${i}`,[agent('lead')]))
   const build = (teams: TeamSnapshot[]) => buildOfficeScene(teams,'active',false,new Map()).floors.filter(f=>f.kind==='team')
   const rooms = build(snapshots)
-  assert.equal(new Set(rooms.map(f=>f.room)).size,2)
-  assert.ok(rooms.every(f=>f.room!=='room-c-big'))
-  assert.equal(officeWorkRoom('style-0',5),'room-c-big')
+  assert.ok(rooms.every(f=>f.room==='room-stations'))
+  assert.ok(new Set(rooms.map(f=>officeStations(f,450).map(s=>s.kind).join(','))).size>2)
+  assert.equal(officeWorkRoom('style-0',5),'room-stations-large')
   for (const room of rooms) assert.equal(build(snapshots.filter(s=>s.sessionId===room.sessionId))[0].room,room.room)
 })
 
@@ -59,7 +82,8 @@ test('scene aggregates sessions, scopes through team view, lays out desks and te
   assert.equal(scene.totalAgents, 5); assert.equal(scene.finishedCount, 1)
   assert.equal(scene.actors.length, 5)
   assert.equal(scene.actors.find(x => x.key === officeKey('a','w2'))?.zone, 'lounge')
-  assert.equal(scene.actors.find(x => x.key === officeKey('a','lead'))?.x, OFFICE_SLOTS[officeWorkRoom('a',2)].chairs[0][0]*450)
+  const lead=scene.actors.find(x => x.key === officeKey('a','lead'))!
+  assert.equal(lead.workStation,'planning');assert.equal(lead.stand,true);assert.equal(lead.monitor,undefined)
   assert.equal(officeAppearance(2).kind, 'human')
   assert.equal(buildOfficeScene([a], 'active', false, ids).actors.some(x => x.agent.id === 'w2'), false)
   const quiet = team('quiet', [agent('q', 'idle')])
@@ -120,13 +144,13 @@ test('room choice, priority, failed lead seating, quiet teams going home and lou
   assert.equal(rooms[0].sessionId,'z-wait')
   assert.equal(rooms.find(f=>f.sessionId==='a-work')?.room,officeWorkRoom('a-work',2))
   assert.equal(rooms.find(f=>f.sessionId==='no-lead')?.room,officeWorkRoom('no-lead',1))
-  assert.equal(rooms.find(f=>f.sessionId==='big')?.room,'room-c-big')
+  assert.equal(rooms.find(f=>f.sessionId==='big')?.room,'room-stations-large')
   assert.equal(rooms.find(f=>f.sessionId==='big')?.overflow,3)
   // The quiet team went home: nobody from it rests in the lounge.
   assert.equal(scene.actors.filter(a=>a.zone==='lounge').length,0)
   assert.equal(scene.floors[0].overflow,0)
-  // A failed root lead keeps its desk.
-  assert.equal(scene.actors.find(a=>a.agent.id==='error')?.zone,'desk')
+  // Failure alone does not keep an otherwise inactive office open.
+  assert.equal(scene.actors.some(a=>a.agent.id==='error'),false)
   // Just finished: the quiet team celebrates in the lounge, guests first, capped at four seats.
   const party=buildOfficeScene(all,'active',false,ids,450,new Set(['quiet']))
   const guests=party.actors.filter(a=>a.zone==='lounge')
@@ -137,7 +161,7 @@ test('room choice, priority, failed lead seating, quiet teams going home and lou
   // After the party they go home.
   const later=buildOfficeScene(all,'active',false,ids,450,new Set())
   assert.equal(later.actors.filter(a=>a.zone==='lounge').length,0)
-  assert.equal(later.floors.find(f=>f.kind==='quiet')?.title,'1 team at home')
+  assert.equal(later.floors.find(f=>f.kind==='quiet')?.title,'2 teams at home')
   assert.equal(scene.floors.at(-1)?.kind,'quiet')
   assert.equal(rooms.some(f=>f.sessionId==='quiet'),false)
   assert.equal(buildOfficeScene(all,'active',true,new Map()).floors.filter(f=>f.kind==='team').length,6)

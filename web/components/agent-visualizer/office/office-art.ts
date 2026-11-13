@@ -1,6 +1,7 @@
 import { drawRuntimeMark, type Runtime } from '../canvas/runtime-mark'
 import { officeDaylight } from '../../../lib/office-daylight'
-import type { OfficeActor, OfficeAppearance, OfficeDrawnOffset, OfficePaintOptions, OfficePose, OfficeScene } from '../../../lib/office-types'
+import { drawOfficeShaft } from './office-shaft-art'
+import type { OfficeActor, OfficeAppearance, OfficeDrawnOffset, OfficePaintOptions, OfficePose, OfficeScene, OfficeLeisureAction } from '../../../lib/office-types'
 import { officeLife, officeLifeCanChat, officeLifePairs, officeSeed, type OfficeLifePair, type OfficeMood } from '../../../lib/office-life'
 
 type Ambient = { name: string; night: boolean; sky: string; horizon: string; rooms: string[]; glass: string; ground: string; sun: string }
@@ -20,15 +21,17 @@ function oval(c: Ctx, x:number,y:number,rx:number,ry:number,color:string,outline
 function round(c:Ctx,x:number,y:number,w:number,h:number,color:string,r=4){c.beginPath();c.roundRect(x,y,w,h,r);c.fillStyle=color;c.fill();c.strokeStyle='#4b3025';c.lineWidth=1.4;c.stroke()}
 
 /** Life poses layered on the base pose; all optional so callers can stay minimal. */
-export interface OfficeAvatarPose extends OfficePose { stretch?: number; lean?: number; doze?: boolean; slump?: boolean; scratch?: boolean; wave?: boolean; turn?: number; cup?: boolean; face?: 1 | -1; hop?: number; runtime?: Runtime | null; party?: boolean }
+export interface OfficeAvatarPose extends OfficePose { objectAction?:OfficeLeisureAction; stretch?: number; lean?: number; doze?: boolean; slump?: boolean; scratch?: boolean; wave?: boolean; turn?: number; cup?: boolean; face?: 1 | -1; hop?: number; runtime?: Runtime | null; party?: boolean }
 /** Micro-motion offsets for a pose at a given time; all zero when time is frozen at 0. */
 function idleMotion(time:number,p:OfficeAvatarPose){
   const r={lift:0,headX:0,headY:0,tilt:0,left:0,right:0,wave:0,sip:0}
   if(!time||p.walk||p.climb)return r
   r.lift=Math.sin(time*2.2)*(p.doze?1.6:1);r.headX=(p.turn??0)*3
   if(p.typing){r.headY=Math.abs(Math.sin(time*11))*2.2;r.left=Math.sin(time*13)*3;r.right=Math.cos(time*13)*3;r.headX+=Math.sin(time*.7)}
-  if(p.wave)r.wave=Math.sin(time*9)*4
-  if(p.mug||p.cup){const k=(time%7)/7;r.sip=k>.78?Math.sin((k-.78)/.22*Math.PI):0;r.headY+=r.sip*2}
+  if(p.wave||p.objectAction==='music')r.wave=Math.sin(time*9)*4
+  if(p.mug||p.cup||p.objectAction==='snack'){const k=(time%7)/7;r.sip=k>.78?Math.sin((k-.78)/.22*Math.PI):0;r.headY+=r.sip*2}
+  if(p.objectAction==='book'){r.headY+=3;r.headX+=Math.sin(time*.6)*.6}
+  if(p.objectAction==='game'){r.left=Math.sin(time*7)*1.2;r.right=Math.cos(time*8)*1.2}
   if(p.doze){r.headY+=3+Math.sin(time*1.1)*1.2;r.tilt=.14}
   if(p.slump){r.headY+=7;r.headX+=2;r.tilt=.22}
   return r
@@ -39,6 +42,64 @@ function drawShirtLogo(c:Ctx,runtime:Runtime,x:number,y:number){
   oval(c,x,y,8,8,'#3b2a1e');c.strokeStyle='#f6e2bd';c.lineWidth=1.3;c.stroke()
   drawRuntimeMark(c,runtime,x,y,11.5)
 }
+function drawOutfit(c:Ctx,a:OfficeAppearance,compact=false){
+  const dark='#35444e',light='#e7debf'
+  if(a.outfit==='coat'){round(c,-15,-35,30,31,'#dddac8',5);c.beginPath();c.moveTo(0,-32);c.lineTo(0,-6);c.strokeStyle='#8e998e';c.lineWidth=1.5;c.stroke()}
+  if(a.outfit==='hoodie'){oval(c,0,-34,18,12,a.shirt);round(c,-8,-17,16,5,dark,2);c.strokeStyle=light;c.lineWidth=1;c.beginPath();c.moveTo(-4,-32);c.lineTo(-5,-23);c.moveTo(4,-32);c.lineTo(5,-23);c.stroke()}
+  if(a.outfit==='overalls'){round(c,-11,-29,22,21,'#386477',3);for(const x of [-9,7]){round(c,x,-34,3,13,'#436e81',1);oval(c,x+1.5,-25,1.5,1.5,'#f1ce78',false)}}
+  if(a.outfit==='vest'||a.outfit==='jacket'){
+    c.fillStyle=dark;c.beginPath();c.moveTo(-14,-33);c.lineTo(-6,-35);c.lineTo(-3,-14);c.lineTo(-14,-11);c.closePath();c.fill();c.beginPath();c.moveTo(14,-33);c.lineTo(6,-35);c.lineTo(3,-14);c.lineTo(14,-11);c.closePath();c.fill()
+    if(a.outfit==='jacket'){round(c,-18,-32,7,18,dark,3);round(c,11,-32,7,18,dark,3)}
+  }
+  if(a.outfit==='poncho'){const w=compact?17:23;c.beginPath();c.moveTo(0,-39);c.lineTo(-w,-16);c.lineTo(0,-7);c.lineTo(w,-16);c.closePath();c.fillStyle=a.shirt;c.fill();c.strokeStyle=light;c.lineWidth=2;c.beginPath();c.moveTo(-w+5,-17);c.lineTo(0,-11);c.lineTo(w-5,-17);c.stroke()}
+  if(a.outfit==='striped'){c.strokeStyle=light;c.lineWidth=2;c.beginPath();for(const y of [-29,-23,-17]){c.moveTo(-11,y);c.lineTo(11,y)}c.stroke()}
+}
+function drawOfficeHead(c:Ctx,a:OfficeAppearance,back:boolean,doze:boolean){
+  const cut=a.cut
+  if(cut==='long')round(c,-20,-63,38,41,a.hair,12)
+  if(cut==='bob')round(c,-20,-63,40,33,a.hair,9)
+  oval(c,0,-47,18,18,a.hair)
+  if(cut==='bun')oval(c,-11,-67,9,9,a.hair)
+  if(cut==='ponytail'){oval(c,-20,-43,7,20,a.hair);oval(c,-22,-32,6,10,a.hair)}
+  if(cut==='curly')for(const [x,y] of [[-17,-53],[-14,-62],[-5,-67],[5,-67],[15,-61],[back?16:20,-52]])oval(c,x,y,back?5.5:7,back?5.5:7,a.hair)
+  if(cut==='spike'){c.beginPath();for(const [i,[x,y]] of [[-19,-47],[-20,-66],[-12,-63],[-8,-76],[0,-67],[9,-73],[12,-63],[20,-61],[18,-46]].entries())i?c.lineTo(x,y):c.moveTo(x,y);c.closePath();c.fillStyle=a.hair;c.fill();c.strokeStyle='#4b3025';c.stroke()}
+  if(a.face==='square')round(c,-11,-58,30,28,a.skin,6)
+  else oval(c,3,-44,a.face==='oval'?13:16,a.face==='oval'?17:14,a.skin)
+  oval(c,-12,-43,4,5,a.skin)
+  c.fillStyle=a.hair;c.strokeStyle='#4b3025';c.lineWidth=1.2;c.beginPath()
+  if(cut==='crop'){c.moveTo(-16,-52);c.lineTo(-12,-62);c.quadraticCurveTo(10,-68,18,-53);c.lineTo(8,-55);c.lineTo(-4,-54)}
+  else if(cut==='bob'){c.moveTo(-18,-49);c.lineTo(-17,-62);c.quadraticCurveTo(8,-70,18,-55);c.lineTo(18,-47);c.lineTo(9,-54);c.lineTo(3,-50);c.lineTo(-4,-54)}
+  else if(cut==='long'){c.moveTo(-18,-45);c.quadraticCurveTo(-20,-69,2,-63);c.quadraticCurveTo(21,-68,20,-43);c.lineTo(14,-52);c.lineTo(3,-59);c.lineTo(-6,-52)}
+  else{c.moveTo(-17,-48);c.bezierCurveTo(-18,-69,21,-65,18,-47);c.quadraticCurveTo(10,-51,7,-57);c.quadraticCurveTo(0,-44,-17,-48)}
+  c.closePath();c.fill();c.stroke()
+  if(cut==='curly')for(const x of [-13,-5,3,11])oval(c,x,-57,5,5,a.hair)
+  const ey=-44+(a.slot%3-1),eye=(x:number)=>{if(doze){c.beginPath();c.moveTo(x-2,ey);c.quadraticCurveTo(x,ey+2,x+2,ey);c.strokeStyle='#38291f';c.stroke()}else oval(c,x,ey,a.face==='square'?1.8:1.4,a.face==='oval'?2.7:2.1,'#38291f',false)}
+  eye(3);eye(12);oval(c,0,-38,3,1.6,'#df9281',false);oval(c,15,-38,2.5,1.5,'#df9281',false)
+  c.beginPath();c.moveTo(6,-34);c.quadraticCurveTo(9,-32-(a.slot%2),12,-35);c.strokeStyle='#9f6251';c.lineWidth=1;c.stroke()
+  if(back){oval(c,-5,-47,13,16,a.hair);oval(c,11,-42,7,11,a.skin);eye(15)}
+  const gear=a.gear
+  if((gear==='glasses'||gear==='goggles')&&!back){const y=ey-5;round(c,-2,y,10,9,gear==='goggles'?'#98d2d360':'#fff8e830',3);round(c,10,y,10,9,gear==='goggles'?'#98d2d360':'#fff8e830',3);c.beginPath();c.moveTo(8,ey);c.lineTo(10,ey);c.stroke()}
+  if(gear==='cap'){round(c,-19,-69,36,12,a.shirt,7);round(c,7,-61,22,4,'#344c57',2)}
+  if(gear==='beanie'){round(c,-20,-71,39,17,a.shirt,9);round(c,-21,-60,41,5,'#d7c59e',2);oval(c,0,-75,5,5,a.shirt)}
+  if(gear==='headphones'||gear==='headset'){c.beginPath();c.ellipse(0,-47,20,20,0,Math.PI,Math.PI*2);c.strokeStyle='#273e4c';c.lineWidth=4;c.stroke();round(c,-22,-51,7,14,'#364a5c',3);round(c,17,-51,7,14,'#364a5c',3);if(gear==='headset'){c.beginPath();c.moveTo(20,-41);c.lineTo(12,-33);c.strokeStyle='#344a51';c.lineWidth=2;c.stroke();oval(c,11,-33,3,2,'#344a51')}}
+  if(gear==='earrings'){oval(c,-13,-35,3,4,'#edc76c');oval(c,19,-35,2,3,'#edc76c')}
+  if(gear==='scarf'){round(c,-14,-33,29,6,'#edc477',3);round(c,7,-32,6,17,'#edc477',2)}
+}
+function drawLeisureProp(c:Ctx,kind:OfficeLeisureAction,rx:number,ry:number,time:number){
+ if(kind==='book'){
+  round(c,-11,-28,25,15,'#edddab',2);c.strokeStyle='#a28b62';c.lineWidth=1;c.beginPath();c.moveTo(2,-27);c.lineTo(2,-14)
+  for(const y of [-24,-21,-18]){c.moveTo(-8,y);c.lineTo(-1,y);c.moveTo(5,y);c.lineTo(11,y)}c.stroke()
+ }else if(kind==='game'){
+  round(c,-12,-26,25,10,'#364856',4);c.strokeStyle='#c6d7d9';c.lineWidth=1.4;c.beginPath();c.moveTo(-9,-21);c.lineTo(-3,-21);c.moveTo(-6,-24);c.lineTo(-6,-18);c.stroke();oval(c,7,-23,1.6,1.6,'#cce0a4',false);oval(c,9,-19,1.6,1.6,'#edc47e',false)
+ }else if(kind==='water'){
+  round(c,rx-6,ry+1,13,11,'#65a79f',3);oval(c,rx-9,ry+5,4,4,'#85bbb0');c.beginPath();c.moveTo(rx+5,ry+4);c.lineTo(rx+16,ry+1);c.lineTo(rx+18,ry+4);c.strokeStyle='#8ac4b9';c.lineWidth=3;c.stroke()
+  c.fillStyle='#93d4e9';for(let i=0;i<4;i++){const d=(time*12+i*3)%12;c.fillRect(rx+17+i,ry+5+d,1,2)}
+ }else if(kind==='music'){
+  oval(c,rx+4,ry+1,8,8,'#edc576');oval(c,rx+4,ry+1,5,5,'#b78b54');for(let i=0;i<4;i++)oval(c,rx+4+Math.cos(i*Math.PI/2)*7,ry+1+Math.sin(i*Math.PI/2)*7,1.5,1.5,'#e9e3cf',false)
+ }else if(kind==='snack'){
+  oval(c,3,-18,13,3,'#eee1be');for(const x of [-3,4,10])oval(c,x,-21,3,3,'#b97d43');oval(c,rx-1,ry-2,3,3,'#c99658');c.fillStyle='#6c4a2f';c.fillRect(4,-22,1,1)
+ }
+}
 /** Original layered chibi human; local origin is the seat/feet. */
 export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time:number,p:OfficeAvatarPose={}) {
   c.save();c.translate(x,y)
@@ -47,16 +108,21 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
   c.translate(0,(p.walk?Math.sin(time*9)*1.4:0)-(p.hop??0))
   if(p.face===-1)c.scale(-1,1)
   if(p.lean)c.rotate(-p.lean)
-  const bench=p.sit&&p.mug,back=p.sit&&!p.mug,raised=p.hand||p.wave||p.climb
+  const bench=p.sit&&(p.mug||p.objectAction),back=p.climb||(p.sit&&!bench),raised=p.hand||p.wave||p.climb||p.objectAction==='music'
   // Short legs, soft shoes, torso and arms.
-  const step=p.walk ? Math.sin(time*9)*3 : 0
+  const climbPhase=(p.climbStep??time*2)*Math.PI
+  const step=p.climb?Math.sin(climbPhase)*4.5:p.walk ? Math.sin(time*7)*3 : 0
   round(c,-10,bench?-10:-17,8,bench?9:17+step,a.pants);round(c,2,bench?-10:-17,8,bench?9:17-step,a.pants)
   oval(c,-7,0+step,6,3,'#e4cfac');oval(c,7,0-step,6,3,'#e4cfac')
   c.save();c.translate(0,-m.lift)
   round(c,-14,-34,28,23,a.shirt,9)
-  const lx=mix(-15,-17,stretch),ly=p.climb?-39:mix(-21+m.left,-66,stretch)
+  drawOutfit(c,a,Boolean(p.climb))
+  let lx=mix(-15,-17,stretch),ly=mix(-21+m.left,-66,stretch)
   let rx=16,ry=-23+m.right-m.sip*12
-  if(raised){rx=16+m.wave;ry=-48}
+  if(p.climb){lx=-17;ly=-43+Math.sin(climbPhase)*9;rx=17;ry=-43-Math.sin(climbPhase)*9}
+  else if(raised){rx=16+m.wave;ry=-48}
+  else if(p.objectAction==='book'||p.objectAction==='game'||p.objectAction==='snack'){lx=-10;ly=-22+m.left;rx=12;ry=-22+m.right-(p.objectAction==='snack'?m.sip*12:0)}
+  else if(p.typing&&!p.sit){lx=-12;ly=-40+m.left;rx=12;ry=-40+m.right}
   if(p.scratch){rx=10+Math.sin(time*12)*2;ry=-60}
   rx=mix(rx,17,stretch);ry=mix(ry,-66,stretch)
   oval(c,(-13+lx)/2,(-28+ly)/2,5,9,a.shirt);oval(c,(13+rx)/2+1,(-28+ry)/2,5,9,a.shirt)
@@ -64,25 +130,7 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
   oval(c,lx,ly,4,4,a.skin);oval(c,rx,ry,4,4,a.skin)
   c.save();c.translate(m.headX,m.headY)
   if(m.tilt){c.translate(0,-30);c.rotate(m.tilt);c.translate(0,30)}
-  oval(c,0,-46,18,18,a.hair)
-  if(a.cut==='bun')oval(c,-12,-64,8,8,a.hair)
-  if(a.cut==='ponytail'||a.cut==='long')oval(c,-15,-39,7,17,a.hair)
-  oval(c,3,-44,15,14,a.skin)
-  oval(c,-12,-43,4,5,a.skin)
-  // Swept fringe keeps a visible three-quarter face even at a desk.
-  c.beginPath();c.moveTo(-17,-48);c.bezierCurveTo(-18,-69,21,-65,18,-47);c.quadraticCurveTo(10,-51,7,-57);c.quadraticCurveTo(0,-44,-17,-48);c.fillStyle=a.hair;c.fill();c.strokeStyle='#4b3025';c.stroke()
-  if(a.cut==='curly')for(const dx of [-12,-5,3,11])oval(c,dx,-60,5,5,a.hair)
-  const eye=(ex:number,ey:number)=>{if(p.doze){c.beginPath();c.moveTo(ex-2,ey);c.quadraticCurveTo(ex,ey+1.6,ex+2,ey);c.strokeStyle='#38291f';c.lineWidth=1.2;c.stroke()}else oval(c,ex,ey,1.6,2.3,'#38291f',false)}
-  eye(4,-44);eye(13,-44)
-  oval(c,0,-38,3.4,1.7,'#e79782',false);oval(c,14,-38,2.8,1.5,'#e79782',false)
-  if(back){
-    // At a desk we see the back of the head and a small turned profile.
-    oval(c,-5,-47,13,16,a.hair)
-    oval(c,11,-42,7,11,a.skin)
-    eye(15,-44)
-    oval(c,12,-37,2.5,1.5,'#e79782',false)
-  }
-  if(a.gear==='glasses'&&!back){round(c,0,-48,8,8,'#ffffff20',3);round(c,10,-48,7,8,'#ffffff20',3)}
+  drawOfficeHead(c,a,Boolean(back),p.doze??false)
   if(p.party&&!p.lead){
     // Striped party cone with a pompom, tilted a little.
     const hues=['#ff7aa8','#7bc8ff','#ffd35a','#8be08b'],hue=hues[a.slot%hues.length]
@@ -92,7 +140,9 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
   }
   if(p.lead){c.fillStyle='#ffe08b';c.strokeStyle='#80511c';c.lineWidth=1.4;c.beginPath();c.moveTo(-8,-72);c.lineTo(-4,-68);c.lineTo(0,-75);c.lineTo(4,-68);c.lineTo(8,-72);c.lineTo(6,-64);c.lineTo(-6,-64);c.closePath();c.fill();c.stroke()}
   c.restore() // head
-  if((p.mug||p.cup)&&!raised&&!p.scratch&&stretch<.3){round(c,rx-7,ry+1,9,10,'#fff0cf',2);oval(c,rx+3,ry+6,3,3,'#ead6ae')}
+  if((p.mug||p.cup)&&(!p.objectAction||p.objectAction==='coffee')&&!raised&&!p.scratch&&stretch<.3){round(c,rx-7,ry+1,9,10,'#fff0cf',2);oval(c,rx+3,ry+6,3,3,'#ead6ae')}
+  if(p.objectAction&&!p.walk&&!p.climb)drawLeisureProp(c,p.objectAction,rx,ry,time)
+  if(p.carry){if(p.climb)round(c,-10,-31,20,18,'#967450',4);else{round(c,rx-13,ry+2,20,14,'#c69a58',2);round(c,rx-12,ry,9,4,'#dbc38c',1)}}
   c.restore() // breathing torso
   if(back&&!p.walk&&!p.climb){
     // Chair back is the foreground layer, matching the empty chairs in the room art.
@@ -186,25 +236,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     c.fillStyle=`rgba(31,43,38,${.08+daylight.light*.06})`
     c.beginPath();c.ellipse(scene.width*(.14+daylight.shadow*.07),surface.height*.60,scene.width*(.06+Math.abs(daylight.shadow)*.09),surface.height*.022,daylight.shadow*.12,0,Math.PI*2);c.fill()
   }
-  // One shaft covers the incompatible ladders baked into the individual artworks.
-  // Its centre is also the actor's climbing path in office-motion.ts.
-  const x=scene.width*.945, top=scene.width*.335
-  const rooms=scene.floors.filter(f=>f.kind==='team'||f.kind==='break')
-  const bottom=Math.max(top,...rooms.map(f=>f.y+(f.height??0)*.83))
-  c.save()
-  if(rooms.length){
-    c.fillStyle='#38281c';c.fillRect(scene.width*.905,top,scene.width*.095,bottom-top+6*scale)
-    c.fillStyle='#503721';c.fillRect(scene.width*.91,top,scene.width*.09,bottom-top)
-    c.fillStyle='#77502c';c.fillRect(scene.width*.905,top,3*scale,bottom-top)
-    for(const f of rooms){
-      const landing=f.y+(f.height??0)*.78
-      c.fillStyle='#b58a50';c.fillRect(scene.width*.905,landing,13*scale,4*scale)
-    }
-  }
-  c.strokeStyle='#5c351d';c.lineWidth=7*scale;c.beginPath();c.moveTo(x-11*scale,top);c.lineTo(x-11*scale,bottom);c.moveTo(x+11*scale,top);c.lineTo(x+11*scale,bottom);c.stroke()
-  c.strokeStyle='#c9924f';c.lineWidth=4*scale;c.stroke()
-  for(let y=top;y<bottom;y+=18*scale){c.strokeStyle='#976135';c.lineWidth=5*scale;c.beginPath();c.moveTo(x-11*scale,y);c.lineTo(x+11*scale,y);c.stroke()}
-  c.restore()
+  drawOfficeShaft(c,scene)
   const visible=scene.actors.filter(a=>!a.hidden),byKey=new Map(visible.map(a=>[a.key,a]))
   const pairs=time?pairsFor(scene.actors):new Map<string,OfficeLifePair>()
   const offsets=new Map<string,OfficeDrawnOffset>()
@@ -212,7 +244,8 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     const moving=Boolean(actor.pose?.walk||actor.pose?.climb)
     const waiting=actor.agent.status.startsWith('waiting_'),failed=actor.agent.status==='failed'
     const pair=pairs.get(actor.key),partner=pair&&byKey.get(pair.partnerKey)
-    const life=officeLife(actor,time,{partnerDx:pair?.partnerDx,pairSeed:pair?.pairSeed,tripActive:actor.key===o.tripKey,greet:actor.key===o.greetKey,
+    const life=officeLife(actor,time,{partnerDx:pair?.partnerDx,pairSeed:pair?.pairSeed,tripActive:actor.key===o.tripKey||o.leisureKeys?.has(actor.key),greet:actor.key===o.greetKey,
+      objectAction:o.objectCue?.actorKey===actor.key?o.objectCue.kind:undefined,
       partnerAwake:Boolean(partner&&partner.key!==o.tripKey&&officeLifeCanChat(partner))})
     // Monitors stay anchored to the desk and always show real status.
     if(actor.monitor&&!moving){
@@ -225,12 +258,13 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     const t=time?time+phaseOf(actor.key):0
     c.save();c.translate(actor.x+life.dx,actor.y);c.scale(scale,scale)
     drawOfficeAvatar(c,actor.appearance,0,0,t,{sit:!moving&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving,hand:o.live&&waiting,
-      mug:actor.zone==='lounge'&&!moving,lead:actor.agent.role==='lead'||actor.pod,cup:life.cup,stretch:life.stretch,lean:life.lean,doze:life.doze,
+      mug:actor.zone==='lounge'&&!moving&&(!life.objectAction||life.objectAction==='coffee'),objectAction:life.objectAction,lead:actor.agent.role==='lead'||actor.pod,cup:life.cup,stretch:life.stretch,lean:life.lean,doze:life.doze,
       slump:life.slump,scratch:life.scratch,wave:life.wave,turn:life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose})
     if(life.mood){c.translate(0,-life.hop);drawMood(c,life.mood,t)}
     c.restore()
     offsets.set(actor.key,{dx:life.dx,dy:-life.hop*scale})
   }
+  drawOfficeShaft(c,scene,true)
   if(time)drawAmbient(c,scene,time,officeAmbient(o.date).night)
   return offsets
 }

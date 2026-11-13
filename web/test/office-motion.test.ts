@@ -1,3 +1,5 @@
+import { officeNavigation } from '../lib/office-navigation'
+import { officeCanResumeTrip } from '../lib/office-motion'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { createOfficeTrip, officeAllowsMotion, officeDepartureScene, officeTripFrame, mergeOfficeEvents, officePresenceEvents, populatedOfficeTeams, parseOfficeIdentities, parseOfficePane } from '../lib/office-motion'
@@ -6,8 +8,19 @@ import type { OfficeActor, OfficeEvent, OfficeScene } from '../lib/office-types'
 const actor = (key: string, y: number, parentKey: string | null = null): OfficeActor => ({ key, x: 20, y, floorId: `floor:${y}`, parentKey, sessionId: 't3:a',
   agent: { id: key, parentId: parentKey, role: parentKey ? 'worker' : 'lead', name: key, runtime: 'codex', model: null, status: 'running', task: null, activities: [], requestKind: null, context: null, toolCallCount: 0, hasThread: true, startedAt: 1, updatedAt: 1, completedAt: null },
   appearance: { slot: 0, kind: 'robot', shirt: '#4488aa', hair: '#222222', skin: '#dddddd', pants: '#333333', cut: '', gear: '' }, zone: 'desk', task: null, activity: 'Running', runtimeName: 'Codex' })
-const scene = (...actors: OfficeActor[]): OfficeScene => ({ actors, floors: [...new Set(actors.map(a => a.floorId))].map(id => ({ id, y: 40, kind: 'team', sessionId: 't3:a', title: '', subtitle: '', color: '', actorKeys: actors.filter(a => a.floorId === id).map(a => a.key) })), width: 200, height: 400, totalAgents: actors.length, finishedCount: 0, quietTeams: [] })
+const scene = (...actors: OfficeActor[]): OfficeScene => ({ actors, floors: [...new Set(actors.map(a => a.floorId))].map(id => ({ id, y: (actors.find(a=>a.floorId===id)?.y??100)-63.2, height:80, kind: 'team', sessionId: 't3:a', title: '', subtitle: '', color: '', actorKeys: actors.filter(a => a.floorId === id).map(a => a.key) })), width: 200, height: 400, totalAgents: actors.length, finishedCount: 0, quietTeams: [] })
 const event = (kind: OfficeEvent['kind'], fields: Partial<OfficeEvent> = {}): OfficeEvent => ({ id: kind, kind, actorKey: 'worker', parentKey: 'lead', at: 1000, ...fields })
+it('resumes the same valid trip after reconnecting, but drops work that ended while offline',()=>{
+ const building=scene(actor('worker',173,'lead'))
+ const trip=createOfficeTrip(event('activity'),building,building,0)!
+ assert.equal(officeCanResumeTrip(trip,building),true)
+ const ended=structuredClone(building);ended.actors[0].agent.status='done'
+ assert.equal(officeCanResumeTrip(trip,ended),false)
+ assert.equal(officeCanResumeTrip(trip,scene()),false)
+ const departure=createOfficeTrip(event('left'),building,scene(),0)!
+ assert.equal(officeCanResumeTrip(departure,scene()),true)
+ assert.equal(officeCanResumeTrip(departure,building),false)
+})
 
 describe('Office evidence animation', () => {
   it('moves the actual parent for a new assignment and returns it to its own desk', () => {
@@ -55,7 +68,7 @@ describe('Office evidence animation', () => {
     for (let time = 0; time <= trip.endsAt + 100; time += 20) {
       const frame = officeTripFrame(trip, time)
       assert.ok(Number.isFinite(frame.point.x) && Number.isFinite(frame.point.y))
-      if (frame.elevatorY !== null) assert.equal(frame.point.x, 189)
+      if (frame.elevatorY !== null) assert.equal(frame.point.x, officeNavigation(building).shaftX)
     }
   })
   it('coalesces actor events, expires old work and never requeues duplicates', () => {
@@ -71,12 +84,12 @@ describe('Office evidence animation', () => {
     assert.equal(trip.actorKey,'worker')
     assert.equal(officeTripFrame(trip,0).point.y,173)
     assert.ok(trip.segments.some(segment=>segment.kind==='ride'))
-    assert.equal(officeTripFrame(trip,trip.endsAt+1).point.x,189)
+    assert.equal(officeTripFrame(trip,trip.endsAt+1).point.x,trip.shaftX)
   })
-  it('enters from outside before taking the elevator to a desk', () => {
+  it('enters from outside before climbing the ladder to a desk', () => {
     const building=scene(actor('worker',173,'lead'))
     const trip=createOfficeTrip(event('arrived'),scene(),building,0)!
-    assert.equal(officeTripFrame(trip,0).point.x,189)
+    assert.equal(officeTripFrame(trip,0).point.x,trip.shaftX)
     assert.ok(trip.segments.some(segment=>segment.kind==='ride'))
     assert.equal(officeTripFrame(trip,trip.endsAt+1).point.y,173)
   })

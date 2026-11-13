@@ -375,7 +375,7 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
         )}
       </header>
 
-      {connection.tone !== 'ok' && <div className="jv-banner" data-tone={connection.tone} role="status">
+      {!office && connection.tone !== 'ok' && <div className="jv-banner" data-tone={connection.tone} role="status">
         <strong>{connection.label}</strong> {connection.detail}{snapshot && connection.tone === 'down' ? ' Showing the last known team.' : ''}
       </div>}
 
@@ -385,7 +385,7 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
         {office ? <OfficeView snapshots={officeSnapshots} scope={scope} selectedKey={officeSelection ? officeKey(officeSelection.sessionId, officeSelection.agentId) : null}
           onSelect={(sessionId, agentId) => setOfficeSelection(previous => previous?.sessionId === sessionId && previous.agentId === agentId ? null : { sessionId, agentId })}
           onOpenTeam={(sessionId, agentId) => { selections.current.set(sessionId, agentId); setSelectedAgentId(agentId); onSelectSession(sessionId); onPane('board') }}
-          live={live} visible={visible} animationMode={animationMode} now={now} /> : showGraph ? <div className="jv-graph">{renderGraph(selectedAgentId, select, hiddenIds, mission)}</div> : (
+          live={live} connection={connection} visible={visible} animationMode={animationMode} now={now} /> : showGraph ? <div className="jv-graph">{renderGraph(selectedAgentId, select, hiddenIds, mission)}</div> : (
           <div className="jv-board" ref={list} onScroll={event => { if (selectedSessionId) scrolls.current.set(selectedSessionId, event.currentTarget.scrollTop) }}>
             {view ? (
               <>
