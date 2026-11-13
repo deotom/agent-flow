@@ -1,5 +1,6 @@
 import { officeDaylight } from '../../../lib/office-daylight'
 import type { OfficeScene } from '../../../lib/office-types'
+import { drawOfficeNightSky, drawOfficeWeatherClouds } from './office-sky-art'
 
 /** Sky canvas sits behind the garden's transparent foreground artwork. */
 export function drawOfficeDaylight(c:CanvasRenderingContext2D,scene:OfficeScene,date:Date,time:number) {
@@ -16,12 +17,9 @@ export function drawOfficeDaylight(c:CanvasRenderingContext2D,scene:OfficeScene,
     c.fillStyle='#fff1bd';c.beginPath();c.ellipse(x,y,r,r,0,0,Math.PI*2);c.fill()
   }
   if(light.night){
-    for(let i=0;i<32;i++){
-      const x=((i*137.508)%450)/450*w,y=((i*53.7)%100)/100*H*.37
-      c.fillStyle=`rgba(244,245,230,${.55+.25*Math.sin(time+i)})`;c.fillRect(x,y,k,k)
-    }
-    c.fillStyle='#f3ead0';c.beginPath();c.ellipse(w*.76,H*.16,8*k,8*k,0,0,Math.PI*2);c.fill()
-  }else{
+    drawOfficeNightSky(c,scene,date,time)
+    drawOfficeWeatherClouds(c,scene,date,time)
+  }else if(!drawOfficeWeatherClouds(c,scene,date,time)){
     // Clouds drift only when motion runs; their sky/lighting follows the clock even paused.
     for(let i=0;i<3;i++){
       const x=((w*(.38+i*.23)+time*1.5*k)%(w+60*k))-30*k,y=H*(.10+i*.07)

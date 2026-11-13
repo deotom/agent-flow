@@ -15,6 +15,8 @@ import { officeWorkEvents, officeWorkPulse, OFFICE_STATION_LABELS } from '../../
 import { officeStations, officeStationUsers, officeRoomSeed, OFFICE_STATION_NAMES } from '../../../lib/office-stations'
 import { officeLeisureObjects, nearestLeisureActor, createOfficeLeisureTrip, OFFICE_OBJECT_NAMES } from '../../../lib/office-leisure'
 import { officeHatchOpen } from '../../../lib/office-navigation'
+import { officeSky, officeSkyIcon } from '../../../lib/office-sky'
+import { officeSeasonalActivity, officeSeasonalObjects } from '../../../lib/office-seasonal'
 
 interface OfficeViewProps {
   snapshots: readonly TeamSnapshot[]
@@ -95,6 +97,8 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const baseline = useRef<{ snapshots: readonly TeamSnapshot[]; scene: OfficeScene; enabled: boolean; scope: TeamScope; showQuiet: boolean } | null>(null)
   const motionClock = useRef(0)
   const nextWorkAt = useRef(0)
+  const nextSeasonalAt = useRef(12_000)
+  const seasonalCursor = useRef(0)
   const workCursor = useRef(0)
   const elapsed = useRef(0)
   const [moving, setMoving] = useState<Moving | null>(null)
@@ -229,6 +233,17 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
       if (time - lastPaint < interval) return
       lastPaint = time
       const input = current.current
+      if(motionClock.current>=nextSeasonalAt.current){
+        nextSeasonalAt.current=motionClock.current+45_000
+        const available={...input.scene,actors:input.scene.actors.filter(a=>a.key!==active.current?.actorKey&&!leisureTrips.current.has(a.key)&&a.agent.status!=='failed')}
+        const rooms=input.scene.floors.filter(f=>f.kind==='break')
+        for(let i=0;i<rooms.length;i++){
+          const floor=rooms[(seasonalCursor.current+i)%rooms.length]
+          const object=officeSeasonalObjects(floor,input.scene.width,new Date())[0]
+          const person=object&&nearestLeisureActor(available,floor,object)
+          if(person){const trip=createOfficeLeisureTrip(input.scene,person.key,object,motionClock.current);if(trip){leisureTrips.current.set(person.key,{trip,kind:object.kind});seasonalCursor.current++;break}}
+        }
+      }
       queue.current = queue.current.filter(pending => Date.now() - pending.event.at <= 15_000)
       if (held.current && !active.current && !queue.current.some(pending => pending.event.kind === 'left')) {
         holdLayout(null); setMoving(null); return
@@ -295,6 +310,8 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   if(moving&&!displayed.some(a=>a.key===moving.actor.key))displayed.push(moving.actor)
 
   const ambient = officeAmbient(new Date(now))
+  const sky = officeSky(new Date(now))
+  const seasonalActivity = officeSeasonalActivity(new Date(now))
   const daylight = officeDaylight(new Date(now))
   const working = snapshots.reduce((sum, team) => sum + team.agents.filter(agent => isWorking(agent.status)).length, 0)
   const needsYou = snapshots.reduce((sum, team) => sum + team.agents.filter(agent => agent.status.startsWith('waiting_')).length, 0)
@@ -304,11 +321,11 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const stationPeople=inspectedFloor&&stationSelection?officeStationUsers(scene,inspectedFloor,stationSelection.kind):[]
 
   return (
-    <section className="of-view" data-motion={enabled} aria-label="Agent Office">
+    <section className="of-view" data-motion={enabled} data-season={sky.season} data-holiday={sky.holiday??undefined} aria-label="Agent Office">
       <div className="of-toolbar">
         <span className="of-counts">{working} working{needsYou > 0 && <strong className="of-waiting"> · {needsYou} need you</strong>}</span>
         <span className="of-link" data-tone={connection?.tone ?? (live ? 'ok' : 'warn')} title={connection?.detail} role="status">{connection?.label ?? (live ? 'Connected' : 'Reconnecting')}</span>
-        <time dateTime={new Date(now).toISOString()} title={`${ambient.name} · local time`}><span aria-hidden="true">{ambient.night ? '☾' : '☀'}</span> {new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</time>
+        <time dateTime={new Date(now).toISOString()} title={`${ambient.name} · ${sky.label} · simulated weather · local time`}><span aria-hidden="true">{officeSkyIcon(sky)}</span> {new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</time>
         <button type="button" aria-label={paused ? 'Resume Office motion' : 'Pause Office motion'} aria-pressed={paused} disabled={animationMode === 'off'}
           onClick={() => setPaused(value => !value)}
           title={animationMode === 'off' ? 'Effects off in Animation settings' : paused ? 'Resume Office motion' : 'Pause Office motion'}>
@@ -320,9 +337,10 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
         {snapshots.length === 0 ? <p className="of-empty">Your teams will appear here.</p> : (
           <div className="of-building" style={{ width:'100%', maxWidth:900, aspectRatio:`${visualScene.width} / ${visualScene.height}` } as CSSProperties}>
             <canvas ref={skyCanvas} aria-hidden="true" style={{height:`${(visualScene.floors.find(f=>f.kind==='lounge')?.height??0)/visualScene.height*100}%`,zIndex:0}} />
-            {visualScene.floors.filter(f=>f.kind!=='quiet').map(floor=><div key={`art-${floor.id}`} aria-hidden="true" className={`of-art of-art-${floor.kind==='lounge'?'surface':floor.room}`} style={{top:`${floor.y/visualScene.height*100}%`,height:`${(floor.height??0)/visualScene.height*100}%`,filter:floor.kind==='lounge'?`brightness(${.32+.68*daylight.light}) saturate(${.7+.3*daylight.light})`:undefined}} />)}
+            {visualScene.floors.filter(f=>f.kind!=='quiet').map(floor=><div key={`art-${floor.id}`} aria-hidden="true" data-season={floor.kind==='lounge'?sky.season:undefined} className={`of-art of-art-${floor.kind==='lounge'?'surface':floor.room}`} style={{top:`${floor.y/visualScene.height*100}%`,height:`${(floor.height??0)/visualScene.height*100}%`,filter:floor.kind==='lounge'?`brightness(${.32+.68*daylight.light}) saturate(${.7+.3*daylight.light})`:undefined}} />)}
             <div aria-hidden="true" className="of-art of-art-bottom" style={{bottom:0,height:`${visualScene.width/3/visualScene.height*100}%`}} />
-            <div ref={hatchClosed} aria-hidden="true" className="of-hatch-closed" style={{height:`${(lounge?.height??0)/visualScene.height*100}%`,filter:`brightness(${.32+.68*daylight.light}) saturate(${.7+.3*daylight.light})`}}/>
+            <div ref={hatchClosed} aria-hidden="true" data-season={sky.season} className="of-hatch-closed" style={{height:`${(lounge?.height??0)/visualScene.height*100}%`,filter:`brightness(${.32+.68*daylight.light}) saturate(${.7+.3*daylight.light})`}}/>
+            <span className="of-season-label" title={`${sky.label} · Simulated weather · ${seasonalActivity.label}`} style={{top:`${(lounge?.height??0)*.86/visualScene.height*100}%`}}>{sky.label} · {seasonalActivity.label}</span>
             {visualScene.floors.filter(f=>f.kind==='team').map(floor=><div key={`tint-${floor.id}`} aria-hidden="true" className="of-room-tint" style={{top:`${(floor.y+(floor.height??0)*.20)/visualScene.height*100}%`,height:`${(floor.height??0)*.41/visualScene.height*100}%`,background:['#427b75','#79609a','#657d49','#a46342'][officeRoomSeed(floor.sessionId??floor.id)%4]}} />)}
             {visualScene.floors.filter(f=>f.kind==='team').flatMap(floor=>officeStations(floor,visualScene.width).map(station=>{
               const users=officeStationUsers(scene,floor,station.kind)
@@ -359,12 +377,12 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
             <button ref={hatchButton} type="button" className="of-hatch-hit" aria-label="Open garden hatch" aria-expanded="false" onClick={()=>{hatchManual.current=!hatchManual.current;paint(lastPainted.current)}} style={{top:`${(lounge?.height??0)*.51/visualScene.height*100}%`,height:`${(lounge?.height??0)*.25/visualScene.height*100}%`}}/>
             {visualScene.floors.filter(f=>f.kind==='break'||f.kind==='lounge').flatMap(floor=>{
               if(!visualScene.actors.some(a=>a.floorId===floor.id&&a.zone==='lounge'&&!a.hidden))return []
-              return officeLeisureObjects(floor,visualScene.width).map(object=><button key={`${floor.id}-${object.kind}`} type="button" className="of-object-hit" aria-label={`${OFFICE_OBJECT_NAMES[object.kind]}, ${floor.title}`}
+              return [...officeLeisureObjects(floor,visualScene.width).map(object=>({...object,label:OFFICE_OBJECT_NAMES[object.kind]})),...officeSeasonalObjects(floor,visualScene.width,new Date(now))].map((object,index)=><button key={`${floor.id}-${object.kind}-${index}`} type="button" className="of-object-hit" aria-label={`${object.label}, ${floor.title}`}
                 style={{left:`${(object.x-20)/visualScene.width*100}%`,top:`${(object.y-24)/visualScene.height*100}%`,width:`${40/visualScene.width*100}%`,height:`${34/visualScene.height*100}%`}}
                 onClick={()=>{const playable=active.current?{...current.current.scene,actors:current.current.scene.actors.map(a=>a.key===active.current!.actorKey?{...a,hidden:true}:a)}:current.current.scene;const person=nearestLeisureActor(playable,floor,object);if(person){
                   if(current.current.enabled){const trip=createOfficeLeisureTrip(current.current.scene,person.key,object,motionClock.current,leisureVisual.current.get(person.key)?.actor);if(trip)leisureTrips.current.set(person.key,{trip,kind:object.kind})}
                   else{objectCue.current={actorKey:person.key,kind:object.kind,until:elapsed.current+7};paint(lastPainted.current)}
-                }}}><span>{OFFICE_OBJECT_NAMES[object.kind]}</span></button>)
+                }}}><span>{object.label}</span></button>)
             })}
             {visualScene.floors.filter(f=>f.kind!=='lounge').map(floor => <div key={floor.id} className="of-floor-row" style={{ top:`${(floor.y+5)/visualScene.height*100}%` }}>
               <button type="button" className="of-floor-label" style={floor.kind === 'team' || floor.kind === 'break' ? { borderLeft:`4px solid ${floor.color}` } : undefined}

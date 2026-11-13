@@ -22,7 +22,7 @@ export function nearestLeisureActor(scene:OfficeScene,floor:OfficeFloor,point:Of
    .sort((a,b)=>Math.hypot(a.x-point.x,a.y-point.y)-Math.hypot(b.x-point.x,b.y-point.y))[0]??null
 }
 /** Decorative object use, with a real walk to the prop and back; never changes T3 state. */
-export function createOfficeLeisureTrip(scene:OfficeScene,actorKey:string,object:OfficePoint&{kind:OfficeLeisureAction},now:number,from?:OfficePoint):OfficeTrip|null {
+export function createOfficeLeisureTrip(scene:OfficeScene,actorKey:string,object:OfficePoint&{kind:OfficeLeisureAction;label?:string},now:number,from?:OfficePoint):OfficeTrip|null {
  const actor=scene.actors.find(a=>a.key===actorKey)
  if(!actor||actor.hidden||actor.zone!=='lounge'||!['idle','done','cancelled','failed'].includes(actor.agent.status))return null
  const nav=officeNavigation(scene),line=officeLanding(scene,actor.floorId)
@@ -33,5 +33,5 @@ export function createOfficeLeisureTrip(scene:OfficeScene,actorKey:string,object
  walk({x:cursor.x,y:line.y});walk({x:object.x,y:line.y});walk(object)
  segments.push({from:{...cursor},to:{...cursor},duration:4500,kind:'hold'})
  walk({x:cursor.x,y:line.y});walk({x:home.x,y:line.y});walk(home)
- return {event:{id:JSON.stringify(['leisure',actor.key,object.kind,now]),kind:'activity',actorKey:actor.key,parentKey:null,at:now},actorKey:actor.key,actor,segments,startedAt:now,endsAt:now+segments.reduce((n,s)=>n+s.duration,0),caption:`is enjoying ${OFFICE_OBJECT_NAMES[object.kind].toLowerCase()}`,shaftX:nav.shaftX,rungPitch:nav.rungPitch}
+ return {event:{id:JSON.stringify(['leisure',actor.key,object.kind,now]),kind:'activity',actorKey:actor.key,parentKey:null,at:now},actorKey:actor.key,actor,segments,startedAt:now,endsAt:now+segments.reduce((n,s)=>n+s.duration,0),caption:`is enjoying ${object.label??OFFICE_OBJECT_NAMES[object.kind].toLowerCase()}`,shaftX:nav.shaftX,rungPitch:nav.rungPitch}
 }

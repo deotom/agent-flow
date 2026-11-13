@@ -6,6 +6,13 @@ import { officeKey } from '../lib/office-model'
 import type { TeamSnapshot } from '../lib/team-types'
 const team = (sessionId:string,name:string):TeamSnapshot => ({sessionId,title:name,active:true,updatedAt:1000,tasks:[],agents:[{id:'lead',parentId:null,role:'lead',name,runtime:'codex',model:null,status:'thinking',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1000,updatedAt:1000,completedAt:null}]})
 const props={scope:'active' as const,selectedKey:null,onSelect:()=>{},onOpenTeam:()=>{},live:true,visible:true,animationMode:'off' as const,now:1000}
+it('connects the calendar to the garden theme, weather summary and holiday activity',()=>{
+ const html=renderToStaticMarkup(<OfficeView {...props} now={new Date(2026,3,13,12).getTime()} snapshots={[team('s','Lead')]}/>)
+ assert.ok(html.includes('data-season="hot"')&&html.includes('data-holiday="songkran"'))
+ assert.ok(html.includes('Songkran · water play')&&html.includes('simulated weather'))
+ const cool=renderToStaticMarkup(<OfficeView {...props} now={new Date(2026,10,13,12).getTime()} snapshots={[team('s','Lead')]}/>)
+ assert.ok(cool.includes('data-season="cool"')&&cool.includes('Cool season'))
+})
 it('keeps reconnect status in the existing Office toolbar while retaining the last known scene',()=>{
  const html=renderToStaticMarkup(<OfficeView {...props} live={false} snapshots={[team('s','Lead')]} connection={{label:'Reconnecting',tone:'warn',detail:'Last read 12 seconds ago'}}/>)
  assert.ok(html.includes('class="of-link"')&&html.includes('Reconnecting'))

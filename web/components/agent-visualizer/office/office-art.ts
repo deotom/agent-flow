@@ -1,6 +1,9 @@
 import { drawRuntimeMark, type Runtime } from '../canvas/runtime-mark'
 import { officeDaylight } from '../../../lib/office-daylight'
 import { drawOfficeShaft } from './office-shaft-art'
+import { drawOfficeSky } from './office-sky-art'
+import { drawOfficeSeasonalRooms } from './office-seasonal-art'
+import { drawOfficeGarden } from './office-garden-art'
 import type { OfficeActor, OfficeAppearance, OfficeDrawnOffset, OfficePaintOptions, OfficePose, OfficeScene, OfficeLeisureAction } from '../../../lib/office-types'
 import { officeLife, officeLifeCanChat, officeLifePairs, officeSeed, type OfficeLifePair, type OfficeMood } from '../../../lib/office-life'
 
@@ -231,6 +234,9 @@ const pairsFor=(actors:readonly OfficeActor[])=>{let p=pairCache.get(actors);if(
 export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Map<string,OfficeDrawnOffset> {
   c.clearRect(0,0,scene.width,scene.height)
   const scale=scene.width/450,time=o.motion?o.time:0
+  drawOfficeSky(c,scene,time,o.date)
+  drawOfficeGarden(c,scene,o.date,time)
+  drawOfficeSeasonalRooms(c,scene,o.date,time)
   const daylight=officeDaylight(o.date),surface=scene.floors.find(f=>f.kind==='lounge')
   if(surface?.height&&daylight.sun){
     c.fillStyle=`rgba(31,43,38,${.08+daylight.light*.06})`
