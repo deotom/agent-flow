@@ -22,3 +22,24 @@
 .of-agent[data-edge="end"] .of-card{left:auto;right:0}
 /* The lounge sits at the top of the building: open its card below the name tag so it is never clipped. */
 .of-agent[data-zone="lounge"] .of-card{bottom:auto;top:calc(100% + 12px);margin-bottom:0}
+/* Blackboard overlay, sized in container units so chalk scales with the board. */
+.of-board{position:absolute;left:37.8%;width:24.6%;container-type:size;overflow:hidden;pointer-events:none;color:#f2efe3;font-family:"Segoe Print","Bradley Hand","Comic Sans MS",cursive;text-shadow:0 0 1px #ffffff70,0 0 2px #ffffff25;opacity:.93}
+.of-board-inner{box-sizing:border-box;width:100%;height:100%;padding:6cqh 6cqw;display:flex;flex-direction:column;gap:2.5cqh}.of-board-inner>*{min-height:0;flex:none}
+.of-board-goal{font-size:17cqh;line-height:1.15;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px dashed #f2efe360;padding-bottom:1cqh}
+.of-board-progress{display:flex;align-items:center;gap:4cqw;font-size:13cqh;line-height:1.1}
+.of-board-bar{flex:1;height:9cqh;border:1px solid #f2efe3b0;border-radius:2px;overflow:hidden}
+.of-board-bar i{display:block;height:100%;background:repeating-linear-gradient(-45deg,#f2efe3d0 0 2px,#f2efe370 2px 4px)}
+.of-board ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1cqh}
+.of-board li{font-size:13cqh;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.of-board li b{display:inline-block;width:1.1em;font-weight:700}
+.of-board li[data-state="waiting"]{color:#ffd27a}
+.of-board li[data-state="failed"]{color:#ffb0a0}
+.of-board li[data-state="done"]{opacity:.7}
+/* Narrow boards (about 370px widgets): goal, progress and the single most urgent item, larger. */
+@container (max-width: 140px){
+  .of-board-goal{font-size:21cqh}
+  .of-board-progress{font-size:17cqh}
+  .of-board-bar{height:12cqh}
+  .of-board li{font-size:18cqh}
+  .of-board li+li{display:none}
+}

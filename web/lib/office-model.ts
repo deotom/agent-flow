@@ -1,4 +1,4 @@
-import type { OfficeAppearance, OfficeEvent, OfficeScene, OfficeActor, OfficeFloor } from './office-types'
+import type { OfficeAppearance, OfficeEvent, OfficeScene, OfficeActor, OfficeFloor, OfficeBoard, OfficeBoardItem } from './office-types'
 import type { TeamAgentRow, TeamSnapshot } from './team-types'
 import { buildTeamView, describeActivity, isWorking, type TeamScope } from './team-model'
 
@@ -69,7 +69,7 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
     const working = snap.agents.filter(a => isWorking(a.status)).length, waiting = snap.agents.filter(a => a.status.startsWith('waiting_')).length
     const clean = (v: string) => v.replace(/(?:[A-Za-z]:[\\/]|\/root\/|\/Users\/|\/home\/)[^ ·]+/g, '').trim()
     const project = clean(snap.project ?? ''), title = [project, clean(snap.title)].filter((v,i,a) => v && a.indexOf(v)===i).join(' · ') || 'Team'
-    if (included) floors.push({ id, sessionId:snap.sessionId, title, subtitle:[working ? `${working} working` : '', waiting ? `${waiting} needs you` : ''].filter(Boolean).join(' · '), working, waiting, overflow:Math.max(0,desks.length-slots.chairs.length), color:teamColor(snap.sessionId), y, height, room, actorKeys:desks.map(r => officeKey(snap.sessionId,r.agent.id)), kind:'team' })
+    if (included) floors.push({ id, sessionId:snap.sessionId, title, board:officeBoard(snap, clean(snap.title) || title, clean), subtitle:[working ? `${working} working` : '', waiting ? `${waiting} needs you` : ''].filter(Boolean).join(' · '), working, waiting, overflow:Math.max(0,desks.length-slots.chairs.length), color:teamColor(snap.sessionId), y, height, room, actorKeys:desks.map(r => officeKey(snap.sessionId,r.agent.id)), kind:'team' })
     for (const row of ordered) {
       const terminal = done(row.agent), slot = desks.indexOf(row), key = officeKey(snap.sessionId,row.agent.id)
       if (!terminal && !included) continue
@@ -91,6 +91,31 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
   resting.forEach((actor,i) => { const seat=seats[i%seats.length]; actors.push({...actor, floorId:'lounge',monitor:undefined,x:seat[0]*width,y:seat[1]*surfaceHeight,hidden:i>=LOUNGE_CAP}); lounge.actorKeys.push(actor.key) })
   lounge.overflow=Math.max(0,resting.length-LOUNGE_CAP)
   return { width, height:y+width/3, floors, actors, quietTeams, totalAgents:sorted.reduce((n,s)=>n+s.agents.length,0), finishedCount:resting.length }
+}
+
+/**
+ * Blackboard summary: the team goal, task progress and up to three items in priority
+ * order (needs you, failed, in progress, recently done).
+ * Privacy: items show agent display names only. TaskRow.task is the delegated prompt and
+ * may hold secrets, so it is never shown passively; it stays behind deliberate inspection.
+ * Results, tool output and transcripts are never used.
+ */
+export function officeBoard(snap: TeamSnapshot, goal: string, clean: (value: string) => string = v => v): OfficeBoard {
+  const tasks = snap.tasks.filter(task => task.status !== 'cancelled')
+  const names = new Map(snap.agents.map(agent => [agent.id, agent.name]))
+  const label = (task: TeamSnapshot['tasks'][number]) => (clean(names.get(task.childId) ?? task.name).replace(/\s+/g, ' ').trim() || 'Agent').slice(0, 60)
+  const items: OfficeBoardItem[] = [
+    ...snap.agents.filter(agent => agent.status.startsWith('waiting_')).map(agent => ({ label: `${agent.name} needs you`, state: 'waiting' as const })),
+    ...tasks.filter(task => task.status === 'failed').map(task => ({ label: label(task), state: 'failed' as const })),
+    ...tasks.filter(task => task.status === 'working').map(task => ({ label: label(task), state: 'working' as const })),
+    ...tasks.filter(task => task.status === 'done').sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0)).map(task => ({ label: label(task), state: 'done' as const })),
+  ]
+  return { goal, done: tasks.filter(task => task.status === 'done').length, total: tasks.length, items: items.slice(0, 3) }
+}
+
+/** Board for a (possibly held) floor, always taken from the current scene; null once the team is gone. */
+export function currentOfficeBoard(floor: OfficeFloor, current: OfficeScene): OfficeBoard | null {
+  return current.floors.find(f => f.kind === 'team' && f.sessionId === floor.sessionId)?.board ?? null
 }
 
 export function officeEvents(previous: readonly TeamSnapshot[] | null, next: readonly TeamSnapshot[], now: number): OfficeEvent[] {

@@ -45,7 +45,11 @@ export interface OfficeFloor {
   overflow?: number
   working?: number
   waiting?: number
+  /** Chalk summary for rooms with a blackboard: goal, progress, the few items that matter now. */
+  board?: OfficeBoard
 }
+export interface OfficeBoardItem { label: string; state: 'waiting' | 'failed' | 'working' | 'done' }
+export interface OfficeBoard { goal: string; done: number; total: number; items: OfficeBoardItem[] }
 export interface OfficeScene {
   width: number
   height: number

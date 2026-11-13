@@ -5,7 +5,7 @@ import type { TeamSnapshot } from '../../../lib/team-types'
 import { isWorking, type TeamScope } from '../../../lib/team-model'
 import type { AnimationMode } from '../../../lib/viewer-preferences'
 import type { OfficeActor, OfficeEvent, OfficePet, OfficeScene } from '../../../lib/office-types'
-import { assignOfficeIdentities, buildOfficeScene, officeEvents, officeKey } from '../../../lib/office-model'
+import { assignOfficeIdentities, buildOfficeScene, currentOfficeBoard, officeEvents, officeKey } from '../../../lib/office-model'
 import { createOfficeTrip, mergeOfficeEvents, officeAllowsMotion, officeDepartureScene, officePresenceEvents, populatedOfficeTeams, officeTripFrame, parseOfficeIdentities, type OfficeTrip } from '../../../lib/office-motion'
 import { drawOfficeFrame, officeAmbient } from './office-art'
 
@@ -36,6 +36,8 @@ function usePageVisible() {
   return pageVisible
 }
 const PAUSE_STORAGE = 'agent-flow-office-paused'
+const BOARD_MARKS = { waiting: '!', failed: '✗', working: '○', done: '✓' } as const
+const BOARD_STATES = { waiting: 'Needs you', failed: 'Failed', working: 'Working', done: 'Done' } as const
 type Moving = { actor: OfficeActor; caption: string; elevatorY: number | null }
 type Pending = { event: OfficeEvent; before: OfficeScene }
 
@@ -228,6 +230,25 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
           <div className="of-building" style={{ width:'100%', maxWidth:900, aspectRatio:`${visualScene.width} / ${visualScene.height}` } as CSSProperties}>
             {visualScene.floors.filter(f=>f.kind!=='quiet').map(floor=><div key={`art-${floor.id}`} aria-hidden="true" className={`of-art of-art-${floor.kind==='lounge'?'surface':floor.room}`} style={{top:`${floor.y/visualScene.height*100}%`,height:`${(floor.height??0)/visualScene.height*100}%`}} />)}
             <div aria-hidden="true" className="of-art of-art-bottom" style={{bottom:0,height:`${visualScene.width/3/visualScene.height*100}%`}} />
+            {/* Library blackboard: team goal, task progress and what matters now, in chalk. */}
+            {visualScene.floors.filter(floor => floor.room === 'room-c-big').map(floor => {
+              // Geometry may be held during departures; content always comes from the current scene.
+              const board = currentOfficeBoard(floor, scene), h = floor.height ?? 0
+              if (!board) return null
+              const progress = board.total ? `${board.done} of ${board.total} tasks done` : 'No tasks yet'
+              return <div key={`board-${floor.id}`} className="of-board" role="note"
+                aria-label={`Team board: ${board.goal}. ${progress}.${board.items.map(item => ` ${BOARD_STATES[item.state]}: ${item.label}.`).join('')}`}
+                style={{ top:`${(floor.y + h * .19) / visualScene.height * 100}%`, height:`${h * .132 / visualScene.height * 100}%` }}>
+                <div className="of-board-inner">
+                <div className="of-board-goal" aria-hidden="true">{board.goal}</div>
+                <div className="of-board-progress" aria-hidden="true">
+                  <span className="of-board-bar"><i style={{ width:`${board.total ? board.done / board.total * 100 : 0}%` }} /></span>
+                  {board.total ? `${board.done}/${board.total}` : 'no tasks yet'}
+                </div>
+                <ul aria-hidden="true">{board.items.map((item, index) => <li key={index} data-state={item.state}><b>{BOARD_MARKS[item.state]}</b>{item.label}</li>)}</ul>
+                </div>
+              </div>
+            })}
             <canvas ref={canvas} role="img" aria-label={`Office with ${visualScene.actors.filter(a=>!a.hidden).length} visible agents from ${snapshots.length} T3 teams. Choose an agent for details.`} />
             {visualScene.floors.filter(f=>f.kind!=='lounge').map(floor => <div key={floor.id} className="of-floor-row" style={{ top:`${(floor.y+5)/visualScene.height*100}%` }}>
               <button type="button" className="of-floor-label" style={floor.kind === 'team' ? { borderLeft:`4px solid ${floor.color}` } : undefined}
