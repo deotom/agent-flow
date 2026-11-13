@@ -1,4 +1,4 @@
-import type { OfficeAppearance, OfficeEvent, OfficeScene, OfficeActor, OfficeFloor, OfficeBoard, OfficeBoardItem } from './office-types'
+import type { OfficeAppearance, OfficeEvent, OfficeScene, OfficeActor, OfficeFloor, OfficeBoard, OfficeBoardItem, OfficeBreakRoom } from './office-types'
 import type { TeamAgentRow, TeamSnapshot } from './team-types'
 import { buildTeamView, describeActivity, isWorking, type TeamScope } from './team-model'
 
@@ -48,8 +48,27 @@ export const OFFICE_SLOTS = {
 export const LOUNGE_CAP = 4
 /** A team seen finishing celebrates on the surface for this long, then goes home. */
 export const OFFICE_PARTY_MS = 15 * 60_000
-/** Break room spots as [x, y, standing] fractions of the room art: sofas, coffee bar, ping-pong, beanbags. */
-export const BREAK_SEATS: readonly (readonly [number, number, 0 | 1])[] = [[.275,.6,0],[.415,.6,0],[.70,.6,0],[.84,.6,0],[.15,.74,1],[.54,.75,1],[.66,.75,1],[.235,.67,0],[.48,.67,0]]
+type BreakSpot = readonly [x: number, y: number, standing: 0 | 1]
+/**
+ * Break-room decor variants and their spots as [x, y, standing] fractions of each art
+ * (feet points, checked against the images with artifacts.local/office-concept/seat-check.py).
+ */
+export const BREAK_ROOMS: Readonly<Record<OfficeBreakRoom, readonly BreakSpot[]>> = {
+  // Cozy lounge: sofas, coffee bar, ping-pong, beanbags.
+  'room-break': [[.275,.6,0],[.415,.6,0],[.70,.6,0],[.84,.6,0],[.15,.74,1],[.54,.75,1],[.66,.75,1],[.235,.67,0],[.48,.67,0]],
+  // Game room: sofa, beanbags, foosball, arcade.
+  'room-break-game': [[.22,.62,0],[.36,.62,0],[.50,.69,0],[.63,.70,0],[.73,.79,1],[.86,.79,1],[.09,.72,1]],
+  // Greenhouse: wicker chairs, hammock, bench, potting table, fountain.
+  'room-break-garden': [[.22,.64,0],[.31,.64,0],[.475,.60,0],[.615,.63,0],[.70,.63,0],[.09,.72,1],[.84,.73,1]],
+  // Fireside reading nook: chesterfield, armchairs, fireplace, tea cart, globe.
+  'room-break-reading': [[.29,.645,0],[.40,.645,0],[.16,.66,0],[.77,.66,0],[.48,.79,1],[.07,.74,1],[.87,.75,1]],
+}
+const BREAK_VARIANTS = Object.keys(BREAK_ROOMS) as OfficeBreakRoom[]
+/** Stable decor per team so its break room looks the same every time. */
+export const officeBreakRoom = (sessionId: string): OfficeBreakRoom =>
+  BREAK_VARIANTS[[...sessionId].reduce((hash, char) => (hash * 33 + char.charCodeAt(0)) >>> 0, 5381) % BREAK_VARIANTS.length]
+/** Spots in the default cozy break room. */
+export const BREAK_SEATS = BREAK_ROOMS['room-break']
 export const BREAK_ASPECT = 864/1536
 /** True when a team has nobody working, waiting or failed. */
 export const officeTeamQuiet = (snapshot: TeamSnapshot) => quiet(snapshot)
@@ -113,12 +132,13 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
     // The team's own break room hangs directly below its office, only while someone rests there.
     if (included && teamResting.length) {
       const breakHeight = width * BREAK_ASPECT, breakId = JSON.stringify(['break', snap.sessionId])
+      const decor = officeBreakRoom(snap.sessionId), spots = BREAK_ROOMS[decor]
       const breakFloor: OfficeFloor = { id:breakId, sessionId:snap.sessionId, title:"☕ Break room", subtitle:`${teamResting.length} resting`,
-        color:teamColor(snap.sessionId), y, height:breakHeight, room:'room-break', actorKeys:[], kind:'break', overflow:Math.max(0, teamResting.length - BREAK_SEATS.length) }
+        color:teamColor(snap.sessionId), y, height:breakHeight, room:decor, actorKeys:[], kind:'break', overflow:Math.max(0, teamResting.length - spots.length) }
       floors.push(breakFloor)
       teamResting.forEach((actor, i) => {
-        const [sx, sy, stand] = BREAK_SEATS[i % BREAK_SEATS.length]
-        actors.push({ ...actor, floorId:breakId, monitor:undefined, x:sx*width, y:y+sy*breakHeight, stand:stand === 1, hidden:i >= BREAK_SEATS.length })
+        const [sx, sy, stand] = spots[i % spots.length]
+        actors.push({ ...actor, floorId:breakId, monitor:undefined, x:sx*width, y:y+sy*breakHeight, stand:stand === 1, hidden:i >= spots.length })
         breakFloor.actorKeys.push(actor.key)
       })
       resting.push(...teamResting)

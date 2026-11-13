@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { assignOfficeIdentities, buildOfficeScene, officeEvents, officeKey, officeAppearance, officeDisplayName, BREAK_SEATS } from '../lib/office-model'
+import { assignOfficeIdentities, buildOfficeScene, officeEvents, officeKey, officeAppearance, officeDisplayName, officeBreakRoom, BREAK_ROOMS } from '../lib/office-model'
 import type { TeamAgentRow, TeamSnapshot, TeamTaskRow } from '../lib/team-types'
 
 const agent = (id: string, status: TeamAgentRow['status'] = 'thinking', parentId: string | null = null, startedAt = 1): TeamAgentRow => ({
@@ -143,15 +143,16 @@ test('each active team rests in its own break room directly below its office; qu
     // Directly after its own office floor, sharing the team colour.
     const index=scene.floors.indexOf(room), office=scene.floors[index-1]
     assert.equal(office.kind,'team'); assert.equal(office.sessionId,room.sessionId); assert.equal(room.color,office.color)
-    assert.equal(room.room,'room-break')
+    assert.equal(room.room,officeBreakRoom(room.sessionId!))
     const people=scene.actors.filter(a=>a.floorId===room.id)
     assert.ok(people.length>0&&people.every(a=>a.sessionId===room.sessionId&&a.zone==='lounge'))
   }
   const busyRoom=rooms.find(f=>f.sessionId==='busy')!
   assert.equal(busyRoom.subtitle,'11 resting')
-  assert.equal(busyRoom.overflow,11-BREAK_SEATS.length)
+  const spots=BREAK_ROOMS[officeBreakRoom('busy')]
+  assert.equal(busyRoom.overflow,11-spots.length)
   const busyPeople=scene.actors.filter(a=>a.floorId===busyRoom.id)
-  assert.equal(busyPeople.filter(a=>!a.hidden).length,BREAK_SEATS.length)
+  assert.equal(busyPeople.filter(a=>!a.hidden).length,spots.length)
   assert.ok(busyPeople.some(a=>a.agent.id==='oops'))
   assert.ok(busyPeople.some(a=>a.stand)&&busyPeople.some(a=>!a.stand))
   // The lawn is empty without a party; nobody from the quiet team appears anywhere.
@@ -167,4 +168,15 @@ test('display names never carry file paths', () => {
   assert.equal(officeDisplayName('API/Builder'),'API/Builder')
   assert.equal(officeDisplayName('/root/'),'root')
   assert.equal(officeDisplayName('   '),'Agent')
+})
+
+test('break rooms come in four decors, chosen stably per team, each with sitting and standing spots', () => {
+  const decors=new Set(Array.from({length:200},(_,i)=>officeBreakRoom(`session-${i}`)))
+  assert.deepEqual([...decors].sort(),Object.keys(BREAK_ROOMS).sort())
+  assert.equal(officeBreakRoom('abc'),officeBreakRoom('abc'))
+  for (const spots of Object.values(BREAK_ROOMS)) {
+    assert.ok(spots.length>=7)
+    assert.ok(spots.some(s=>s[2]===1)&&spots.some(s=>s[2]===0))
+    assert.ok(spots.every(([x,y])=>x>.04&&x<.92&&y>.5&&y<.85))
+  }
 })

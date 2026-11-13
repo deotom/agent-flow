@@ -45,7 +45,7 @@ export interface OfficeFloor {
   actorKeys: string[]
   kind: 'team' | 'lounge' | 'quiet' | 'break'
   height?: number
-  room?: 'room-a' | 'room-b-lead' | 'room-c-big' | 'room-break'
+  room?: 'room-a' | 'room-b-lead' | 'room-c-big' | OfficeBreakRoom
   overflow?: number
   working?: number
   waiting?: number
@@ -54,6 +54,8 @@ export interface OfficeFloor {
   /** Chalk summary for rooms with a blackboard: goal, progress, the few items that matter now. */
   board?: OfficeBoard
 }
+/** Break-room decor variants; each team keeps one, chosen from its session id. */
+export type OfficeBreakRoom = 'room-break' | 'room-break-game' | 'room-break-garden' | 'room-break-reading'
 export interface OfficeBoardItem { label: string; state: 'waiting' | 'failed' | 'working' | 'done' }
 export interface OfficeBoard { goal: string; done: number; total: number; items: OfficeBoardItem[] }
 export interface OfficeScene {
