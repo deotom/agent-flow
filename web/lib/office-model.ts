@@ -46,10 +46,19 @@ export const OFFICE_SLOTS = {
   'room-c-big': { chairs: [[.162,.55],[.378,.55],[.601,.55],[.815,.55],[.148,.765],[.375,.765],[.603,.765],[.826,.765]], monitors: [[.172,.421],[.386,.421],[.602,.421],[.815,.421],[.153,.622],[.382,.622],[.607,.622],[.832,.622]], aspect: 1 },
 } as const
 export const LOUNGE_CAP = 4
-export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: TeamScope, showQuiet: boolean, identities: ReadonlyMap<string, number>, width = 450): OfficeScene {
+/** A team that went quiet within this window throws a party in the lounge, then goes home. */
+export const OFFICE_PARTY_MS = 15 * 60_000
+/**
+ * Lounge rules: finished and failed workers of active teams rest in the lounge (a failed root
+ * lead stays at its desk). Quiet teams go home, except that a team which just finished
+ * celebrates in the lounge for OFFICE_PARTY_MS. `now` enables parties; omitted, nobody parties.
+ */
+export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: TeamScope, showQuiet: boolean, identities: ReadonlyMap<string, number>, width = 450, now?: number): OfficeScene {
   const priority = (s: TeamSnapshot) => s.agents.some(a => a.status.startsWith('waiting_')) ? 0 : quiet(s) ? 2 : 1
   const sorted = [...new Map(snapshots.map(s => [s.sessionId, s])).values()].sort((a,b) => priority(a)-priority(b) || a.sessionId.localeCompare(b.sessionId))
   const quietTeams = sorted.filter(quiet), floors: OfficeFloor[] = [], actors: OfficeActor[] = [], resting: OfficeActor[] = []
+  const partyTitles: string[] = []
+  const clean = (v: string) => v.replace(/(?:[A-Za-z]:[\\/]|\/root\/|\/Users\/|\/home\/)[^ ·]+/g, '').trim()
   const surfaceHeight = width * 864/1536
   const lounge: OfficeFloor = { id:'lounge', sessionId:null, title:'Surface lounge', subtitle:'', color:'#a88b70', y:0, height:surfaceHeight, actorKeys:[], kind:'lounge' }
   floors.push(lounge)
@@ -59,7 +68,11 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
     // Team view provides safe display names and ancestry order, including orphan/cycle handling.
     const rows = buildTeamView(snap, 'session').rows
     const ordered = [...rows].sort((a,b) => Number(b.agent.role === 'lead' && !b.agent.parentId)-Number(a.agent.role === 'lead' && !a.agent.parentId))
-    const done = (a: TeamAgentRow) => a.status === 'done' || a.status === 'cancelled'
+    const rootLead = (a: TeamAgentRow) => a.role === 'lead' && !a.parentId
+    const done = (a: TeamAgentRow) => a.status === 'done' || a.status === 'cancelled' || (a.status === 'failed' && !rootLead(a))
+    const teamQuiet = quiet(snap)
+    const partying = teamQuiet && now !== undefined && snap.updatedAt !== null && now - snap.updatedAt <= OFFICE_PARTY_MS && snap.agents.some(a => a.status === 'done')
+    if (partying) partyTitles.push(clean(snap.title) || 'Team')
     // Limited desks go to whoever most needs to be seen: root lead, waiting, failed, working, then idle.
     const rank = (r: (typeof ordered)[number]) => r.agent.role === 'lead' && !r.agent.parentId ? 0 : r.agent.status.startsWith('waiting_') ? 1 : r.agent.status === 'failed' ? 2 : isWorking(r.agent.status) ? 3 : 4
     const desks = ordered.filter(r => !done(r.agent)).sort((a,b) => rank(a)-rank(b))
@@ -67,7 +80,6 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
     const slots = OFFICE_SLOTS[room], height = width * slots.aspect
     const id = JSON.stringify(['team',snap.sessionId]), included = showQuiet || !quiet(snap)
     const working = snap.agents.filter(a => isWorking(a.status)).length, waiting = snap.agents.filter(a => a.status.startsWith('waiting_')).length
-    const clean = (v: string) => v.replace(/(?:[A-Za-z]:[\\/]|\/root\/|\/Users\/|\/home\/)[^ ·]+/g, '').trim()
     const project = clean(snap.project ?? ''), title = [project, clean(snap.title)].filter((v,i,a) => v && a.indexOf(v)===i).join(' · ') || 'Team'
     if (included) floors.push({ id, sessionId:snap.sessionId, title, board:officeBoard(snap, clean(snap.title) || title, clean), subtitle:[working ? `${working} working` : '', waiting ? `${waiting} needs you` : ''].filter(Boolean).join(' · '), working, waiting, overflow:Math.max(0,desks.length-slots.chairs.length), color:teamColor(snap.sessionId), y, height, room, actorKeys:desks.map(r => officeKey(snap.sessionId,r.agent.id)), kind:'team' })
     for (const row of ordered) {
@@ -82,12 +94,17 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
         hidden:!terminal && slot>=slots.chairs.length, pod:snap.agents.some(a=>a.parentId===row.agent.id),
         activity:activity && row.agent.status === 'running' ? describeActivity(activity).label : row.statusText,
         runtimeName:row.agent.runtime ? runtimeNames[row.agent.runtime] : 'Unknown AI', team:{ title, color:teamColor(snap.sessionId) } }
-      if (terminal) resting.push(actor); else actors.push(actor)
+      // Quiet teams go home; their people only appear in the lounge while celebrating.
+      if (terminal) { if (!teamQuiet) resting.push(actor); else if (partying) resting.push({ ...actor, party:true }) }
+      else actors.push(actor)
     }
     if (included) y += height * .90
   }
-  if (quietTeams.length) { floors.push({id:'quiet',sessionId:null,title:`${quietTeams.length} quiet teams`,subtitle:'',color:'#aa9168',y,height:34,actorKeys:[],kind:'quiet'}); y+=34 }
+  if (quietTeams.length) { floors.push({id:'quiet',sessionId:null,title:`${quietTeams.length} ${quietTeams.length === 1 ? 'team' : 'teams'} went home`,subtitle:'',color:'#aa9168',y,height:34,actorKeys:[],kind:'quiet'}); y+=34 }
   const seats = [[.338,.61],[.495,.61],[.64,.57],[.78,.58]]
+  // Party guests take the lounge first.
+  resting.sort((a,b) => Number(Boolean(b.party))-Number(Boolean(a.party)))
+  if (partyTitles.length) lounge.party = partyTitles
   resting.forEach((actor,i) => { const seat=seats[i%seats.length]; actors.push({...actor, floorId:'lounge',monitor:undefined,x:seat[0]*width,y:seat[1]*surfaceHeight,hidden:i>=LOUNGE_CAP}); lounge.actorKeys.push(actor.key) })
   lounge.overflow=Math.max(0,resting.length-LOUNGE_CAP)
   return { width, height:y+width/3, floors, actors, quietTeams, totalAgents:sorted.reduce((n,s)=>n+s.agents.length,0), finishedCount:resting.length }

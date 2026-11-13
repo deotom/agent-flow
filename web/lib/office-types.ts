@@ -24,6 +24,8 @@ export interface OfficeActor extends OfficePoint {
   zone: 'desk' | 'lounge'
   activity: string
   runtimeName: string
+  /** Celebrating a team that just finished (lounge only). */
+  party?: boolean
   /** Team identity, kept even when the actor rests in the shared lounge. */
   team?: { title: string; color: string }
   hidden?: boolean
@@ -45,6 +47,8 @@ export interface OfficeFloor {
   overflow?: number
   working?: number
   waiting?: number
+  /** Lounge only: titles of teams that just finished and are celebrating. */
+  party?: string[]
   /** Chalk summary for rooms with a blackboard: goal, progress, the few items that matter now. */
   board?: OfficeBoard
 }

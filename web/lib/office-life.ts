@@ -85,6 +85,14 @@ export function officeLife(actor: OfficeActor, time: number, context: OfficeLife
   const speaking = (k: number) => (Math.floor(k) % 2 === 0) === ((partner ?? 0) > 0)
 
   if (actor.zone === 'lounge') {
+    if (actor.party && RESTING.has(status)) {
+      // Party: bob to the beat, throw arms up now and then, the odd note. Seated, no wandering.
+      const beat = time * 2.2 + s * 6
+      return frame({ hop: Math.max(0, Math.sin(beat * Math.PI)) * 2, stretch: at(time, 4, s) < 1 ? bump(at(time, 4, s)) : 0,
+        turn: Math.sin(time * 1.3 + s * 5) * .7, mood: at(time, 6, s) < 1.2 ? 'note' : null, cup: at(time, 4, s) >= 1 })
+    }
+    // Failed workers rest too, but they look it: slumped with an occasional sigh.
+    if (status === 'failed') return frame({ slump: true, cup: true, mood: at(time, 12, s) < 1.2 ? 'sigh' : null })
     if (!RESTING.has(status)) return still
     if (paired) {
       const t = at(time, 20, pairSeed), reach = sign(partner!) * Math.max(0, (Math.abs(partner!) - OFFICE_CHAT_GAP) / 2)

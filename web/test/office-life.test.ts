@@ -106,3 +106,15 @@ test('greeting waves without moving', () => {
   const f = officeLife(actor('g', 'running'), 3, { greet: true })
   assert.equal(f.wave, true); assert.equal(f.dx, 0)
 })
+
+test('party guests dance in place and failed workers rest slumped, never dozing or wandering', () => {
+  for (const key of keys) for (const t of times) {
+    const party = officeLife({ ...actor(key, 'done', 'lounge'), party: true }, t, { partnerDx: 90, pairSeed: .3 })
+    assert.equal(party.dx, 0); assert.equal(party.walk, false); assert.equal(party.doze, false)
+    assert.ok(party.hop >= 0 && party.hop <= 2 + 1e-9)
+    const sad = officeLife(actor(key, 'failed', 'lounge'), t, { partnerDx: 90, pairSeed: .3 })
+    assert.equal(sad.slump, true); assert.equal(sad.dx, 0); assert.equal(sad.doze, false)
+    assert.notEqual(sad.mood, 'chat')
+  }
+  assert.ok(times.some(t => officeLife({ ...actor('p', 'done', 'lounge'), party: true }, t).hop > 1))
+})

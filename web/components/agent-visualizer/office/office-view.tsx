@@ -58,7 +58,9 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const pageVisible = usePageVisible()
   const viewport = useRef<HTMLDivElement>(null)
   const sceneWidth = 450
-  const scene = useMemo(() => buildOfficeScene(snapshots, scope, showQuiet, identities, sceneWidth), [snapshots, scope, showQuiet, identities, sceneWidth])
+  // Parties end on a minute clock so the scene is not rebuilt every second.
+  const partyClock = Math.floor(now / 60_000) * 60_000
+  const scene = useMemo(() => buildOfficeScene(snapshots, scope, showQuiet, identities, sceneWidth, partyClock), [snapshots, scope, showQuiet, identities, sceneWidth, partyClock])
   const [heldLayout, setHeldLayout] = useState<OfficeScene | null>(null)
   const held = useRef<OfficeScene | null>(null)
   const holdLayout = (value: OfficeScene | null) => { held.current = value; setHeldLayout(value) }
@@ -260,7 +262,10 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
               </button>
               {!!floor.overflow && <button type="button" className="of-overflow" onClick={()=>floor.sessionId&&onOpenTeam(floor.sessionId,null)} aria-label={`Open team in Board: ${floor.overflow} more agents`}>+{floor.overflow}</button>}
             </div>)}
-            {!!lounge?.overflow && <span className="of-resting">+{lounge.overflow} resting</span>}
+            {(!!lounge?.overflow || !!lounge?.party?.length) && <span className="of-resting" data-party={!!lounge?.party?.length}>
+              {lounge?.party?.length ? `🎉 ${lounge.party[0]} finished${lounge.party.length > 1 ? ` +${lounge.party.length - 1}` : ''}` : ''}
+              {lounge?.party?.length && lounge.overflow ? ' · ' : ''}{lounge?.overflow ? `+${lounge.overflow} more` : ''}
+            </span>}
             {displayed.filter(actor=>!actor.hidden).map(actor => {
               const waiting=actor.agent.status.startsWith('waiting_'), walking=Boolean(actor.pose?.walk||actor.pose?.climb)
               const activity=actor.agent.activities.at(-1)?.type ?? ''
@@ -275,8 +280,8 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
                 onClick={()=>onSelect(actor.sessionId,actor.agent.id)}>
                 {actor.zone==='desk' && (!walking || waiting || actor.agent.status==='failed') && <span className="of-bubble" aria-hidden="true">{bubble}</span>}
                 {/* Always-visible name tag: team colour stripe, gold for leads. The AI logo is on the shirt. */}
-                <span className="of-tag" aria-hidden="true" data-lead={role!=='Agent'} data-zone={actor.zone} style={{ '--team': team?.color ?? '#a88b70', maxWidth:`calc(${(tagRoom.get(actor.key) ?? 99) / 44 * 100}% - 4px)` } as CSSProperties}>
-                  {role!=='Agent' && <b>{role==='Lead' ? '♛' : '♜'}</b>}{actor.agent.name}
+                <span className="of-tag" aria-hidden="true" data-lead={role!=='Agent'} data-zone={actor.zone} data-failed={actor.agent.status==='failed'} style={{ '--team': team?.color ?? '#a88b70', maxWidth:`calc(${(tagRoom.get(actor.key) ?? 99) / 44 * 100}% - 4px)` } as CSSProperties}>
+                  {actor.agent.status==='failed' && <b className="of-tag-failed">✕</b>}{role!=='Agent' && <b>{role==='Lead' ? '♛' : '♜'}</b>}{actor.agent.name}
                 </span>
                 <span className="of-card" aria-hidden="true" data-visible={inspectedKey===actor.key||selectedKey===actor.key}>
                   <strong>{actor.agent.name}</strong>

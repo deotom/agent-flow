@@ -19,7 +19,7 @@ function oval(c: Ctx, x:number,y:number,rx:number,ry:number,color:string,outline
 function round(c:Ctx,x:number,y:number,w:number,h:number,color:string,r=4){c.beginPath();c.roundRect(x,y,w,h,r);c.fillStyle=color;c.fill();c.strokeStyle='#4b3025';c.lineWidth=1.4;c.stroke()}
 
 /** Life poses layered on the base pose; all optional so callers can stay minimal. */
-export interface OfficeAvatarPose extends OfficePose { stretch?: number; lean?: number; doze?: boolean; slump?: boolean; scratch?: boolean; wave?: boolean; turn?: number; cup?: boolean; face?: 1 | -1; hop?: number; runtime?: Runtime | null }
+export interface OfficeAvatarPose extends OfficePose { stretch?: number; lean?: number; doze?: boolean; slump?: boolean; scratch?: boolean; wave?: boolean; turn?: number; cup?: boolean; face?: 1 | -1; hop?: number; runtime?: Runtime | null; party?: boolean }
 /** Micro-motion offsets for a pose at a given time; all zero when time is frozen at 0. */
 function idleMotion(time:number,p:OfficeAvatarPose){
   const r={lift:0,headX:0,headY:0,tilt:0,left:0,right:0,wave:0,sip:0}
@@ -82,6 +82,13 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
     oval(c,12,-37,2.5,1.5,'#e79782',false)
   }
   if(a.gear==='glasses'&&!back){round(c,0,-48,8,8,'#ffffff20',3);round(c,10,-48,7,8,'#ffffff20',3)}
+  if(p.party&&!p.lead){
+    // Striped party cone with a pompom, tilted a little.
+    const hues=['#ff7aa8','#7bc8ff','#ffd35a','#8be08b'],hue=hues[a.slot%hues.length]
+    c.save();c.translate(3,-60);c.rotate(.18);c.beginPath();c.moveTo(-7,0);c.lineTo(7,0);c.lineTo(0,-19);c.closePath();c.fillStyle=hue;c.fill();c.strokeStyle='#4b3025';c.lineWidth=1.3;c.stroke()
+    c.beginPath();c.moveTo(-4.5,-6);c.lineTo(4.5,-6);c.moveTo(-2.4,-12);c.lineTo(2.4,-12);c.strokeStyle='#fff6';c.lineWidth=1.6;c.stroke()
+    oval(c,0,-20,2.6,2.6,'#fff7d6');c.restore()
+  }
   if(p.lead){c.fillStyle='#ffe08b';c.strokeStyle='#80511c';c.lineWidth=1.4;c.beginPath();c.moveTo(-8,-72);c.lineTo(-4,-68);c.lineTo(0,-75);c.lineTo(4,-68);c.lineTo(8,-72);c.lineTo(6,-64);c.lineTo(-6,-64);c.closePath();c.fill();c.stroke()}
   c.restore() // head
   if((p.mug||p.cup)&&!raised&&!p.scratch&&stretch<.3){round(c,rx-7,ry+1,9,10,'#fff0cf',2);oval(c,rx+3,ry+6,3,3,'#ead6ae')}
@@ -142,6 +149,15 @@ function drawAmbient(c:Ctx,scene:OfficeScene,time:number,night:boolean){
     }
     c.globalAlpha=1
   }
+  // Confetti over the lounge while any team is celebrating.
+  if(H&&scene.actors.some(a=>a.party&&!a.hidden)){
+    const colors=['#ff7aa8','#7bc8ff','#ffd35a','#8be08b','#c89bff']
+    for(let i=0;i<14;i++){
+      const k=((time*.18+i*.0714)%1),x=w*(.22+.7*((i*37%14)/14))+Math.sin(time*2+i)*8,y=H*(.05+k*.7)
+      c.save();c.translate(x,y);c.rotate(time*3+i);c.globalAlpha=k>.85?(1-k)/.15:1;c.fillStyle=colors[i%colors.length];c.fillRect(-2,-1,4,2);c.restore()
+    }
+    c.globalAlpha=1
+  }
   let dust=0
   c.fillStyle='rgba(255,240,200,.3)'
   for(const f of scene.floors){
@@ -199,7 +215,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     c.save();c.translate(actor.x+life.dx,actor.y);c.scale(scale,scale)
     drawOfficeAvatar(c,actor.appearance,0,0,t,{sit:!moving&&!life.stand,walk:life.walk,typing:o.live&&life.typing&&!moving,hand:o.live&&waiting,
       mug:actor.zone==='lounge'&&!moving,lead:actor.agent.role==='lead'||actor.pod,cup:life.cup,stretch:life.stretch,lean:life.lean,doze:life.doze,
-      slump:life.slump,scratch:life.scratch,wave:life.wave,turn:life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,...actor.pose})
+      slump:life.slump,scratch:life.scratch,wave:life.wave,turn:life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose})
     if(life.mood){c.translate(0,-life.hop);drawMood(c,life.mood,t)}
     c.restore()
     offsets.set(actor.key,{dx:life.dx,dy:-life.hop*scale})

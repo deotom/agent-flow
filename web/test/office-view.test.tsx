@@ -16,7 +16,7 @@ it('keeps cross-session selection and accessible display names without developer
 it('provides an expandable quiet strip and a calm empty view',()=>{
   const quiet=team('a','At home');quiet.agents[0].status='idle'
   const html=renderToStaticMarkup(<OfficeView {...props} snapshots={[quiet]}/>)
-  assert.ok(html.includes('1 quiet teams')&&html.includes('aria-expanded="false"'))
+  assert.ok(html.includes('1 team went home')&&html.includes('aria-expanded="false"'))
   assert.ok(!html.includes('aria-label="At home, Codex'))
   assert.ok(renderToStaticMarkup(<OfficeView {...props} snapshots={[]}/>).includes('Your teams will appear here.'))
 })

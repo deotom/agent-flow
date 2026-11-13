@@ -40,11 +40,12 @@ it('lets idle teams leave even when old results have no delivery acknowledgement
     const snapshot=team('s',[lead,worker],[task({status:'done',delivery})])
     const ids=assignOfficeIdentities(snapshot.agents.map(a=>officeKey('s',a.id)))
     const scene=buildOfficeScene([snapshot],'active',false,ids)
-    assert.equal(scene.actors.length,1)
+    // The idle team went home: no desks and nobody left in the lounge.
+    assert.equal(scene.actors.length,0)
     assert.equal(scene.floors.filter(f=>f.kind==='team').length,0)
     assert.equal(scene.floors.filter(f=>f.kind==='lounge').length,1)
     assert.equal(scene.quietTeams.length,1)
-    assert.equal(buildOfficeScene([snapshot],'session',true,ids).actors.length,2)
+    assert.equal(buildOfficeScene([snapshot],'session',true,ids).actors.length,1)
   }
 })
 it('does not create historical lounge floors in Current work while a sibling is active', () => {

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { assignOfficeIdentities, buildOfficeScene, officeEvents, officeKey, officeAppearance } from '../lib/office-model'
+import { assignOfficeIdentities, buildOfficeScene, officeEvents, officeKey, officeAppearance, OFFICE_PARTY_MS } from '../lib/office-model'
 import type { TeamAgentRow, TeamSnapshot, TeamTaskRow } from '../lib/team-types'
 
 const agent = (id: string, status: TeamAgentRow['status'] = 'thinking', parentId: string | null = null, startedAt = 1): TeamAgentRow => ({
@@ -81,7 +81,7 @@ test('events avoid initial replay, detect strongest task transitions, and ignore
 })
 
 
-test('room choice, priority, failed seating, quiet strip and capped surface lounge', () => {
+test('room choice, priority, failed lead seating, quiet teams going home and lounge parties', () => {
   const waiting=team('z-wait',[agent('lead','waiting_input')])
   const small=team('a-work',[agent('lead'),agent('w','running','lead')])
   const noLead=team('no-lead',[{...agent('solo'),role:'worker'}])
@@ -89,7 +89,8 @@ test('room choice, priority, failed seating, quiet strip and capped surface loun
   const quiet=team('quiet',[agent('idle','idle'),...Array.from({length:8},(_,i)=>agent(`done${i}`,'done','idle'))])
   const failed=team('failed',[agent('error','failed')])
   const all=[small,large,quiet,waiting,noLead,failed]
-  const scene=buildOfficeScene(all,'active',false,assignOfficeIdentities(all.flatMap(s=>s.agents.map(a=>officeKey(s.sessionId,a.id)))))
+  const ids=assignOfficeIdentities(all.flatMap(s=>s.agents.map(a=>officeKey(s.sessionId,a.id))))
+  const scene=buildOfficeScene(all,'active',false,ids)
   assert.equal(scene.floors[0].kind,'lounge')
   const rooms=scene.floors.filter(f=>f.kind==='team')
   assert.equal(rooms[0].sessionId,'z-wait')
@@ -97,9 +98,22 @@ test('room choice, priority, failed seating, quiet strip and capped surface loun
   assert.equal(rooms.find(f=>f.sessionId==='no-lead')?.room,'room-a')
   assert.equal(rooms.find(f=>f.sessionId==='big')?.room,'room-c-big')
   assert.equal(rooms.find(f=>f.sessionId==='big')?.overflow,3)
-  assert.equal(scene.actors.filter(a=>a.zone==='lounge'&&!a.hidden).length,4)
-  assert.equal(scene.floors[0].overflow,4)
+  // The quiet team went home: nobody from it rests in the lounge.
+  assert.equal(scene.actors.filter(a=>a.zone==='lounge').length,0)
+  assert.equal(scene.floors[0].overflow,0)
+  // A failed root lead keeps its desk.
   assert.equal(scene.actors.find(a=>a.agent.id==='error')?.zone,'desk')
+  // Just finished: the quiet team celebrates in the lounge, guests first, capped at four seats.
+  const party=buildOfficeScene(all,'active',false,ids,450,(quiet.updatedAt??0)+60_000)
+  const guests=party.actors.filter(a=>a.zone==='lounge')
+  assert.equal(guests.filter(a=>!a.hidden).length,4)
+  assert.equal(party.floors[0].overflow,4)
+  assert.ok(guests.every(a=>a.party&&a.sessionId==='quiet'))
+  assert.deepEqual(party.floors[0].party,['quiet'])
+  // After the party they go home.
+  const later=buildOfficeScene(all,'active',false,ids,450,(quiet.updatedAt??0)+OFFICE_PARTY_MS+1)
+  assert.equal(later.actors.filter(a=>a.zone==='lounge').length,0)
+  assert.equal(later.floors.find(f=>f.kind==='quiet')?.title,'1 team went home')
   assert.equal(scene.floors.at(-1)?.kind,'quiet')
   assert.equal(rooms.some(f=>f.sessionId==='quiet'),false)
   assert.equal(buildOfficeScene(all,'active',true,new Map()).floors.filter(f=>f.kind==='team').length,6)
@@ -110,6 +124,8 @@ test('limited desks seat the lead first, then agents waiting on the user or fail
   const scene=buildOfficeScene([crowd],'active',false,assignOfficeIdentities(crowd.agents.map(a=>officeKey('crowd',a.id))))
   const seated=scene.actors.filter(a=>a.zone==='desk'&&!a.hidden).map(a=>a.agent.id)
   assert.equal(seated.length,8)
-  assert.deepEqual(seated.slice(0,3),['lead','asks','broke'])
-  assert.equal(scene.floors.find(f=>f.sessionId==='crowd')?.overflow,4)
+  assert.deepEqual(seated.slice(0,2),['lead','asks'])
+  // A failed worker's job is over: it goes up to rest instead of holding a desk.
+  assert.equal(scene.actors.find(a=>a.agent.id==='broke')?.zone,'lounge')
+  assert.equal(scene.floors.find(f=>f.sessionId==='crowd')?.overflow,3)
 })

@@ -13,7 +13,8 @@
 /* Identity: name tag under each person (team stripe, gold for leads) and a hover/selection card. */
 .of-tag{position:absolute;left:50%;top:100%;transform:translate(-50%,-3px);box-sizing:border-box;padding:1px 4px 1px 3px;border:1px solid #6f4a2c;border-left:3px solid var(--team);border-radius:4px;background:#fff3dcee;color:#4a3122;font:600 8.5px/11px "Segoe UI",system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;box-shadow:0 1px 2px #2b1c2650}
 .of-tag[data-lead="true"]{background:linear-gradient(#ffe7a3,#f3c869);border-color:#946420;border-left-color:var(--team);color:#4b300e}
-.of-tag b{margin-right:2px;color:#9a6512;font-weight:700}
+.of-tag b{margin-right:2px;color:#9a6512;font-weight:700}.of-tag b.of-tag-failed{color:#c0392b}
+.of-resting[data-party="true"]{background:#ffe9a8f0;border:1px solid #c9952e;font-weight:600;color:#5b3a10;max-width:calc(100% - 24px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .of-card{display:none;position:absolute;bottom:100%;left:0;margin-bottom:2px;width:max-content;min-width:120px;max-width:180px;padding:5px 7px;border:1px solid #a1794d;border-radius:6px;background:#fff1d8;color:#4a3122;font:10px/13px "Segoe UI",system-ui,sans-serif;text-align:left;white-space:normal;overflow-wrap:anywhere;pointer-events:none;box-shadow:0 2px 6px #3c261b55;z-index:6}
 .of-card[data-visible="true"]{display:flex;flex-direction:column;gap:1px}
 .of-card strong{font-size:11px}
