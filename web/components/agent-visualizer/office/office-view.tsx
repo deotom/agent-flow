@@ -267,7 +267,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
             })}
             <canvas ref={canvas} role="img" aria-label={`Office with ${visualScene.actors.filter(a=>!a.hidden).length} visible agents from ${snapshots.length} T3 teams. Choose an agent for details.`} />
             {visualScene.floors.filter(f=>f.kind!=='lounge').map(floor => <div key={floor.id} className="of-floor-row" style={{ top:`${(floor.y+5)/visualScene.height*100}%` }}>
-              <button type="button" className="of-floor-label" style={floor.kind === 'team' ? { borderLeft:`4px solid ${floor.color}` } : undefined}
+              <button type="button" className="of-floor-label" style={floor.kind === 'team' || floor.kind === 'break' ? { borderLeft:`4px solid ${floor.color}` } : undefined}
                 aria-expanded={floor.kind === 'quiet' ? showQuiet : undefined}
                 title={floor.kind === 'quiet' ? showQuiet ? 'Collapse quiet teams' : 'Expand quiet teams' : floor.title}
                 onClick={() => floor.kind === 'quiet' ? setShowQuiet(v=>!v) : floor.sessionId && onOpenTeam(floor.sessionId,null)}>

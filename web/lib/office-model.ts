@@ -58,8 +58,8 @@ export const officeDisplayName = (name: string) =>
   name.replace(/(?:[A-Za-z]:[\\/]|\/)(?:[^\s\\/·]+[\\/])+[^\s\\/·]*/g, match => match.split(/[\\/]/).filter(Boolean).pop() ?? '').replace(/\s+/g, ' ').trim() || 'Agent'
 /**
  * Where people go:
- * - finished and failed workers of active teams rest in the underground break room
- *   (a failed root lead keeps its desk);
+ * - finished and failed workers of an active team rest in that team's own break room,
+ *   directly below its office (a failed root lead keeps its desk);
  * - quiet teams go home, except teams in `parties` (seen finishing by the viewer), which
  *   celebrate on the surface lawn first.
  */
@@ -92,6 +92,7 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
     const working = snap.agents.filter(a => isWorking(a.status)).length, waiting = snap.agents.filter(a => a.status.startsWith('waiting_')).length
     const project = clean(snap.project ?? ''), title = [project, clean(snap.title)].filter((v,i,a) => v && a.indexOf(v)===i).join(' · ') || 'Team'
     if (included) floors.push({ id, sessionId:snap.sessionId, title, board:officeBoard(snap, clean(snap.title) || title, clean), subtitle:[working ? `${working} working` : '', waiting ? `${waiting} needs you` : ''].filter(Boolean).join(' · '), working, waiting, overflow:Math.max(0,desks.length-slots.chairs.length), color:teamColor(snap.sessionId), y, height, room, actorKeys:desks.map(r => officeKey(snap.sessionId,r.agent.id)), kind:'team' })
+    const teamResting: OfficeActor[] = []
     for (const row of ordered) {
       const terminal = done(row.agent), slot = desks.indexOf(row), key = officeKey(snap.sessionId,row.agent.id)
       if (!terminal && !included) continue
@@ -104,22 +105,25 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
         hidden:!terminal && slot>=slots.chairs.length, pod:snap.agents.some(a=>a.parentId===row.agent.id),
         activity:activity && row.agent.status === 'running' ? describeActivity(activity).label : row.statusText,
         runtimeName:row.agent.runtime ? runtimeNames[row.agent.runtime] : 'Unknown AI', team:{ title, color:teamColor(snap.sessionId) } }
-      // Active teams rest in the break room; quiet teams go home unless they are celebrating.
-      if (terminal) { if (!teamQuiet) resting.push(actor); else if (partying) guests.push({ ...actor, party:true }) }
+      // Active teams rest in their own break room; quiet teams go home unless they are celebrating.
+      if (terminal) { if (!teamQuiet) teamResting.push(actor); else if (partying) guests.push({ ...actor, party:true }) }
       else actors.push(actor)
     }
     if (included) y += height * .90
-  }
-  if (resting.length) {
-    const height = width * BREAK_ASPECT, breakFloor: OfficeFloor = { id:'break', sessionId:null, title:'Break room', subtitle:`${resting.length} resting`,
-      color:'#c98a4b', y, height, room:'room-break', actorKeys:[], kind:'break', overflow:Math.max(0, resting.length - BREAK_SEATS.length) }
-    floors.push(breakFloor)
-    resting.forEach((actor, i) => {
-      const [sx, sy, stand] = BREAK_SEATS[i % BREAK_SEATS.length]
-      actors.push({ ...actor, floorId:'break', monitor:undefined, x:sx*width, y:y+sy*height, stand:stand === 1, hidden:i >= BREAK_SEATS.length })
-      breakFloor.actorKeys.push(actor.key)
-    })
-    y += height * .90
+    // The team's own break room hangs directly below its office, only while someone rests there.
+    if (included && teamResting.length) {
+      const breakHeight = width * BREAK_ASPECT, breakId = JSON.stringify(['break', snap.sessionId])
+      const breakFloor: OfficeFloor = { id:breakId, sessionId:snap.sessionId, title:"☕ Break room", subtitle:`${teamResting.length} resting`,
+        color:teamColor(snap.sessionId), y, height:breakHeight, room:'room-break', actorKeys:[], kind:'break', overflow:Math.max(0, teamResting.length - BREAK_SEATS.length) }
+      floors.push(breakFloor)
+      teamResting.forEach((actor, i) => {
+        const [sx, sy, stand] = BREAK_SEATS[i % BREAK_SEATS.length]
+        actors.push({ ...actor, floorId:breakId, monitor:undefined, x:sx*width, y:y+sy*breakHeight, stand:stand === 1, hidden:i >= BREAK_SEATS.length })
+        breakFloor.actorKeys.push(actor.key)
+      })
+      resting.push(...teamResting)
+      y += breakHeight * .90
+    }
   }
   if (quietTeams.length) { floors.push({id:'quiet',sessionId:null,title:`${quietTeams.length} ${quietTeams.length === 1 ? 'team' : 'teams'} went home`,subtitle:'',color:'#aa9168',y,height:34,actorKeys:[],kind:'quiet'}); y+=34 }
   // The surface lawn is the party garden.

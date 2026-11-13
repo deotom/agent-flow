@@ -130,26 +130,33 @@ test('limited desks seat the lead first, then agents waiting on the user or fail
   assert.equal(scene.floors.find(f=>f.sessionId==='crowd')?.overflow,3)
 })
 
-test('finished and failed workers of active teams rest in the break room, quiet teams never do', () => {
+test('each active team rests in its own break room directly below its office; quiet teams never do', () => {
   const busy=team('busy',[agent('lead'),agent('w','running','lead'),...Array.from({length:10},(_,i)=>agent(`d${i}`,'done','lead')),agent('oops','failed','lead')])
+  const other=team('other',[agent('lead'),agent('x','running','lead'),agent('y','done','lead')])
   const home=team('home',[agent('idle','idle'),agent('gone','done','idle')])
-  const ids=assignOfficeIdentities([busy,home].flatMap(s=>s.agents.map(a=>officeKey(s.sessionId,a.id))))
-  const scene=buildOfficeScene([busy,home],'session',false,ids)
-  const room=scene.floors.find(f=>f.kind==='break')!
-  assert.equal(room.room,'room-break')
-  assert.equal(room.subtitle,'11 resting')
-  assert.equal(room.overflow,11-BREAK_SEATS.length)
-  const resting=scene.actors.filter(a=>a.floorId==='break')
-  assert.equal(resting.length,11)
-  assert.equal(resting.filter(a=>!a.hidden).length,BREAK_SEATS.length)
-  assert.ok(resting.every(a=>a.sessionId==='busy'&&a.zone==='lounge'))
-  assert.ok(resting.some(a=>a.agent.id==='oops'))
-  assert.ok(resting.some(a=>a.stand)&&resting.some(a=>!a.stand))
-  // The surface lawn is empty without a party, and the break room sits above the quiet strip.
+  const all=[busy,other,home]
+  const ids=assignOfficeIdentities(all.flatMap(s=>s.agents.map(a=>officeKey(s.sessionId,a.id))))
+  const scene=buildOfficeScene(all,'session',false,ids)
+  const rooms=scene.floors.filter(f=>f.kind==='break')
+  assert.deepEqual(rooms.map(f=>f.sessionId).sort(),['busy','other'])
+  for (const room of rooms) {
+    // Directly after its own office floor, sharing the team colour.
+    const index=scene.floors.indexOf(room), office=scene.floors[index-1]
+    assert.equal(office.kind,'team'); assert.equal(office.sessionId,room.sessionId); assert.equal(room.color,office.color)
+    assert.equal(room.room,'room-break')
+    const people=scene.actors.filter(a=>a.floorId===room.id)
+    assert.ok(people.length>0&&people.every(a=>a.sessionId===room.sessionId&&a.zone==='lounge'))
+  }
+  const busyRoom=rooms.find(f=>f.sessionId==='busy')!
+  assert.equal(busyRoom.subtitle,'11 resting')
+  assert.equal(busyRoom.overflow,11-BREAK_SEATS.length)
+  const busyPeople=scene.actors.filter(a=>a.floorId===busyRoom.id)
+  assert.equal(busyPeople.filter(a=>!a.hidden).length,BREAK_SEATS.length)
+  assert.ok(busyPeople.some(a=>a.agent.id==='oops'))
+  assert.ok(busyPeople.some(a=>a.stand)&&busyPeople.some(a=>!a.stand))
+  // The lawn is empty without a party; nobody from the quiet team appears anywhere.
   assert.equal(scene.actors.filter(a=>a.floorId==='lounge').length,0)
-  const kinds=scene.floors.map(f=>f.kind)
-  assert.ok(kinds.indexOf('break')>kinds.lastIndexOf('team')&&kinds.indexOf('break')<kinds.indexOf('quiet'))
-  // No resting workers, no break room.
+  assert.equal(scene.actors.some(a=>a.sessionId==='home'),false)
   assert.equal(buildOfficeScene([home],'session',false,ids).floors.some(f=>f.kind==='break'),false)
 })
 
