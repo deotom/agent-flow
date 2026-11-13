@@ -86,7 +86,7 @@ export function AgentVisualizer({ desktopWidget = false }: { desktopWidget?: boo
   } = useAgentSimulation({
     restoring: bridge.restoring,
     // The board does not need the canvas animation; the graph pane does.
-    visible: bridge.viewVisible && (!teamMode || (teamPane === 'graph' && !desktopWidget)),
+    visible: bridge.viewVisible && (!teamMode || teamPane === 'graph'),
     animationMode: bridge.animationMode,
     animationSpeed: bridge.animationSpeed,
     useMockData: bridge.useMockData,

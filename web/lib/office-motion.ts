@@ -7,7 +7,7 @@ import { officeNavigation, officeLanding, officeInteriorDoor } from './office-na
 
 export type OfficePane = 'board' | 'graph' | 'office'
 export interface OfficeTripSegment { from: OfficePoint; to: OfficePoint; duration: number; kind: 'walk' | 'ride' | 'hold'; floorId?: string; opacity?:readonly [number,number] }
-export interface OfficeTrip { event: OfficeEvent; actorKey: string; actor: OfficeActor; segments: OfficeTripSegment[]; startedAt: number; endsAt: number; caption: string; shaftX:number; rungPitch:number }
+export interface OfficeTrip { event: OfficeEvent; actorKey: string; actor: OfficeActor; segments: OfficeTripSegment[]; startedAt: number; endsAt: number; caption: string; shaftX:number; rungPitch:number; workFloor?:{id:string;y:number;height:number;width:number} }
 export interface OfficeTripFrame { point: OfficePoint; pose: OfficePose; elevatorY: number | null; done: boolean; floorId?: string }
 
 /** Resume only trips whose destination still agrees with the latest snapshot. */
@@ -22,7 +22,7 @@ const point = (value: OfficePoint): OfficePoint => ({ x: value.x, y: value.y })
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value))
 
 /** Lifecycle trips need new evidence; activity trips illustrate current observed work. */
-export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: OfficeScene, now: number): OfficeTrip | null {
+export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: OfficeScene, now: number, activityTarget?:OfficePoint): OfficeTrip | null {
   const child = next.actors.find(actor => actor.key === event.actorKey) ?? (event.kind === 'left' ? before.actors.find(actor => actor.key === event.actorKey) : null)
   const parent = event.parentKey ? next.actors.find(actor => actor.key === event.parentKey) : null
   if (!child || child.hidden) return null
@@ -38,11 +38,11 @@ export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: 
   if (!presence && !changedRoom && old && !next.floors.some(floor => floor.id === old.floorId)) return null
   const nav=officeNavigation(next),liftX=nav.shaftX
   const door=nav.hatch
-  const from = event.kind === 'arrived' && !old ? { x: liftX, y: door.y } : point(old ?? moving)
+  const from = event.kind === 'arrived' && !old ? { x: liftX-60*nav.scale, y: door.y } : point(old ?? moving)
   const home = point(moving)
-  const destination = changedRoom ? point(child) : event.kind === 'activity' ? officeWorkTarget(child,next,event.station??'terminal') : event.kind === 'assigned' ? { x: child.x > 65 ? child.x - 18 : child.x + 18, y: child.y }
+  const destination = changedRoom ? point(child) : event.kind === 'activity' ? activityTarget??officeWorkTarget(child,next,event.station??'terminal') : event.kind === 'assigned' ? { x: child.x > 65 ? child.x - 18 : child.x + 18, y: child.y }
     : event.kind === 'sent' ? { x: parent!.x > 100 ? parent!.x - 18 : parent!.x + 18, y: parent!.y }
-    : event.kind === 'left' ? { x: liftX, y: door.y } : point(moving)
+    : event.kind === 'left' ? { x: liftX-60*nav.scale, y: door.y } : point(moving)
   const segments: OfficeTripSegment[] = []
   let cursor = from
   let cursorFloor=event.kind==='arrived'&&!old?'lounge':old?.floorId??moving.floorId
@@ -66,11 +66,11 @@ export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: 
     const target=officeLanding(next,toFloor)??{x:liftX-28*nav.scale,y:to.y}
     if(cursorFloor!==toFloor){
       const source=officeLanding(cursorScene,cursorFloor)??{x:liftX-28*nav.scale,y:cursor.y}
-      walk({x:cursor.x,y:source.y});walk(source);walk({x:liftX,y:source.y});leg(cursor,280,'hold')
+      walk({x:cursor.x,y:source.y});walk(source);walk({x:liftX,y:source.y});leg(cursor,650,'hold')
       const distance=Math.abs(target.y-cursor.y)
       if(distance>.01)leg({x:liftX,y:target.y},distance/(80*nav.scale)*1000,'ride')
       cursorFloor=toFloor;cursorScene=next
-      leg(cursor,280,'hold');walk(target)
+      leg(cursor,650,'hold');walk(target)
     }else{walk({x:cursor.x,y:target.y})}
     walk({x:to.x,y:target.y});walk(to)
   }
@@ -84,9 +84,17 @@ export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: 
     if (event.kind === 'left') { travel(door,'lounge'); leg(door, 250, 'hold') }
     travel(destination,destinationFloor)
     leg(destination, event.kind === 'finished' ? 300 : event.kind==='activity'?2200:1400, 'hold')
-    if (event.kind !== 'finished' && !presence && !changedRoom) travel(home,moving.floorId)
+    if (event.kind !== 'finished' && event.kind!=='activity' && !presence && !changedRoom) travel(home,moving.floorId)
   }
-  return { event, actorKey: moving.key, actor: moving, segments, startedAt: now, endsAt: now + segments.reduce((sum, segment) => sum + segment.duration, 0), caption: changedRoom && event.kind !== 'left' ? captions.finished : captions[event.kind],shaftX:nav.shaftX,rungPitch:nav.rungPitch }
+  const floor=event.kind==='activity'?next.floors.find(f=>f.id===moving.floorId):null
+  return { event, actorKey: moving.key, actor: moving, segments, startedAt: now, endsAt: now + segments.reduce((sum, segment) => sum + segment.duration, 0), caption: changedRoom && event.kind !== 'left' ? captions.finished : captions[event.kind],shaftX:nav.shaftX,rungPitch:nav.rungPitch,workFloor:floor?{id:floor.id,y:floor.y,height:floor.height??next.width*.5625,width:next.width}:undefined }
+}
+
+/** Work paths stay attached to the same straight aisle during smooth floor relayout. */
+export function officeWorkTripFrame(trip:OfficeTrip,now:number,scene:OfficeScene):OfficeTripFrame {
+ const frame=officeTripFrame(trip,now),prior=trip.workFloor,floor=prior&&scene.floors.find(f=>f.id===prior.id)
+ if(!prior||!floor||prior.width<=0||prior.height<=0)return frame
+ return {...frame,point:{x:frame.point.x*scene.width/prior.width,y:floor.y+(frame.point.y-prior.y)*(floor.height??scene.width*.5625)/prior.height}}
 }
 
 export function officeTripFrame(trip: OfficeTrip, now: number): OfficeTripFrame {
@@ -98,7 +106,7 @@ export function officeTripFrame(trip: OfficeTrip, now: number): OfficeTripFrame 
       const ratio = clamp(elapsed / segment.duration, 0, 1)
       const position = { x: segment.from.x + (segment.to.x - segment.from.x) * ratio, y: segment.from.y + (segment.to.y - segment.from.y) * ratio }
       return { point: position, done: false, floorId:segment.floorId, elevatorY: segment.kind === 'ride' ? position.y : null,
-        pose: { opacity:segment.opacity?segment.opacity[0]+(segment.opacity[1]-segment.opacity[0])*ratio:undefined,climb: segment.kind === 'ride'||(segment.kind==='hold'&&Math.abs(position.x-trip.shaftX)<.01),climbStep:position.y/trip.rungPitch,walk: segment.kind === 'walk', face:segment.to.x<segment.from.x?-1:1, sit: false, carry: trip.event.kind === 'sent' || trip.event.kind === 'assigned',
+        pose: { inLift:segment.kind==='ride',opacity:segment.opacity?segment.opacity[0]+(segment.opacity[1]-segment.opacity[0])*ratio:undefined,climb: segment.kind === 'ride'||(segment.kind==='hold'&&Math.abs(position.x-trip.shaftX)<.01),climbStep:position.y/trip.rungPitch,walk: segment.kind === 'walk', face:segment.to.x<segment.from.x?-1:1, sit: false, carry: trip.event.kind === 'sent' || trip.event.kind === 'assigned',
           objectAction:segment.kind==='hold'&&trip.event.kind==='activity'&&trip.event.station==='research'?'book':undefined,
           typing:segment.kind==='hold'&&trip.event.kind==='activity'&&(trip.event.station==='build'||trip.event.station==='terminal'),
           hand:segment.kind==='hold'&&(trip.event.kind==='received'||(trip.event.kind==='activity'&&(trip.event.station==='planning'||trip.event.station==='quality'))) } }

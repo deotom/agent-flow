@@ -1,9 +1,10 @@
-import type { OfficeScene } from '../../../lib/office-types'
+import type { OfficeArchitectureArt, OfficeScene } from '../../../lib/office-types'
+import { officeDoorBounds, officeInteriorDoor } from '../../../lib/office-navigation'
 
 type Ctx = CanvasRenderingContext2D
 
 /** The doorway is shared by main-room travel and the private cutaway view. */
-export function drawOfficeInteriorDoors(c: Ctx, scene: OfficeScene, activeDoorFloorId: string | null = null) {
+export function drawOfficeInteriorDoors(c: Ctx, scene: OfficeScene, activeDoorFloorId: string | null = null, art?:OfficeArchitectureArt|null) {
   const scale = scene.width / 450
   const doors = scene.floors.filter(floor => floor.annexOf
     ? !scene.floors.some(parent => parent.id === floor.annexOf)
@@ -13,9 +14,15 @@ export function drawOfficeInteriorDoors(c: Ctx, scene: OfficeScene, activeDoorFl
     if (floor.constructing || height < 60 * scale) continue
     const annex = scene.floors.find(item => item.annexOf === floor.id)
     const open = activeDoorFloorId === floor.id || activeDoorFloorId === annex?.id || activeDoorFloorId === floor.annexOf
+    const point=officeInteriorDoor(scene,floor.id),bounds=officeDoorBounds(scene,floor.id)
+    if(!point||!bounds)continue
     c.save()
     c.beginPath(); c.rect(0, floor.y, scene.width * .89, height); c.clip()
-    c.translate(scene.width * .85, floor.y + height * .79); c.scale(scale * .75, scale)
+    if(art){
+      c.drawImage(open?art.doorOpen:art.doorClosed,bounds.x,bounds.y,bounds.width,bounds.height)
+      c.restore();continue
+    }
+    c.translate(point.x,point.y); c.scale(scale, scale)
     c.fillStyle = '#30251e'; c.fillRect(-17, -77, 34, 80)
     c.fillStyle = '#ac7a45'; c.fillRect(-16, -77, 4, 79); c.fillRect(12, -77, 4, 79); c.fillRect(-16, -77, 32, 5)
     c.fillStyle = '#e1ba7a'; c.fillRect(-15, -76, 2, 77); c.fillRect(-15, -76, 30, 2)
@@ -34,7 +41,7 @@ export function drawOfficeInteriorDoors(c: Ctx, scene: OfficeScene, activeDoorFl
       c.strokeStyle = '#78613b'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(0, -64); c.lineTo(0, -49); c.stroke()
       c.fillStyle = '#e6c67e'; c.beginPath(); c.ellipse(7, -31, 1.8, 1.8, 0, 0, Math.PI * 2); c.fill()
     }
-    c.fillStyle = '#d7bc85'; c.fillRect(-18, 0, 36, 3)
+    c.fillStyle = '#b59b6e'; c.fillRect(-17, 0, 34, 1)
     c.fillStyle = '#463a28'; c.fillRect(-13, -45, 26, 9)
     c.fillStyle = '#f5dfab'; c.font = 'bold 5px sans-serif'; c.textAlign = 'center'; c.fillText(floor.annexOf ? 'WORK' : 'REST', 0, -39)
     c.fillStyle = '#d8b45f'; c.fillRect(-3, -84, 6, 7)

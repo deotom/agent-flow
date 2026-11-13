@@ -344,7 +344,7 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
   const selectedExists = Boolean(detailAgentId && detailSnapshot?.agents.some(agent => agent.id === detailAgentId))
   const dismiss = (id: string) => setDismissed(previous => new Set(previous).add(id))
   const statuses = office ? officeSnapshots.flatMap(team => team.agents.map(agent => agent.status)) : snapshot?.agents.map(agent => agent.status) ?? []
-  const showGraph = pane === 'graph' && !widget && Boolean(snapshot)
+  const showGraph = pane === 'graph' && Boolean(snapshot)
 
   return (
     <div className="jv-root" data-widget={widget} data-motion={animationMode} data-live={live}>
@@ -357,7 +357,7 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
             {widget && !office && <Legend />}
           </div>
           {!office && view && <Pipeline view={view} compact={widget} />}
-          {widget && <Segmented label="View" value={office ? 'office' : 'board'} onChange={onPane} options={[{ value: 'board', label: 'Board' }, { value: 'office', label: 'Office' }]} />}
+          {widget && <Segmented label="View" value={pane} onChange={onPane} options={[{ value: 'board', label: 'Board' }, { value: 'graph', label: 'Graph' }, { value: 'office', label: 'Office' }]} />}
         </div>
         {!widget && (
           <div className="jv-bar-tools">

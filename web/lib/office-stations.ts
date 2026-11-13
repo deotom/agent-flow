@@ -21,7 +21,7 @@ export function officeStations(floor:OfficeFloor,width:number){
  const order=Array.from({length:4},(_,i)=>kinds[(i+seed%4)%4])
  if(seed&4)order.reverse()
  const height=floor.height??width*.5625
- return order.map((kind,i)=>({kind,x:width*(.11+.195*i),y:floor.y+height*.74,width:width*.21,height:width*.21}))
+ return order.map((kind,i)=>({kind,x:width*(.11+.185*i),y:floor.y+height*.74,width:width*.18,height:width*.18}))
 }
 export function officeStationPoint(floor:OfficeFloor,width:number,kind:OfficeWorkStation){
  const h=floor.height??width*.5625

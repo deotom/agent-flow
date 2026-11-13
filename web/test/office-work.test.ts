@@ -1,7 +1,7 @@
 import { it } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildOfficeScene } from '../lib/office-model'
-import { officeWorkEvents, officeWorkPulse } from '../lib/office-work'
+import { officeWorkEvents, officeWorkPulse, officeWorkTarget } from '../lib/office-work'
 import { createOfficeTrip } from '../lib/office-motion'
 import type { TeamSnapshot } from '../lib/team-types'
 
@@ -19,7 +19,7 @@ it('uses newly observed tools for work-station trips without replaying initial h
  const trip=createOfficeTrip(events[0],before,next,0)!
  assert.ok(trip);assert.ok(trip.segments.some(s=>s.kind==='walk'))
  assert.ok(trip.segments.every(s=>s.kind!=='ride'))
- assert.deepEqual(trip.segments.at(-1)?.to,{x:next.actors[0].x,y:next.actors[0].y})
+ assert.deepEqual(trip.segments.at(-1)?.to,officeWorkTarget(next.actors[0],next,events[0].station!))
 })
 it('represents current thinking at the planning board, never sends resting or hidden people to work',()=>{
  const next=scene(),event=officeWorkPulse(next,0,10)!

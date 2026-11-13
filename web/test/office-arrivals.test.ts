@@ -18,7 +18,7 @@ test('new agents wait outside and enter in staggered parallel trips without desk
  assert.equal(visible.length,2)
  const first=visible.find(a=>a.key===events[0].actorKey)!
  assert.notEqual(first.y,next.actors.find(a=>a.key===first.key)!.y)
- assert.equal(first.x,[...trips.values()][0].shaftX)
+ assert.ok(first.x<[...trips.values()][0].shaftX,'arrival starts on the garden path before entering the lift')
  const later=advanceOfficeArrivals(trips,next,16000)
  assert.ok(later.completed.length>0||later.trips.size>0)
  const finished=advanceOfficeArrivals(later.trips,next,100000)

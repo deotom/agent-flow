@@ -84,12 +84,13 @@ describe('Office evidence animation', () => {
     assert.equal(trip.actorKey,'worker')
     assert.equal(officeTripFrame(trip,0).point.y,173)
     assert.ok(trip.segments.some(segment=>segment.kind==='ride'))
-    assert.equal(officeTripFrame(trip,trip.endsAt+1).point.x,trip.shaftX)
+    assert.ok(officeTripFrame(trip,trip.endsAt+1).point.x<trip.shaftX,'walks away from the garden lift')
   })
-  it('enters from outside before climbing the ladder to a desk', () => {
+  it('walks in from the garden before riding the lift to a desk', () => {
     const building=scene(actor('worker',173,'lead'))
     const trip=createOfficeTrip(event('arrived'),scene(),building,0)!
-    assert.equal(officeTripFrame(trip,0).point.x,trip.shaftX)
+    assert.ok(officeTripFrame(trip,0).point.x<trip.shaftX,'starts outside the lift')
+    assert.equal(trip.segments[0].kind,'walk')
     assert.ok(trip.segments.some(segment=>segment.kind==='ride'))
     assert.equal(officeTripFrame(trip,trip.endsAt+1).point.y,173)
   })

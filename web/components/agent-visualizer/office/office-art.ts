@@ -243,12 +243,13 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     c.fillStyle=`rgba(31,43,38,${.08+daylight.light*.06})`
     c.beginPath();c.ellipse(scene.width*(.14+daylight.shadow*.07),surface.height*.60,scene.width*(.06+Math.abs(daylight.shadow)*.09),surface.height*.022,daylight.shadow*.12,0,Math.PI*2);c.fill()
   }
-  drawOfficeShaft(c,scene)
-  drawOfficeInteriorDoors(c,scene,o.openDoorFloorId)
+  drawOfficeShaft(c,scene,false,o.architectureArt)
+  drawOfficeInteriorDoors(c,scene,o.openDoorFloorId,o.architectureArt)
   const visible=scene.actors.filter(a=>!a.hidden),byKey=new Map(visible.map(a=>[a.key,a]))
   const pairs=time?pairsFor(scene.actors):new Map<string,OfficeLifePair>()
   const offsets=new Map<string,OfficeDrawnOffset>()
   for(const actor of visible.sort((a,b)=>a.y-b.y)) {
+    if(actor.pose?.inLift)continue
     const moving=Boolean(actor.pose?.walk||actor.pose?.climb)
     const waiting=actor.agent.status.startsWith('waiting_'),failed=actor.agent.status==='failed'
     const pair=pairs.get(actor.key),partner=pair&&byKey.get(pair.partnerKey)
@@ -267,12 +268,12 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     c.save();c.globalAlpha=(Number.isFinite(c.globalAlpha)?c.globalAlpha:1)*(actor.pose?.opacity??1);c.translate(actor.x+life.dx,actor.y);c.scale(scale,scale)
     drawOfficeAvatar(c,actor.appearance,0,0,t,{sit:!moving&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving,hand:o.live&&waiting,
       mug:actor.zone==='lounge'&&!moving&&(!life.objectAction||life.objectAction==='coffee'),objectAction:life.objectAction,lead:actor.agent.role==='lead'||actor.pod,cup:life.cup,stretch:life.stretch,lean:life.lean,doze:life.doze,
-      slump:life.slump,scratch:life.scratch,wave:life.wave,turn:life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose})
+      slump:life.slump,scratch:life.scratch,wave:life.wave,turn:life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose,climb:false})
     if(life.mood){c.translate(0,-life.hop);drawMood(c,life.mood,t)}
     c.restore()
     offsets.set(actor.key,{dx:life.dx,dy:-life.hop*scale})
   }
-  drawOfficeShaft(c,scene,true)
+  drawOfficeShaft(c,scene,true,o.architectureArt,o.liftSurfaceOpen)
   if(time)drawAmbient(c,scene,time,officeAmbient(o.date).night)
   return offsets
 }
