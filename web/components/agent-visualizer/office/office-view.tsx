@@ -5,7 +5,7 @@ import type { TeamSnapshot } from '../../../lib/team-types'
 import { isWorking, type TeamScope, type ConnectionView } from '../../../lib/team-model'
 import type { AnimationMode } from '../../../lib/viewer-preferences'
 import type { OfficeActor, OfficeEvent, OfficePet, OfficeScene, OfficeWorkStation, OfficeLeisureAction } from '../../../lib/office-types'
-import { assignOfficeIdentities, buildOfficeScene, currentOfficeBoard, officeEvents, officeKey, officeTeamOrder } from '../../../lib/office-model'
+import { assignOfficeIdentities, buildOfficeScene, currentOfficeBoard, officeEvents, officeKey, officeTeamOrder, officeTeamQuiet } from '../../../lib/office-model'
 import { createOfficeTrip, mergeOfficeEvents, officeAllowsMotion, officeCanResumeTrip, officeDepartureScene, officePresenceEvents, populatedOfficeTeams, officeTripFrame, parseOfficeIdentities, type OfficeTrip } from '../../../lib/office-motion'
 import { deriveOfficeParties, emptyOfficePartyHistory } from '../../../lib/office-parties'
 import { drawOfficeFrame, officeAmbient } from './office-art'
@@ -14,10 +14,12 @@ import { officeDaylight } from '../../../lib/office-daylight'
 import { officeWorkEvents, officeWorkPulse, OFFICE_STATION_LABELS } from '../../../lib/office-work'
 import { officeStations, officeStationUsers, officeRoomSeed, OFFICE_STATION_NAMES } from '../../../lib/office-stations'
 import { officeLeisureObjects, nearestLeisureActor, createOfficeLeisureTrip, OFFICE_OBJECT_NAMES } from '../../../lib/office-leisure'
-import { officeHatchOpen } from '../../../lib/office-navigation'
+import { officeHatchOpen, officeInteriorDoor } from '../../../lib/office-navigation'
 import { officeSky, officeSkyIcon } from '../../../lib/office-sky'
 import { officeSeasonalActivity, officeSeasonalObjects } from '../../../lib/office-seasonal'
 import { addOfficeArrivals, advanceOfficeArrivals, officeActorsWithArrivals } from '../../../lib/office-arrivals'
+import { useOfficeLayout } from './use-office-layout'
+import { OfficeBreakPeek } from './office-break-peek'
 
 interface OfficeViewProps {
   snapshots: readonly TeamSnapshot[]
@@ -62,7 +64,7 @@ type Pending = { event: OfficeEvent; before: OfficeScene }
 export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam, live, connection, visible, animationMode, now }: OfficeViewProps) {
   const [savedIdentities, setSavedIdentities] = useState(readIdentities)
   const [savedTeamOrder,setSavedTeamOrder] = useState(readTeamOrder)
-  const teamOrder = useMemo(()=>officeTeamOrder(snapshots.map(s=>s.sessionId),savedTeamOrder),[snapshots,savedTeamOrder])
+  const teamOrder = useMemo(()=>officeTeamOrder(snapshots.filter(s=>!officeTeamQuiet(s)).map(s=>s.sessionId),savedTeamOrder),[snapshots,savedTeamOrder])
   useEffect(()=>{
     if(teamOrder===savedTeamOrder)return
     setSavedTeamOrder(teamOrder)
@@ -75,6 +77,9 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     try { localStorage.setItem(IDENTITY_STORAGE, JSON.stringify([...identities].slice(-10_000))) } catch { /* The in-memory identities still remain stable. */ }
   }, [identities, savedIdentities])
   const [showQuiet, setShowQuiet] = useState(false)
+  const [peekId,setPeekId] = useState<string|null>(null)
+  const lastDoor=useRef<HTMLButtonElement|null>(null)
+  const closePeek=()=>{setPeekId(null);requestAnimationFrame(()=>{if(lastDoor.current?.isConnected)lastDoor.current.focus()})}
   const [stationSelection,setStationSelection]=useState<{sessionId:string;kind:OfficeWorkStation}|null>(null)
   // The user's own pause choice persists across launches.
   const [paused, setPaused] = useState(() => { try { return localStorage.getItem(PAUSE_STORAGE) === 'true' } catch { return false } })
@@ -93,9 +98,11 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const [heldLayout, setHeldLayout] = useState<OfficeScene | null>(null)
   const held = useRef<OfficeScene | null>(null)
   const holdLayout = (value: OfficeScene | null) => { held.current = value; setHeldLayout(value) }
-  const visualScene = useMemo(() => heldLayout ? officeDepartureScene(heldLayout, scene, snapshots) : scene, [heldLayout, scene, snapshots])
   const enabled = visible && pageVisible && live && officeAllowsMotion(animationMode) && !paused
+  const layoutTarget = useMemo(() => heldLayout ? officeDepartureScene(heldLayout, scene, snapshots) : scene, [heldLayout, scene, snapshots])
+  const visualScene = useOfficeLayout(layoutTarget,visible&&pageVisible&&officeAllowsMotion(animationMode)&&!paused,!live)
   const canvas = useRef<HTMLCanvasElement>(null)
+  const peekCanvas = useRef<HTMLCanvasElement>(null)
   const lastPainted = useRef<Moving|null>(null)
   const painted = useRef(false)
   const reconnecting = useRef(false)
@@ -137,8 +144,8 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const greet = useRef<{ key: string; until: number } | null>(null)
   const greetCooldown = useRef(new Map<string, number>())
   const [inspectedKey, setInspectedKey] = useState<string | null>(null)
-  const current = useRef({ scene: visualScene, selectedKey, pets, petEvent, enabled, live })
-  current.current = { scene: visualScene, selectedKey, pets, petEvent, enabled, live }
+  const current = useRef({ scene: visualScene, selectedKey, pets, petEvent, enabled, live, peekId })
+  current.current = { scene: visualScene, selectedKey, pets, petEvent, enabled, live, peekId }
 
   useEffect(() => {
     const previous = baseline.current
@@ -208,11 +215,24 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
       drawOfficeDaylight(skyContext,input.scene,new Date(),input.enabled?elapsed.current:0)
     }
     const greeting = greet.current && greet.current.until > elapsed.current ? greet.current.key : null
-    const offsets = drawOfficeFrame(context, { ...input.scene, actors }, { time: elapsed.current, date: new Date(), now: Date.now(), live: input.live,
+    const publicFloors=input.scene.floors.filter(f=>!f.annexOf)
+    const publicIds=new Set(publicFloors.filter(f=>!f.constructing).map(f=>f.id))
+    const doorFloor=input.scene.floors.find(f=>f.annexOf&&movement&&f.sessionId===movement.actor.sessionId&&(()=>{const p=officeInteriorDoor(input.scene,f.id);return p&&Math.abs(p.x-movement.actor.x)<20*input.scene.width/450&&Math.abs(p.y-movement.actor.y)<35*input.scene.width/450})())
+    const options={ time: elapsed.current, date: new Date(), now: Date.now(), live: input.live,
       motion: input.enabled, pets: input.pets, petEvent: input.petEvent, selectedKey: input.selectedKey,
+      openDoorFloorId:input.peekId??doorFloor?.id??null,
       objectCue:objectCue.current&&objectCue.current.until>elapsed.current?objectCue.current:null,
       leisureKeys:new Set([...leisureTrips.current.keys(),...arrivalTrips.current.keys()]),
-      tripKey: input.enabled ? active.current?.actorKey ?? null : null, greetKey: input.enabled ? greeting : null })
+      tripKey: input.enabled ? active.current?.actorKey ?? null : null, greetKey: input.enabled ? greeting : null }
+    const offsets = drawOfficeFrame(context, { ...input.scene, actors:actors.filter(a=>publicIds.has(a.floorId)) },options)
+    const annex=input.scene.floors.find(f=>f.id===input.peekId&&f.annexOf),peek=peekCanvas.current,peekContext=peek?.getContext('2d')
+    if(annex&&peek&&peekContext){
+      const ph=Math.max(1,annex.height??0)
+      if(peek.width!==w||peek.height!==Math.round(ph*ratio)){peek.width=w;peek.height=Math.round(ph*ratio)}
+      peekContext.setTransform(ratio,0,0,ratio,0,0)
+      const local={...input.scene,height:ph,floors:[{...annex,y:0}],actors:actors.filter(a=>a.floorId===annex.id).map(a=>({...a,y:a.y-annex.y}))}
+      for(const [key,offset] of drawOfficeFrame(peekContext,local,options))offsets.set(key,offset)
+    }
     if (!cssScale.current) cssScale.current = (element.clientWidth || input.scene.width) / input.scene.width
     for (const [key, button] of agentRefs.current) {
       const offset = offsets.get(key), k = cssScale.current
@@ -236,7 +256,9 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   useEffect(() => {
     if (!live && painted.current) return
     if (!enabled || (!active.current&&!queue.current.length)) paint(null)
-  }, [visualScene, now, enabled, live, selectedKey, petEvent])
+  }, [visualScene, now, enabled, live, selectedKey, petEvent, peekId])
+  useEffect(()=>{if(peekId)paint(lastPainted.current)},[peekId])
+  useEffect(()=>{if(peekId&&!scene.floors.some(f=>f.id===peekId))setPeekId(null)},[scene,peekId])
   useEffect(() => {
     const element = canvas.current
     if (!element || typeof ResizeObserver === 'undefined') return
@@ -254,7 +276,9 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
       const delta = Math.min(200, time - lastTime) * (animationMode === 'low' ? .5 : 1)
       lastTime = time; elapsed.current += delta / 1000; motionClock.current += delta
       // Freeze on every RAF, including skipped paint frames, while old floors are held.
-      if(held.current)for(const [key,trip] of arrivalTrips.current)arrivalTrips.current.set(key,{...trip,startedAt:trip.startedAt+delta,endsAt:trip.endsAt+delta})
+      const growing=new Set(current.current.scene.floors.filter(f=>f.constructing).map(f=>f.id))
+      for(const floor of current.current.scene.floors)if(floor.annexOf&&growing.has(floor.annexOf))growing.add(floor.id)
+      for(const [key,trip] of arrivalTrips.current)if(held.current||growing.has(trip.actor.floorId))arrivalTrips.current.set(key,{...trip,startedAt:trip.startedAt+delta,endsAt:trip.endsAt+delta})
       if (time - lastPaint < interval) return
       lastPaint = time
       const input = current.current
@@ -307,7 +331,10 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
           if (trip.event.kind === 'left' && held.current) holdLayout({ ...held.current, actors: held.current.actors.filter(item => item.key !== trip.actorKey) })
           active.current = null; setMoving(null)
         }
-        else movement = { actor: { ...actor, ...frame.point, pose: { ...frame.pose, lead: actor.agent.role === 'lead' } }, caption: trip.caption, elevatorY: frame.elevatorY, station:trip.event.station }
+        else {
+          const dy=trip.event.kind==='activity'?actor.y-trip.actor.y:0
+          movement = { actor: { ...actor, ...frame.point,y:frame.point.y+dy,floorId:frame.floorId??actor.floorId, pose: { ...frame.pose, lead: actor.agent.role === 'lead' } }, caption: trip.caption, elevatorY: frame.elevatorY, station:trip.event.station }
+        }
       }
       for(const [key,entry] of leisureTrips.current){
         const actor=input.scene.actors.find(a=>a.key===key)
@@ -345,8 +372,19 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     const newTeams=new Set(priorDisplay.snapshots.length?snapshots.filter(s=>!priorIds.has(s.sessionId)).map(s=>s.sessionId):[])
     displayedArrivals=addOfficeArrivals(displayedArrivals,officePresenceEvents(priorDisplay.scene,scene,populatedOfficeTeams(priorDisplay.snapshots),Date.now(),newTeams),priorDisplay.scene,scene,motionClock.current)
   }
-  const displayed=officeActorsWithArrivals(visualScene,displayedArrivals,motionClock.current).map(actor=>moving?.actor.key===actor.key?moving.actor:restByKey.get(actor.key)??actor)
-  if(moving&&!displayed.some(a=>a.key===moving.actor.key))displayed.push(moving.actor)
+  const allDisplayed=officeActorsWithArrivals(visualScene,displayedArrivals,motionClock.current).map(actor=>moving?.actor.key===actor.key?moving.actor:restByKey.get(actor.key)??actor)
+  if(moving&&!allDisplayed.some(a=>a.key===moving.actor.key))allDisplayed.push(moving.actor)
+  const publicFloors=visualScene.floors.filter(f=>!f.annexOf)
+  const publicIds=new Set(publicFloors.filter(f=>!f.constructing).map(f=>f.id))
+  const displayed=allDisplayed.filter(a=>publicIds.has(a.floorId))
+  const peekFloor=visualScene.floors.find(f=>f.id===peekId&&f.annexOf)
+  const visitObject=(floor:OfficeScene['floors'][number],object:{kind:OfficeLeisureAction;label:string;x:number;y:number})=>{
+    const playable={...current.current.scene,actors:current.current.scene.actors.filter(a=>a.key!==active.current?.actorKey&&!arrivalTrips.current.has(a.key))}
+    const person=nearestLeisureActor(playable,floor,object)
+    if(!person)return
+    if(current.current.enabled){const trip=createOfficeLeisureTrip(current.current.scene,person.key,object,motionClock.current,leisureVisual.current.get(person.key)?.actor);if(trip)leisureTrips.current.set(person.key,{trip,kind:object.kind})}
+    else{objectCue.current={actorKey:person.key,kind:object.kind,until:elapsed.current+7};paint(lastPainted.current)}
+  }
 
   const ambient = officeAmbient(new Date(now))
   const sky = officeSky(new Date(now))
@@ -376,15 +414,16 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
         {snapshots.length === 0 ? <p className="of-empty">Your teams will appear here.</p> : (
           <div className="of-building" style={{ width:'100%', maxWidth:900, aspectRatio:`${visualScene.width} / ${visualScene.height}` } as CSSProperties}>
             <canvas ref={skyCanvas} aria-hidden="true" style={{height:`${(visualScene.floors.find(f=>f.kind==='lounge')?.height??0)/visualScene.height*100}%`,zIndex:0}} />
-            {visualScene.floors.filter(f=>f.kind!=='quiet').map(floor=><div key={`art-${floor.id}`} aria-hidden="true" data-season={floor.kind==='lounge'?sky.season:undefined} className={`of-art of-art-${floor.kind==='lounge'?'surface':floor.room}`} style={{top:`${floor.y/visualScene.height*100}%`,height:`${(floor.height??0)/visualScene.height*100}%`,filter:floor.kind==='lounge'?`brightness(${.32+.68*daylight.light}) saturate(${.7+.3*daylight.light})`:undefined}} />)}
+            {publicFloors.filter(f=>f.kind!=='quiet').map(floor=><div key={`art-${floor.id}`} aria-hidden="true" data-season={floor.kind==='lounge'?sky.season:undefined} className={`of-art of-art-${floor.kind==='lounge'?'surface':floor.room}`} style={{top:`${floor.y/visualScene.height*100}%`,height:`${(floor.height??0)/visualScene.height*100}%`,filter:floor.kind==='lounge'?`brightness(${.32+.68*daylight.light}) saturate(${.7+.3*daylight.light})`:undefined}} />)}
             <div aria-hidden="true" className="of-art of-art-bottom" style={{bottom:0,height:`${visualScene.width/3/visualScene.height*100}%`}} />
             <div ref={hatchClosed} aria-hidden="true" data-season={sky.season} className="of-hatch-closed" style={{height:`${(lounge?.height??0)/visualScene.height*100}%`,filter:`brightness(${.32+.68*daylight.light}) saturate(${.7+.3*daylight.light})`}}/>
             <span className="of-season-label" title={`${sky.label} · Simulated weather · ${seasonalActivity.label}`} style={{top:`${(lounge?.height??0)*.86/visualScene.height*100}%`}}>{sky.label} · {seasonalActivity.label}</span>
             {visualScene.floors.filter(f=>f.kind==='team').map(floor=><div key={`tint-${floor.id}`} aria-hidden="true" className="of-room-tint" style={{top:`${(floor.y+(floor.height??0)*.20)/visualScene.height*100}%`,height:`${(floor.height??0)*.41/visualScene.height*100}%`,background:['#427b75','#79609a','#657d49','#a46342'][officeRoomSeed(floor.sessionId??floor.id)%4]}} />)}
-            {visualScene.floors.filter(f=>f.kind==='team').flatMap(floor=>officeStations(floor,visualScene.width).map(station=>{
+            {visualScene.floors.filter(f=>f.kind==='team'&&!f.constructing).flatMap(floor=>officeStations(floor,visualScene.width).map(station=>{
               const users=officeStationUsers(scene,floor,station.kind)
               return <button key={`${floor.id}-${station.kind}`} type="button" className="of-workbench" data-kind={station.kind} data-active={users.length>0}
                 aria-label={`${OFFICE_STATION_NAMES[station.kind]}, ${floor.title}, ${users.length} working`}
+                tabIndex={peekFloor?.sessionId===floor.sessionId?-1:0}
                 onClick={()=>floor.sessionId&&setStationSelection({sessionId:floor.sessionId,kind:station.kind})}
                 style={{left:`${(station.x-station.width/2)/visualScene.width*100}%`,top:`${(station.y-station.height*.88)/visualScene.height*100}%`,width:`${station.width/visualScene.width*100}%`,height:`${station.height/visualScene.height*100}%`,'--station-accent':floor.color} as CSSProperties}>
                 <span>{OFFICE_STATION_NAMES[station.kind]}{users.length>0&&<b> · {users.length}</b>}</span>
@@ -392,7 +431,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
               </button>
             }))}
             {/* Every office has a progress board; compact rooms use a smaller wall panel. */}
-            {visualScene.floors.filter(floor => floor.kind === 'team').map(floor => {
+            {visualScene.floors.filter(floor => floor.kind === 'team'&&!floor.constructing).map(floor => {
               // Geometry may be held during departures; content always comes from the current scene.
               const board = currentOfficeBoard(floor, scene), h = floor.height ?? 0
               const compact = floor.room !== 'room-stations-large'
@@ -409,30 +448,42 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
                 </div>
                 <ul aria-hidden="true">{board.items.map((item, index) => <li key={index} data-state={item.state}><b>{BOARD_MARKS[item.state]}</b>{item.label}</li>)}</ul>
                 </div>
-                <button type="button" className="of-board-hit" aria-label={`Inspect planning board, ${floor.title}`} onClick={()=>floor.sessionId&&setStationSelection({sessionId:floor.sessionId,kind:'planning'})}/>
+                <button type="button" className="of-board-hit" tabIndex={peekFloor?.sessionId===floor.sessionId?-1:0} aria-label={`Inspect planning board, ${floor.title}`} onClick={()=>floor.sessionId&&setStationSelection({sessionId:floor.sessionId,kind:'planning'})}/>
               </div>
             })}
-            <canvas ref={canvas} role="img" aria-label={`Office with ${visualScene.actors.filter(a=>!a.hidden).length} visible agents from ${snapshots.length} T3 teams. Choose an agent for details.`} />
+            <canvas ref={canvas} role="img" aria-label={`Office with ${displayed.filter(a=>!a.hidden).length} visible agents from ${snapshots.length} T3 teams. Choose an agent for details.`} />
             <button ref={hatchButton} type="button" className="of-hatch-hit" aria-label="Open garden hatch" aria-expanded="false" onClick={()=>{hatchManual.current=!hatchManual.current;paint(lastPainted.current)}} style={{top:`${(lounge?.height??0)*.51/visualScene.height*100}%`,height:`${(lounge?.height??0)*.25/visualScene.height*100}%`}}/>
-            {visualScene.floors.filter(f=>f.kind==='break'||f.kind==='lounge').flatMap(floor=>{
+            {publicFloors.filter(f=>f.kind==='break'||f.kind==='lounge').flatMap(floor=>{
               if(!visualScene.actors.some(a=>a.floorId===floor.id&&a.zone==='lounge'&&!a.hidden))return []
               return [...officeLeisureObjects(floor,visualScene.width).map(object=>({...object,label:OFFICE_OBJECT_NAMES[object.kind]})),...officeSeasonalObjects(floor,visualScene.width,new Date(now))].map((object,index)=><button key={`${floor.id}-${object.kind}-${index}`} type="button" className="of-object-hit" aria-label={`${object.label}, ${floor.title}`}
                 style={{left:`${(object.x-20)/visualScene.width*100}%`,top:`${(object.y-24)/visualScene.height*100}%`,width:`${40/visualScene.width*100}%`,height:`${34/visualScene.height*100}%`}}
-                onClick={()=>{const playable={...current.current.scene,actors:current.current.scene.actors.filter(a=>a.key!==active.current?.actorKey&&!arrivalTrips.current.has(a.key))};const person=nearestLeisureActor(playable,floor,object);if(person){
-                  if(current.current.enabled){const trip=createOfficeLeisureTrip(current.current.scene,person.key,object,motionClock.current,leisureVisual.current.get(person.key)?.actor);if(trip)leisureTrips.current.set(person.key,{trip,kind:object.kind})}
-                  else{objectCue.current={actorKey:person.key,kind:object.kind,until:elapsed.current+7};paint(lastPainted.current)}
-                }}}><span>{object.label}</span></button>)
+                onClick={()=>visitObject(floor,object)}><span>{object.label}</span></button>)
             })}
-            {visualScene.floors.filter(f=>f.kind!=='lounge').map(floor => <div key={floor.id} className="of-floor-row" style={{ top:`${(floor.y+5)/visualScene.height*100}%` }}>
+            {publicFloors.filter(f=>f.kind!=='lounge').map(floor => <div key={floor.id} className="of-floor-row" style={{ top:`${(floor.y+5)/visualScene.height*100}%` }}>
               <button type="button" className="of-floor-label" style={floor.kind === 'team' || floor.kind === 'break' ? { borderLeft:`4px solid ${floor.color}` } : undefined}
+                tabIndex={peekFloor?.sessionId&&peekFloor.sessionId===floor.sessionId?-1:0}
                 aria-expanded={floor.kind === 'quiet' ? showQuiet : undefined}
                 title={floor.kind === 'quiet' ? showQuiet ? 'Hide history' : 'Show history' : floor.title}
                 onClick={() => floor.kind === 'quiet' ? setShowQuiet(v=>!v) : floor.sessionId && onOpenTeam(floor.sessionId,null)}>
                 <i aria-hidden="true" style={{background:floor.waiting ? '#ffc46b' : floor.working ? '#a8d78d' : floor.color}} />
                 <strong>{floor.title}{floor.kind === 'quiet' ? showQuiet ? ' · Hide history' : ' · Show history' : ''}</strong><span>{floor.kind === 'quiet' ? showQuiet ? '−' : '+' : floor.subtitle}</span>
               </button>
-              {!!floor.overflow && <button type="button" className="of-overflow" onClick={()=>floor.sessionId&&onOpenTeam(floor.sessionId,null)} aria-label={`Open team in Board: ${floor.overflow} more agents${floor.kind === 'break' ? ' resting in the break room' : ''}`}>+{floor.overflow}</button>}
+              {!!floor.overflow && <button type="button" className="of-overflow" tabIndex={peekFloor?.sessionId===floor.sessionId?-1:0} onClick={()=>floor.sessionId&&onOpenTeam(floor.sessionId,null)} aria-label={`Open team in Board: ${floor.overflow} more agents${floor.kind === 'break' ? ' resting in the break room' : ''}`}>+{floor.overflow}</button>}
             </div>)}
+            {visualScene.floors.filter(f=>f.annexOf).map(floor=>{
+              const door=officeInteriorDoor(visualScene,floor.id),parent=visualScene.floors.find(f=>f.id===floor.annexOf)
+              if(!door||!parent||parent.constructing)return null
+              const count=floor.actorKeys.length
+              const transit=Boolean(moving&&active.current?.event.kind!=='activity'&&moving.actor.sessionId===floor.sessionId&&(moving.actor.floorId===floor.id||active.current?.actor.floorId===floor.id))
+              return <button type="button" className="of-annex-door" data-transit={transit} key={`door-${floor.id}`} aria-label={`Open break room, ${parent.title}, ${count} resting`} aria-expanded={peekId===floor.id}
+                tabIndex={peekId===floor.id?-1:0}
+                style={{left:`${(door.x-14)/visualScene.width*100}%`,top:`${(door.y-77)/visualScene.height*100}%`,width:`${28/visualScene.width*100}%`,height:`${80/visualScene.height*100}%`}}
+                onClick={event=>{lastDoor.current=event.currentTarget;setPeekId(floor.id)}}><span>☕ {count}{transit?' ↳':''}</span></button>
+            })}
+            {publicFloors.filter(f=>f.kind==='team'&&!f.constructing&&(f.waiting??0)>0).map(floor=><div key={`beacon-${floor.id}`} className="of-alert-beacon" role="status" aria-label={`Waiting for your answer, ${floor.title}`} title={`${floor.waiting} waiting for your answer`}
+              style={{left:'70%',top:`${(floor.y+(floor.height??0)*.18)/visualScene.height*100}%`}}><i/><b/></div>)}
+            {publicFloors.filter(f=>f.kind==='team'&&f.constructing).map(floor=><div key={`site-${floor.id}`} className="of-construction" role="status" aria-label={`Preparing room, ${floor.title}`}
+              style={{top:`${floor.y/visualScene.height*100}%`,height:`${(floor.height??0)/visualScene.height*100}%`,opacity:Math.min(1,(1-(floor.constructionProgress??0))*5),'--build-progress':floor.constructionProgress??0} as CSSProperties}><i/><strong>⚒ Preparing room</strong><span>{floor.title}</span><b/></div>)}
             {(!!lounge?.overflow || !!lounge?.party?.length) && <span className="of-resting" data-party={!!lounge?.party?.length}>
               {lounge?.party?.length ? `🎉 ${lounge.party[0]} finished${lounge.party.length > 1 ? ` +${lounge.party.length - 1}` : ''}` : ''}
               {lounge?.party?.length && lounge.overflow ? ' · ' : ''}{lounge?.overflow ? `+${lounge.overflow} more` : ''}
@@ -446,8 +497,9 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
               const team=actor.team ?? visualScene.floors.find(floor=>floor.id===actor.floorId)
               const bubble=waiting ? '!' : actor.agent.status==='failed' ? '×' : /edit|write|file_change/.test(activity) ? '</>' : /search|read/.test(activity) ? '⌕' : /command|tool|shell/.test(activity) ? '>_' : '…'
               return <button key={actor.key} ref={agentRef(actor.key)} data-zone={actor.zone} type="button" className="of-agent" data-status={actor.agent.status} data-selected={selectedKey===actor.key} data-edge={actor.x>visualScene.width*.55?'end':'start'}
+                tabIndex={peekFloor?.sessionId===actor.sessionId?-1:0}
                 aria-pressed={selectedKey===actor.key} aria-label={`${actor.agent.name}, ${role}, ${ai}${team ? `, team ${team.title}` : ''}, ${actor.activity}${actor.party ? ", celebrating in the party garden" : actor.zone === 'lounge' ? ", resting in the break room" : ''}`}
-                style={{left:`${(actor.x-22)/visualScene.width*100}%`,top:`${(actor.y-72)/visualScene.height*100}%`,width:`${44/visualScene.width*100}%`,height:`${75/visualScene.height*100}%`}}
+                style={{left:`${(actor.x-22)/visualScene.width*100}%`,top:`${(actor.y-72)/visualScene.height*100}%`,width:`${44/visualScene.width*100}%`,height:`${75/visualScene.height*100}%`,opacity:actor.pose?.opacity}}
                 onMouseEnter={()=>setInspectedKey(actor.key)} onMouseLeave={()=>setInspectedKey(null)} onFocus={()=>setInspectedKey(actor.key)} onBlur={()=>setInspectedKey(null)}
                 onClick={()=>onSelect(actor.sessionId,actor.agent.id)}>
                 {actor.zone==='desk' && (!walking || waiting || actor.agent.status==='failed') && <span className="of-bubble" aria-hidden="true">{bubble}</span>}
@@ -463,6 +515,8 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
                 </span>
               </button>
             })}
+            {peekFloor&&<OfficeBreakPeek floor={peekFloor} width={visualScene.width} buildingHeight={visualScene.height} actors={allDisplayed.filter(a=>a.floorId===peekFloor.id)} canvasRef={peekCanvas} now={now} selectedKey={selectedKey}
+              onClose={closePeek} onSelect={onSelect} onOpenTeam={onOpenTeam} onObject={object=>visitObject(peekFloor,object)} agentRef={agentRef}/>}
             {moving?.station && <div className="of-work-station" aria-hidden="true" style={{left:`${moving.actor.x/visualScene.width*100}%`,top:`${(moving.actor.y-82)/visualScene.height*100}%`}}>{OFFICE_STATION_LABELS[moving.station]}</div>}
           </div>
         )}

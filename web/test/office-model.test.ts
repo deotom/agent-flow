@@ -13,6 +13,9 @@ const task = (id: string, childId: string, status: TeamTaskRow['status'], delive
   completedAt: null, updatedAt,
 })
 const team = (sessionId: string, agents: TeamAgentRow[], tasks: TeamTaskRow[] = []): TeamSnapshot => ({ sessionId, title: sessionId, active: true, updatedAt: 1, agents, tasks })
+test('all lounge occupants fit inside the private cutaway with room for name tags',()=>{
+ for(const spots of Object.values(BREAK_ROOMS))for(const [x] of spots)assert.ok(x*450+22<=450*.89-6)
+})
 
 test('team floors keep their order when attention, source ordering and new arrivals change',()=>{
  const a=team('a',[agent('lead')]),b=team('b',[agent('lead')])
@@ -21,11 +24,12 @@ test('team floors keep their order when attention, source ordering and new arriv
  const next=buildOfficeScene([b,a],'active',false,new Map())
  assert.deepEqual(next.floors.map(f=>f.id),before.floors.map(f=>f.id))
  const order=officeTeamOrder(['b','c'],['b','a'])
- assert.deepEqual(order,['b','a','c'])
+ assert.deepEqual(order,['b','c'])
  const c=team('c',[agent('lead')])
- const stable=buildOfficeScene([a,b,c],'active',false,new Map(),450,new Set(),order)
- assert.deepEqual(stable.floors.filter(f=>f.kind==='team').map(f=>f.sessionId),['b','a','c'])
- assert.deepEqual(officeTeamOrder(['a','b'],order),order)
+ const returning=officeTeamOrder(['a','b','c'],order)
+ assert.deepEqual(returning,['b','c','a'])
+ const stable=buildOfficeScene([a,b,c],'active',false,new Map(),450,new Set(),returning)
+ assert.deepEqual(stable.floors.filter(f=>f.kind==='team').map(f=>f.sessionId),['b','c','a'])
 })
 
 test('agent identities vary in silhouette, clothing and accessories, not just shirt colour',()=>{
@@ -193,7 +197,7 @@ test('limited desks seat the lead first, then agents waiting on the user or fail
   assert.equal(scene.floors.find(f=>f.sessionId==='crowd')?.overflow,3)
 })
 
-test('each active team rests in its own break room directly below its office; quiet teams never do', () => {
+test('each active team rests in its own private annex; quiet teams never do', () => {
   const busy=team('busy',[agent('lead'),agent('w','running','lead'),...Array.from({length:10},(_,i)=>agent(`d${i}`,'done','lead')),agent('oops','failed','lead')])
   const other=team('other',[agent('lead'),agent('x','running','lead'),agent('y','done','lead')])
   const home=team('home',[agent('idle','idle'),agent('gone','done','idle')])
@@ -203,9 +207,10 @@ test('each active team rests in its own break room directly below its office; qu
   const rooms=scene.floors.filter(f=>f.kind==='break')
   assert.deepEqual(rooms.map(f=>f.sessionId).sort(),['busy','other'])
   for (const room of rooms) {
-    // Directly after its own office floor, sharing the team colour.
+    // Virtual room follows its parent in the scene, sharing its bounds and team colour.
     const index=scene.floors.indexOf(room), office=scene.floors[index-1]
     assert.equal(office.kind,'team'); assert.equal(office.sessionId,room.sessionId); assert.equal(room.color,office.color)
+    assert.equal(room.annexOf,office.id);assert.equal(room.y,office.y);assert.equal(room.height,office.height)
     assert.equal(room.room,officeBreakRoom(room.sessionId!))
     const people=scene.actors.filter(a=>a.floorId===room.id)
     assert.ok(people.length>0&&people.every(a=>a.sessionId===room.sessionId&&a.zone==='lounge'))

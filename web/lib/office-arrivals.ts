@@ -1,6 +1,6 @@
 import type { OfficeActor, OfficeEvent, OfficePoint, OfficeScene } from './office-types'
 import { createOfficeTrip, officeTripFrame, type OfficeTrip, type OfficeTripSegment } from './office-motion'
-import { officeLanding, officeNavigation } from './office-navigation'
+import { officeLanding, officeNavigation, officeInteriorDoor } from './office-navigation'
 
 /** Arrivals have their own durable lane: a long climb must not expire in the work-event queue. */
 export function addOfficeArrivals(existing: ReadonlyMap<string,OfficeTrip>, events:readonly OfficeEvent[], before:OfficeScene, next:OfficeScene, now:number) {
@@ -18,17 +18,31 @@ function retarget(trip:OfficeTrip,actor:OfficeActor,scene:OfficeScene,now:number
   if(now<trip.startedAt){
     return createOfficeTrip(trip.event,{...scene,actors:scene.actors.filter(a=>a.key!==actor.key)},scene,trip.startedAt)??trip
   }
-  const nav=officeNavigation(scene),landing=officeLanding(scene,actor.floorId)
+  const targetFloor=scene.floors.find(f=>f.id===actor.floorId)
+  const publicFloor=targetFloor?.annexOf??actor.floorId
+  const nav=officeNavigation(scene),landing=officeLanding(scene,publicFloor)
   if(!landing)return trip
-  let cursor=officeTripFrame(trip,now).point
+  const frame=officeTripFrame(trip,now)
+  let cursor=frame.point,cursorFloor=frame.floorId??trip.actor.floorId
   const segments:OfficeTripSegment[]=[]
-  const leg=(to:OfficePoint,kind:OfficeTripSegment['kind'],duration:number)=>{segments.push({from:{...cursor},to:{...to},kind,duration});cursor={...to}}
+  const leg=(to:OfficePoint,kind:OfficeTripSegment['kind'],duration:number)=>{segments.push({from:{...cursor},to:{...to},kind,duration,floorId:cursorFloor});cursor={...to}}
   const walk=(to:OfficePoint)=>{const d=Math.hypot(to.x-cursor.x,to.y-cursor.y);if(d>.01)leg(to,'walk',Math.max(150,d/(75*nav.scale)*1000))}
-  if(Math.abs(cursor.y-landing.y)>.01){
+  const source=scene.floors.find(f=>f.id===cursorFloor)
+  if(source?.annexOf){
+    const threshold=officeInteriorDoor(scene,source.id)
+    if(threshold){walk({x:cursor.x,y:threshold.y});walk(threshold);leg(cursor,'hold',280);cursorFloor=source.annexOf;leg(cursor,'hold',280)}
+  }
+  if(cursorFloor!==publicFloor||(Math.abs(cursor.x-nav.shaftX)<.01&&Math.abs(cursor.y-landing.y)>.01)){
     walk({x:nav.shaftX,y:cursor.y})
     leg({x:nav.shaftX,y:landing.y},'ride',Math.abs(cursor.y-landing.y)/(80*nav.scale)*1000)
+    cursorFloor=publicFloor
     leg(cursor,'hold',280);walk(landing)
   }
+  if(targetFloor?.annexOf){
+    const threshold=officeInteriorDoor(scene,targetFloor.id)!
+    walk({x:cursor.x,y:landing.y});walk(threshold);leg(cursor,'hold',280)
+    cursorFloor=actor.floorId;leg(cursor,'hold',280)
+  }else cursorFloor=actor.floorId
   walk({x:actor.x,y:landing.y});walk(actor);leg(actor,'hold',300)
   return {...trip,actor,segments,startedAt:now,endsAt:now+segments.reduce((n,s)=>n+s.duration,0),shaftX:nav.shaftX,rungPitch:nav.rungPitch}
 }
@@ -52,6 +66,6 @@ export function officeActorsWithArrivals(scene:OfficeScene,trips:ReadonlyMap<str
     if(!trip)return [actor]
     if(now<trip.startedAt)return []
     const frame=officeTripFrame(trip,now)
-    return [{...actor,...frame.point,stand:true,pose:{...frame.pose,lead:actor.agent.role==='lead'}}]
+    return [{...actor,...frame.point,floorId:frame.floorId??actor.floorId,stand:true,pose:{...frame.pose,lead:actor.agent.role==='lead'}}]
   })
 }

@@ -4,6 +4,7 @@ import { drawOfficeShaft } from './office-shaft-art'
 import { drawOfficeSky } from './office-sky-art'
 import { drawOfficeSeasonalRooms } from './office-seasonal-art'
 import { drawOfficeGarden } from './office-garden-art'
+import { drawOfficeInteriorDoors } from './office-door-art'
 import type { OfficeActor, OfficeAppearance, OfficeDrawnOffset, OfficePaintOptions, OfficePose, OfficeScene, OfficeLeisureAction } from '../../../lib/office-types'
 import { officeLife, officeLifeCanChat, officeLifePairs, officeSeed, type OfficeLifePair, type OfficeMood } from '../../../lib/office-life'
 
@@ -236,13 +237,14 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
   const scale=scene.width/450,time=o.motion?o.time:0
   drawOfficeSky(c,scene,time,o.date)
   drawOfficeGarden(c,scene,o.date,time)
-  drawOfficeSeasonalRooms(c,scene,o.date,time)
+  drawOfficeSeasonalRooms(c,{...scene,floors:scene.floors.filter(f=>!f.annexOf||!scene.floors.some(p=>p.id===f.annexOf))},o.date,time)
   const daylight=officeDaylight(o.date),surface=scene.floors.find(f=>f.kind==='lounge')
   if(surface?.height&&daylight.sun){
     c.fillStyle=`rgba(31,43,38,${.08+daylight.light*.06})`
     c.beginPath();c.ellipse(scene.width*(.14+daylight.shadow*.07),surface.height*.60,scene.width*(.06+Math.abs(daylight.shadow)*.09),surface.height*.022,daylight.shadow*.12,0,Math.PI*2);c.fill()
   }
   drawOfficeShaft(c,scene)
+  drawOfficeInteriorDoors(c,scene,o.openDoorFloorId)
   const visible=scene.actors.filter(a=>!a.hidden),byKey=new Map(visible.map(a=>[a.key,a]))
   const pairs=time?pairsFor(scene.actors):new Map<string,OfficeLifePair>()
   const offsets=new Map<string,OfficeDrawnOffset>()
@@ -262,7 +264,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
       c.fillStyle='#ecf8dc';for(let i=0;i<3;i++)c.fillRect(m.x-w*scale*.35,m.y+(-4+i*3)*scale,(4+((i+scroll)*5)%9)*scale,scale)
     }
     const t=time?time+phaseOf(actor.key):0
-    c.save();c.translate(actor.x+life.dx,actor.y);c.scale(scale,scale)
+    c.save();c.globalAlpha=(Number.isFinite(c.globalAlpha)?c.globalAlpha:1)*(actor.pose?.opacity??1);c.translate(actor.x+life.dx,actor.y);c.scale(scale,scale)
     drawOfficeAvatar(c,actor.appearance,0,0,t,{sit:!moving&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving,hand:o.live&&waiting,
       mug:actor.zone==='lounge'&&!moving&&(!life.objectAction||life.objectAction==='coffee'),objectAction:life.objectAction,lead:actor.agent.role==='lead'||actor.pod,cup:life.cup,stretch:life.stretch,lean:life.lean,doze:life.doze,
       slump:life.slump,scratch:life.scratch,wave:life.wave,turn:life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose})

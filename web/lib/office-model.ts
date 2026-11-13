@@ -50,8 +50,8 @@ const teamColor = (id: string) => floorColors[[...id].reduce((hash, char) => (ha
 
 // Coordinates measured against the supplied source artwork, as fractions of its full bounds.
 export const OFFICE_SLOTS = {
-  'room-stations': {chairs:[[.13,.79],[.35,.79],[.57,.79],[.79,.79]],monitors:[[.13,.55],[.35,.55],[.57,.55],[.79,.55]],aspect:864/1536},
-  'room-stations-large': {chairs:[[.13,.72],[.35,.72],[.57,.72],[.79,.72],[.13,.79],[.35,.79],[.57,.79],[.79,.79]],monitors:[[.13,.55],[.35,.55],[.57,.55],[.79,.55]],aspect:.75},
+  'room-stations': {chairs:[[.11,.79],[.305,.79],[.50,.79],[.695,.79]],monitors:[[.11,.55],[.305,.55],[.50,.55],[.695,.55]],aspect:864/1536},
+  'room-stations-large': {chairs:[[.11,.72],[.305,.72],[.50,.72],[.695,.72],[.11,.79],[.305,.79],[.50,.79],[.695,.79]],monitors:[[.11,.55],[.305,.55],[.50,.55],[.695,.55]],aspect:.75},
   'room-a': { chairs: [[.19,.68],[.365,.68],[.595,.68],[.783,.68]], monitors: [[.223,.48],[.394,.48],[.624,.48],[.807,.48]], aspect: 864/1536 },
   'room-b-lead': { chairs: [[.31,.69],[.542,.69],[.682,.69],[.84,.69]], monitors: [[.287,.425],[.54,.465],[.685,.465],[.833,.465]], aspect: 864/1536 },
   'room-c-big': { chairs: [[.162,.55],[.378,.55],[.601,.55],[.815,.55],[.148,.765],[.375,.765],[.603,.765],[.826,.765]], monitors: [[.172,.421],[.386,.421],[.602,.421],[.815,.421],[.153,.622],[.382,.622],[.607,.622],[.832,.622]], aspect: 1 },
@@ -66,13 +66,13 @@ type BreakSpot = readonly [x: number, y: number, standing: 0 | 1]
  */
 export const BREAK_ROOMS: Readonly<Record<OfficeBreakRoom, readonly BreakSpot[]>> = {
   // Cozy lounge: sofas, coffee bar, ping-pong, beanbags.
-  'room-break': [[.275,.6,0],[.415,.6,0],[.70,.6,0],[.84,.6,0],[.15,.74,1],[.54,.75,1],[.66,.75,1],[.235,.67,0],[.48,.67,0]],
+  'room-break': [[.275,.6,0],[.415,.6,0],[.70,.6,0],[.79,.6,0],[.15,.74,1],[.54,.75,1],[.66,.75,1],[.235,.67,0],[.48,.67,0]],
   // Game room: sofa, beanbags, foosball, arcade.
-  'room-break-game': [[.22,.62,0],[.36,.62,0],[.50,.69,0],[.63,.70,0],[.73,.79,1],[.86,.79,1],[.09,.72,1]],
+  'room-break-game': [[.22,.62,0],[.36,.62,0],[.50,.69,0],[.63,.70,0],[.73,.79,1],[.80,.79,1],[.09,.72,1]],
   // Greenhouse: wicker chairs, hammock, bench, potting table, fountain.
-  'room-break-garden': [[.22,.64,0],[.31,.64,0],[.475,.60,0],[.615,.63,0],[.70,.63,0],[.09,.72,1],[.84,.73,1]],
+  'room-break-garden': [[.22,.64,0],[.31,.64,0],[.475,.60,0],[.615,.63,0],[.70,.63,0],[.09,.72,1],[.79,.73,1]],
   // Fireside reading nook: chesterfield, armchairs, fireplace, tea cart, globe.
-  'room-break-reading': [[.29,.645,0],[.40,.645,0],[.16,.66,0],[.77,.66,0],[.48,.79,1],[.07,.74,1],[.87,.75,1]],
+  'room-break-reading': [[.29,.645,0],[.40,.645,0],[.16,.66,0],[.77,.66,0],[.48,.79,1],[.07,.74,1],[.80,.75,1]],
 }
 const BREAK_VARIANTS = Object.keys(BREAK_ROOMS) as OfficeBreakRoom[]
 /** Stable decor per team so its break room looks the same every time. */
@@ -92,13 +92,14 @@ export function officeDisplayName(name: string): string {
 }
 /**
  * Where people go:
- * - finished and failed workers of an active team rest in that team's own break room,
- *   directly below its office (a failed root lead keeps its desk);
+ * - finished and failed workers of an active team rest in its private annex,
+ *   reached through the main office's interior door;
  * - quiet teams go home, except teams in `parties` (seen finishing by the viewer), which
  *   celebrate on the surface lawn first.
  */
 export function officeTeamOrder(sessionIds: readonly string[], previous: readonly string[] = []): readonly string[] {
-  const order = [...new Set(previous)]
+  const active = new Set(sessionIds)
+  const order = [...new Set(previous)].filter(id=>active.has(id))
   const known = new Set(order)
   order.push(...[...new Set(sessionIds)].filter(id => !known.has(id)).sort())
   return order.length === previous.length && order.every((id,i) => id === previous[i]) ? previous : order
@@ -153,20 +154,19 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
       else actors.push(actor)
     }
     if (included) y += height * .90
-    // The team's own break room hangs directly below its office, only while someone rests there.
+    // The private annex shares its office bounds and never consumes another building storey.
     if (included && teamResting.length) {
-      const breakHeight = width * BREAK_ASPECT, breakId = JSON.stringify(['break', snap.sessionId])
+      const breakHeight = height, breakY = y-height*.90, breakId = JSON.stringify(['break', snap.sessionId])
       const decor = officeBreakRoom(snap.sessionId), spots = BREAK_ROOMS[decor]
       const breakFloor: OfficeFloor = { id:breakId, sessionId:snap.sessionId, title:`☕ ${clean(snap.title) || 'Team'} · Break room`, subtitle:`${teamResting.length} resting`,
-        color:teamColor(snap.sessionId), y, height:breakHeight, room:decor, actorKeys:[], kind:'break', overflow:Math.max(0, teamResting.length - spots.length) }
+        color:teamColor(snap.sessionId), y:breakY, height:breakHeight, room:decor, actorKeys:[], kind:'break', annexOf:id, overflow:Math.max(0, teamResting.length - spots.length) }
       floors.push(breakFloor)
       teamResting.forEach((actor, i) => {
         const [sx, sy, stand] = spots[i % spots.length]
-        actors.push({ ...actor, floorId:breakId, monitor:undefined, x:sx*width, y:y+sy*breakHeight, stand:stand === 1, objectAction:officeLeisureForSpot(decor,i), hidden:i >= spots.length })
+        actors.push({ ...actor, floorId:breakId, monitor:undefined, x:sx*width, y:breakY+sy*breakHeight, stand:stand === 1, objectAction:officeLeisureForSpot(decor,i), hidden:i >= spots.length })
         breakFloor.actorKeys.push(actor.key)
       })
       resting.push(...teamResting)
-      y += breakHeight * .90
     }
   }
   if (quietTeams.length) { floors.push({id:'quiet',sessionId:null,title:`${quietTeams.length} ${quietTeams.length === 1 ? 'team' : 'teams'} at home`,subtitle:'',color:'#aa9168',y,height:34,actorKeys:[],kind:'quiet'}); y+=34 }

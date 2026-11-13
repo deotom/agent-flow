@@ -14,7 +14,7 @@ export interface OfficeAppearance {
   face?: 'round' | 'square' | 'oval'
 }
 export interface OfficePoint { x: number; y: number }
-export interface OfficePose { objectAction?:OfficeLeisureAction;climb?: boolean; climbStep?:number; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean; face?: 1 | -1 }
+export interface OfficePose { opacity?:number;objectAction?:OfficeLeisureAction;climb?: boolean; climbStep?:number; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean; face?: 1 | -1 }
 export interface OfficeActor extends OfficePoint {
   key: string
   sessionId: string
@@ -48,6 +48,10 @@ export interface OfficeFloor {
   y: number
   actorKeys: string[]
   kind: 'team' | 'lounge' | 'quiet' | 'break'
+  /** Private room behind this public office's interior door; shares its layout bounds. */
+  annexOf?: string
+  constructing?: boolean
+  constructionProgress?: number
   height?: number
   room?: 'room-a' | 'room-b-lead' | 'room-c-big' | 'room-stations' | 'room-stations-large' | OfficeBreakRoom
   overflow?: number
@@ -83,6 +87,7 @@ export type OfficeWorkStation = 'planning' | 'research' | 'build' | 'quality' | 
 export type OfficeLeisureAction = 'coffee' | 'book' | 'game' | 'water' | 'music' | 'snack'
 export type OfficePet = 'dog' | 'rabbit' | 'bird' | 'turtle'
 export interface OfficePaintOptions {
+  openDoorFloorId?: string | null
   objectCue?: {actorKey:string;kind:OfficeLeisureAction;until:number}|null
   time: number
   date: Date

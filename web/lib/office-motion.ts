@@ -3,12 +3,12 @@ import type { TeamSnapshot } from './team-types'
 import { isWorking, statusText } from './team-model'
 import type { AnimationMode } from './viewer-preferences'
 import { officeWorkTarget, OFFICE_STATION_LABELS } from './office-work'
-import { officeNavigation, officeLanding } from './office-navigation'
+import { officeNavigation, officeLanding, officeInteriorDoor } from './office-navigation'
 
 export type OfficePane = 'board' | 'graph' | 'office'
-export interface OfficeTripSegment { from: OfficePoint; to: OfficePoint; duration: number; kind: 'walk' | 'ride' | 'hold' }
+export interface OfficeTripSegment { from: OfficePoint; to: OfficePoint; duration: number; kind: 'walk' | 'ride' | 'hold'; floorId?: string; opacity?:readonly [number,number] }
 export interface OfficeTrip { event: OfficeEvent; actorKey: string; actor: OfficeActor; segments: OfficeTripSegment[]; startedAt: number; endsAt: number; caption: string; shaftX:number; rungPitch:number }
-export interface OfficeTripFrame { point: OfficePoint; pose: OfficePose; elevatorY: number | null; done: boolean }
+export interface OfficeTripFrame { point: OfficePoint; pose: OfficePose; elevatorY: number | null; done: boolean; floorId?: string }
 
 /** Resume only trips whose destination still agrees with the latest snapshot. */
 export function officeCanResumeTrip(trip: OfficeTrip | null, scene: OfficeScene): boolean {
@@ -47,20 +47,30 @@ export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: 
   let cursor = from
   let cursorFloor=event.kind==='arrived'&&!old?'lounge':old?.floorId??moving.floorId
   let cursorScene=old?before:next
-  const leg = (to: OfficePoint, duration: number, kind: OfficeTripSegment['kind']) => {
-    segments.push({ from: point(cursor), to: point(to), duration, kind })
+  const leg = (to: OfficePoint, duration: number, kind: OfficeTripSegment['kind'], opacity?:readonly [number,number]) => {
+    segments.push({ from: point(cursor), to: point(to), duration, kind, floorId:cursorFloor,opacity })
     cursor = point(to)
   }
   const walk=(to:OfficePoint)=>{const distance=Math.hypot(to.x-cursor.x,to.y-cursor.y);if(distance>.01)leg(to,Math.max(180,distance/(75*nav.scale)*1000),'walk')}
   const travel = (to: OfficePoint,toFloor:string) => {
+    const sourceFloor=cursorScene.floors.find(f=>f.id===cursorFloor)??next.floors.find(f=>f.id===cursorFloor)
+    const targetFloor=next.floors.find(f=>f.id===toFloor)
+    if(sourceFloor?.annexOf&&cursorFloor!==toFloor){
+      const threshold=officeInteriorDoor(cursorScene,sourceFloor.id)??officeInteriorDoor(next,sourceFloor.id)
+      if(threshold){walk({x:cursor.x,y:threshold.y});walk(threshold);leg(cursor,280,'hold',[1,0]);cursorFloor=sourceFloor.annexOf;cursorScene=next;leg(cursor,280,'hold',[0,1])}
+    }
+    if(targetFloor?.annexOf&&cursorFloor!==toFloor){
+      const threshold=officeInteriorDoor(next,targetFloor.id)
+      if(threshold){travel(threshold,targetFloor.annexOf);leg(cursor,280,'hold',[1,0]);cursorFloor=toFloor;cursorScene=next;leg(cursor,280,'hold',[0,1]);walk({x:to.x,y:threshold.y});walk(to);return}
+    }
     const target=officeLanding(next,toFloor)??{x:liftX-28*nav.scale,y:to.y}
     if(cursorFloor!==toFloor){
       const source=officeLanding(cursorScene,cursorFloor)??{x:liftX-28*nav.scale,y:cursor.y}
       walk({x:cursor.x,y:source.y});walk(source);walk({x:liftX,y:source.y});leg(cursor,280,'hold')
       const distance=Math.abs(target.y-cursor.y)
       if(distance>.01)leg({x:liftX,y:target.y},distance/(80*nav.scale)*1000,'ride')
-      leg(cursor,280,'hold');walk(target)
       cursorFloor=toFloor;cursorScene=next
+      leg(cursor,280,'hold');walk(target)
     }else{walk({x:cursor.x,y:target.y})}
     walk({x:to.x,y:target.y});walk(to)
   }
@@ -87,15 +97,15 @@ export function officeTripFrame(trip: OfficeTrip, now: number): OfficeTripFrame 
     if (elapsed < segment.duration) {
       const ratio = clamp(elapsed / segment.duration, 0, 1)
       const position = { x: segment.from.x + (segment.to.x - segment.from.x) * ratio, y: segment.from.y + (segment.to.y - segment.from.y) * ratio }
-      return { point: position, done: false, elevatorY: segment.kind === 'ride' ? position.y : null,
-        pose: { climb: segment.kind === 'ride'||(segment.kind==='hold'&&Math.abs(position.x-trip.shaftX)<.01),climbStep:position.y/trip.rungPitch,walk: segment.kind === 'walk', face:segment.to.x<segment.from.x?-1:1, sit: false, carry: trip.event.kind === 'sent' || trip.event.kind === 'assigned',
+      return { point: position, done: false, floorId:segment.floorId, elevatorY: segment.kind === 'ride' ? position.y : null,
+        pose: { opacity:segment.opacity?segment.opacity[0]+(segment.opacity[1]-segment.opacity[0])*ratio:undefined,climb: segment.kind === 'ride'||(segment.kind==='hold'&&Math.abs(position.x-trip.shaftX)<.01),climbStep:position.y/trip.rungPitch,walk: segment.kind === 'walk', face:segment.to.x<segment.from.x?-1:1, sit: false, carry: trip.event.kind === 'sent' || trip.event.kind === 'assigned',
           objectAction:segment.kind==='hold'&&trip.event.kind==='activity'&&trip.event.station==='research'?'book':undefined,
           typing:segment.kind==='hold'&&trip.event.kind==='activity'&&(trip.event.station==='build'||trip.event.station==='terminal'),
           hand:segment.kind==='hold'&&(trip.event.kind==='received'||(trip.event.kind==='activity'&&(trip.event.station==='planning'||trip.event.station==='quality'))) } }
     }
     elapsed -= segment.duration
   }
-  return { point: point(last.to), pose: {}, elevatorY: null, done }
+  return { point: point(last.to), pose: {}, elevatorY: null, done, floorId:last.floorId }
 }
 
 /** Bounded, short-lived visual work. Snapshots, not this queue, remain the authoritative state. */

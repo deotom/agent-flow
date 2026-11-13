@@ -6,6 +6,15 @@ import { officeKey } from '../lib/office-model'
 import type { TeamSnapshot } from '../lib/team-types'
 const team = (sessionId:string,name:string):TeamSnapshot => ({sessionId,title:name,active:true,updatedAt:1000,tasks:[],agents:[{id:'lead',parentId:null,role:'lead',name,runtime:'codex',model:null,status:'thinking',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1000,updatedAt:1000,completedAt:null}]})
 const props={scope:'active' as const,selectedKey:null,onSelect:()=>{},onOpenTeam:()=>{},live:true,visible:true,animationMode:'off' as const,now:1000}
+it('keeps private resting rooms behind a main-room door without standalone floors, with a waiting beacon',()=>{
+ const snap=team('annex','Main');snap.agents[0].status='waiting_input'
+ snap.agents.push({...snap.agents[0],id:'rest',parentId:'lead',role:'worker',name:'Resting worker',status:'done'})
+ const html=renderToStaticMarkup(<OfficeView {...props} scope="session" snapshots={[snap]}/>)
+ assert.ok(html.includes('Open break room, Main, 1 resting'))
+ assert.ok(html.includes('of-alert-beacon')&&html.includes('Waiting for your answer'))
+ assert.ok(!html.includes('class="of-art of-art-room-break'))
+ assert.ok(!html.includes('aria-label="Resting worker,'))
+})
 it('connects the calendar to the garden theme, weather summary and holiday activity',()=>{
  const html=renderToStaticMarkup(<OfficeView {...props} now={new Date(2026,3,13,12).getTime()} snapshots={[team('s','Lead')]}/>)
  assert.ok(html.includes('data-season="hot"')&&html.includes('data-holiday="songkran"'))
@@ -50,13 +59,13 @@ it('labels blackboard items with their state and never shows delegated prompts',
   assert.ok(!html.includes('SECRET_PROMPT')&&!html.includes('RESULT_TEXT'))
 })
 
-it('labels the empty garden, break-room agents and overflow',()=>{
+it('labels the empty garden and private lounge entrance without filling the main view with resting people',()=>{
   const active=team('a','Busy')
   active.agents.push(...Array.from({length:12},(_,i)=>({...active.agents[0],id:`done${i}`,name:`Done${i}`,parentId:'lead',role:'worker' as const,status:'done' as const})))
   const html=renderToStaticMarkup(<OfficeView {...props} snapshots={[active]}/>)
   assert.ok(html.includes('Party garden · No celebrations'))
-  assert.ok(html.includes(', resting in the break room'))
-  assert.ok(html.includes('more agents resting in the break room'))
+  assert.ok(html.includes('Open break room, Busy, 12 resting'))
+  assert.ok(!html.includes('aria-label="Done0,'))
   assert.ok(!html.includes('Show history'))
   const home=team('b','Home');home.agents[0].status='idle'
   assert.ok(renderToStaticMarkup(<OfficeView {...props} snapshots={[home]}/>).includes('Show history'))
