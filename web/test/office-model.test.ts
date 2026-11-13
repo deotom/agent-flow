@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { assignOfficeIdentities, buildOfficeScene, officeEvents, officeKey, officeAppearance, officeDisplayName, officeBreakRoom, officeWorkRoom, OFFICE_SLOTS, BREAK_ROOMS } from '../lib/office-model'
+import { assignOfficeIdentities, buildOfficeScene, officeEvents, officeKey, officeAppearance, officeDisplayName, officeBreakRoom, officeWorkRoom, OFFICE_SLOTS, BREAK_ROOMS, officeTeamOrder } from '../lib/office-model'
 import type { TeamAgentRow, TeamSnapshot, TeamTaskRow } from '../lib/team-types'
 import { officeStations } from '../lib/office-stations'
 
@@ -13,6 +13,20 @@ const task = (id: string, childId: string, status: TeamTaskRow['status'], delive
   completedAt: null, updatedAt,
 })
 const team = (sessionId: string, agents: TeamAgentRow[], tasks: TeamTaskRow[] = []): TeamSnapshot => ({ sessionId, title: sessionId, active: true, updatedAt: 1, agents, tasks })
+
+test('team floors keep their order when attention, source ordering and new arrivals change',()=>{
+ const a=team('a',[agent('lead')]),b=team('b',[agent('lead')])
+ const before=buildOfficeScene([a,b],'active',false,new Map())
+ b.agents[0].status='waiting_input'
+ const next=buildOfficeScene([b,a],'active',false,new Map())
+ assert.deepEqual(next.floors.map(f=>f.id),before.floors.map(f=>f.id))
+ const order=officeTeamOrder(['b','c'],['b','a'])
+ assert.deepEqual(order,['b','a','c'])
+ const c=team('c',[agent('lead')])
+ const stable=buildOfficeScene([a,b,c],'active',false,new Map(),450,new Set(),order)
+ assert.deepEqual(stable.floors.filter(f=>f.kind==='team').map(f=>f.sessionId),['b','a','c'])
+ assert.deepEqual(officeTeamOrder(['a','b'],order),order)
+})
 
 test('agent identities vary in silhouette, clothing and accessories, not just shirt colour',()=>{
  const people=Array.from({length:28},(_,i)=>officeAppearance(i))
@@ -129,7 +143,7 @@ test('events avoid initial replay, detect strongest task transitions, and ignore
 })
 
 
-test('room choice, priority, failed lead seating, quiet teams going home and lounge parties', () => {
+test('room choice, stable team ordering, quiet teams going home and lounge parties', () => {
   const waiting=team('z-wait',[agent('lead','waiting_input')])
   const small=team('a-work',[agent('lead'),agent('w','running','lead')])
   const noLead=team('no-lead',[{...agent('solo'),role:'worker'}])
@@ -141,7 +155,8 @@ test('room choice, priority, failed lead seating, quiet teams going home and lou
   const scene=buildOfficeScene(all,'active',false,ids)
   assert.equal(scene.floors[0].kind,'lounge')
   const rooms=scene.floors.filter(f=>f.kind==='team')
-  assert.equal(rooms[0].sessionId,'z-wait')
+  assert.equal(rooms[0].sessionId,'a-work')
+  assert.ok(rooms.find(f=>f.sessionId==='z-wait')?.waiting)
   assert.equal(rooms.find(f=>f.sessionId==='a-work')?.room,officeWorkRoom('a-work',2))
   assert.equal(rooms.find(f=>f.sessionId==='no-lead')?.room,officeWorkRoom('no-lead',1))
   assert.equal(rooms.find(f=>f.sessionId==='big')?.room,'room-stations-large')

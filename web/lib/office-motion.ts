@@ -111,13 +111,13 @@ export function mergeOfficeEvents(pending: readonly OfficeEvent[], incoming: rea
 }
 
 /** Display presence is separate from task delivery; no entering/leaving animation claims receipt. */
-export function officePresenceEvents(before: OfficeScene | null, next: OfficeScene, knownTeams: ReadonlySet<string>, now: number): OfficeEvent[] {
+export function officePresenceEvents(before: OfficeScene | null, next: OfficeScene, knownTeams: ReadonlySet<string>, now: number, newTeams:ReadonlySet<string> = new Set()): OfficeEvent[] {
   if (!before) return []
   const old = new Map(before.actors.map(actor => [actor.key, actor])), current = new Map(next.actors.map(actor => [actor.key, actor]))
   const events: OfficeEvent[] = []
   for (const actor of before.actors) if (!actor.hidden && !current.has(actor.key)) events.push({ id: JSON.stringify(['left', actor.key, now]), kind: 'left', actorKey: actor.key, parentKey: actor.parentKey, at: now })
   for (const actor of next.actors) if (!actor.hidden && old.has(actor.key) && !old.get(actor.key)!.hidden && old.get(actor.key)!.floorId !== actor.floorId) events.push({id:JSON.stringify(['finished',actor.key,now]),kind:'finished',actorKey:actor.key,parentKey:actor.parentKey,at:now})
-  for (const actor of next.actors) if (!actor.hidden && !old.has(actor.key) && knownTeams.has(actor.sessionId) && (actor.agent.role === 'lead' || ['running','thinking','background','waiting_approval','waiting_input'].includes(actor.agent.status))) {
+  for (const actor of next.actors) if (!actor.hidden && !old.has(actor.key) && (knownTeams.has(actor.sessionId)||newTeams.has(actor.sessionId)) && ['running','thinking','background','waiting_approval','waiting_input'].includes(actor.agent.status)) {
     events.push({ id: JSON.stringify(['arrived', actor.key, now]), kind: 'arrived', actorKey: actor.key, parentKey: actor.parentKey, at: now })
   }
   return events

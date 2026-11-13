@@ -97,9 +97,16 @@ export function officeDisplayName(name: string): string {
  * - quiet teams go home, except teams in `parties` (seen finishing by the viewer), which
  *   celebrate on the surface lawn first.
  */
-export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: TeamScope, showQuiet: boolean, identities: ReadonlyMap<string, number>, width = 450, parties: ReadonlySet<string> = new Set()): OfficeScene {
-  const priority = (s: TeamSnapshot) => s.agents.some(a => a.status.startsWith('waiting_')) ? 0 : quiet(s) ? 2 : 1
-  const sorted = [...new Map(snapshots.map(s => [s.sessionId, s])).values()].sort((a,b) => priority(a)-priority(b) || a.sessionId.localeCompare(b.sessionId))
+export function officeTeamOrder(sessionIds: readonly string[], previous: readonly string[] = []): readonly string[] {
+  const order = [...new Set(previous)]
+  const known = new Set(order)
+  order.push(...[...new Set(sessionIds)].filter(id => !known.has(id)).sort())
+  return order.length === previous.length && order.every((id,i) => id === previous[i]) ? previous : order
+}
+
+export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: TeamScope, showQuiet: boolean, identities: ReadonlyMap<string, number>, width = 450, parties: ReadonlySet<string> = new Set(), teamOrder: readonly string[] = []): OfficeScene {
+  const order = new Map(officeTeamOrder(snapshots.map(s=>s.sessionId),teamOrder).map((id,i)=>[id,i]))
+  const sorted = [...new Map(snapshots.map(s => [s.sessionId, s])).values()].sort((a,b) => order.get(a.sessionId)!-order.get(b.sessionId)!)
   const quietTeams = sorted.filter(s => quiet(s) && !(parties.has(s.sessionId) && s.agents.some(a => a.status === 'done'))), floors: OfficeFloor[] = [], actors: OfficeActor[] = [], resting: OfficeActor[] = [], guests: OfficeActor[] = []
   const partyTitles: string[] = []
   const clean = (v: string) => v.replace(/(?:[A-Za-z]:[\\/]|\/root\/|\/Users\/|\/home\/)[^ ·]+/g, '').trim()

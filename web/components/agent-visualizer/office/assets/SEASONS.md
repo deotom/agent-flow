@@ -12,6 +12,8 @@ Season additions:
 - Rainy: deep emerald canopy, glossy broad leaves, lush mossy grass, ferns, mushrooms, purple/blue flowers, damp soil and small puddles. No baked rain streaks.
 - Cool: sage/olive and amber-green canopy with scattered copper leaves, golden grass tips, white/lavender cosmos and chrysanthemums. Thai cool season; no snow or bare winter branches.
 
+Flower correction prompt: Remove every sunflower plant, including the large yellow/brown flower groups along both edges and mid-left. Replace in the same planting spots with rainy-season fern/glossy foliage and blue-purple hydrangea clusters, or cool-season white/pale-lavender/pink cosmos and chrysanthemums. Preserve all other objects, hatch open/closed state, composition and transparent sky. Sunflowers remain in the hot-season variant only.
+
 Closed-hatch prompt: Change only the right-hand open hatch: lay the wooden lid flat over its opening with a small brass pull handle; remove the raised lid and reveal matching seasonal grass behind it. Preserve all other objects, colors, composition and sky transparency.
 
 Seasonal animals, moving flowers, weather, room decorations and calendar events are drawn by code rather than baked into these images.
