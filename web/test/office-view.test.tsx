@@ -16,7 +16,7 @@ it('keeps cross-session selection and accessible display names without developer
 it('provides an expandable quiet strip and a calm empty view',()=>{
   const quiet=team('a','At home');quiet.agents[0].status='idle'
   const html=renderToStaticMarkup(<OfficeView {...props} snapshots={[quiet]}/>)
-  assert.ok(html.includes('1 team went home')&&html.includes('aria-expanded="false"'))
+  assert.ok(html.includes('1 team at home')&&html.includes('aria-expanded="false"'))
   assert.ok(!html.includes('aria-label="At home, Codex'))
   assert.ok(renderToStaticMarkup(<OfficeView {...props} snapshots={[]}/>).includes('Your teams will appear here.'))
 })
@@ -30,4 +30,16 @@ it('labels blackboard items with their state and never shows delegated prompts',
   assert.ok(html.includes('class="of-board"'))
   assert.ok(html.includes('1 of 3 tasks done. Needs you: Ann needs you. Failed: Bo. Working: Cy.'))
   assert.ok(!html.includes('SECRET_PROMPT')&&!html.includes('RESULT_TEXT'))
+})
+
+it('labels the empty garden, break-room agents and overflow',()=>{
+  const active=team('a','Busy')
+  active.agents.push(...Array.from({length:12},(_,i)=>({...active.agents[0],id:`done${i}`,name:`Done${i}`,parentId:'lead',role:'worker' as const,status:'done' as const})))
+  const html=renderToStaticMarkup(<OfficeView {...props} snapshots={[active]}/>)
+  assert.ok(html.includes('Party garden · No celebrations'))
+  assert.ok(html.includes(', resting in the break room'))
+  assert.ok(html.includes('more agents resting in the break room'))
+  assert.ok(!html.includes('Show history'))
+  const home=team('b','Home');home.agents[0].status='idle'
+  assert.ok(renderToStaticMarkup(<OfficeView {...props} snapshots={[home]}/>).includes('Show history'))
 })

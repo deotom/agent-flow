@@ -113,7 +113,7 @@ test('room choice, priority, failed lead seating, quiet teams going home and lou
   // After the party they go home.
   const later=buildOfficeScene(all,'active',false,ids,450,new Set())
   assert.equal(later.actors.filter(a=>a.zone==='lounge').length,0)
-  assert.equal(later.floors.find(f=>f.kind==='quiet')?.title,'1 team went home')
+  assert.equal(later.floors.find(f=>f.kind==='quiet')?.title,'1 team at home')
   assert.equal(scene.floors.at(-1)?.kind,'quiet')
   assert.equal(rooms.some(f=>f.sessionId==='quiet'),false)
   assert.equal(buildOfficeScene(all,'active',true,new Map()).floors.filter(f=>f.kind==='team').length,6)
@@ -179,4 +179,24 @@ test('break rooms come in four decors, chosen stably per team, each with sitting
     assert.ok(spots.some(s=>s[2]===1)&&spots.some(s=>s[2]===0))
     assert.ok(spots.every(([x,y])=>x>.04&&x<.92&&y>.5&&y<.85))
   }
+})
+
+
+test('display names replace recognizable paths only', () => {
+  const cases = [
+    [String.raw`C:\Program Files\x\file.md`, 'file.md'],
+    [String.raw`Builder C:\work\file.md`, 'Builder file.md'],
+    [String.raw`\\server\share\x`, 'x'], ['~/work/file.md','file.md'],
+    ['https://example.com/root/a','https://example.com/root/a'],
+    ['a/b/c','a/b/c'],['API/Builder','API/Builder'],['Lead / Planner','Lead / Planner'],
+  ]
+  for(const root of ['/root','/home','/Users','/tmp','/var','/mnt','/opt','/srv','/workspace','/usr','/etc','/private']) cases.push([`${root}/work/file.md`,'file.md'])
+  for(const [input,expected] of cases) assert.equal(officeDisplayName(input),expected,input)
+})
+test('celebrating teams are excluded from the home strip', () => {
+  const party=team('party',[agent('done','done')]),home=team('home',[agent('idle','idle')])
+  const scene=buildOfficeScene([party,home],'active',false,new Map(),450,new Set(['party']))
+  assert.deepEqual(scene.quietTeams.map(t=>t.sessionId),['home'])
+  assert.equal(scene.floors.find(f=>f.kind==='quiet')?.title,'1 team at home')
+  assert.equal(buildOfficeScene([party],'active',false,new Map(),450,new Set(['party'])).floors.some(f=>f.kind==='quiet'),false)
 })

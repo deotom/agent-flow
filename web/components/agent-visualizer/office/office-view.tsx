@@ -5,8 +5,9 @@ import type { TeamSnapshot } from '../../../lib/team-types'
 import { isWorking, type TeamScope } from '../../../lib/team-model'
 import type { AnimationMode } from '../../../lib/viewer-preferences'
 import type { OfficeActor, OfficeEvent, OfficePet, OfficeScene } from '../../../lib/office-types'
-import { assignOfficeIdentities, buildOfficeScene, currentOfficeBoard, OFFICE_PARTY_MS, officeEvents, officeKey, officeTeamQuiet } from '../../../lib/office-model'
+import { assignOfficeIdentities, buildOfficeScene, currentOfficeBoard, officeEvents, officeKey } from '../../../lib/office-model'
 import { createOfficeTrip, mergeOfficeEvents, officeAllowsMotion, officeDepartureScene, officePresenceEvents, populatedOfficeTeams, officeTripFrame, parseOfficeIdentities, type OfficeTrip } from '../../../lib/office-motion'
+import { deriveOfficeParties, emptyOfficePartyHistory } from '../../../lib/office-parties'
 import { drawOfficeFrame, officeAmbient } from './office-art'
 
 interface OfficeViewProps {
@@ -58,22 +59,11 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const pageVisible = usePageVisible()
   const viewport = useRef<HTMLDivElement>(null)
   const sceneWidth = 450
-  // Parties end on a minute clock so the scene is not rebuilt every second.
-  const partyClock = Math.floor(now / 60_000) * 60_000
-  // Parties are for teams this viewer actually saw finish (active -> quiet), at most two at a time.
-  // Derived during render so finishers go straight from their desks to the party, never via home.
-  const partyLog = useRef({ quiet: null as Map<string, boolean> | null, since: new Map<string, number>(), snapshots: null as readonly TeamSnapshot[] | null })
-  const parties = useMemo(() => {
-    const log = partyLog.current
-    if (log.snapshots !== snapshots) {
-      const quietNow = new Map(snapshots.map(snapshot => [snapshot.sessionId, officeTeamQuiet(snapshot)]))
-      if (log.quiet) for (const [id, isQuiet] of quietNow) if (isQuiet && log.quiet.get(id) === false) log.since.set(id, Date.now())
-      for (const id of [...log.since.keys()]) if (!quietNow.get(id)) log.since.delete(id)
-      log.quiet = quietNow; log.snapshots = snapshots
-    }
-    for (const [id, at] of [...log.since]) if (partyClock - at >= OFFICE_PARTY_MS) log.since.delete(id)
-    return new Set([...log.since].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([id]) => id))
-  }, [snapshots, partyClock])
+  // Project from committed history, so speculative renders cannot start or expire parties.
+  const partyLog = useRef(emptyOfficePartyHistory())
+  const partyHistory = useMemo(() => deriveOfficeParties(partyLog.current, snapshots, now), [snapshots, now])
+  useEffect(() => { partyLog.current = partyHistory }, [partyHistory])
+  const parties = partyHistory.parties
   const scene = useMemo(() => buildOfficeScene(snapshots, scope, showQuiet, identities, sceneWidth, parties), [snapshots, scope, showQuiet, identities, sceneWidth, parties])
   const [heldLayout, setHeldLayout] = useState<OfficeScene | null>(null)
   const held = useRef<OfficeScene | null>(null)
@@ -83,7 +73,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const canvas = useRef<HTMLCanvasElement>(null)
   const queue = useRef<Pending[]>([])
   const active = useRef<OfficeTrip | null>(null)
-  const baseline = useRef<{ snapshots: readonly TeamSnapshot[]; scene: OfficeScene; enabled: boolean } | null>(null)
+  const baseline = useRef<{ snapshots: readonly TeamSnapshot[]; scene: OfficeScene; enabled: boolean; scope: TeamScope; showQuiet: boolean } | null>(null)
   const motionClock = useRef(0)
   const elapsed = useRef(0)
   const [moving, setMoving] = useState<Moving | null>(null)
@@ -110,22 +100,24 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
 
   useEffect(() => {
     const previous = baseline.current
-    if (!enabled || !previous?.enabled) {
+    if (!enabled || !previous?.enabled || (previous.snapshots === snapshots && (previous.scope !== scope || previous.showQuiet !== showQuiet))) {
       queue.current = []; active.current = null; setMoving(null); holdLayout(null)
-    } else if (previous.snapshots !== snapshots) {
+    } else if (previous.scene !== scene) {
       const events = [...officeEvents(previous.snapshots, snapshots, Date.now()), ...officePresenceEvents(previous.scene, scene, populatedOfficeTeams(previous.snapshots), Date.now())]
       if (events.some(event => event.kind === 'left')) {
         if (!held.current) holdLayout(previous.scene)
         active.current = null; setMoving(null)
       }
-      const merged = mergeOfficeEvents(queue.current.map(item => item.event), events, Date.now())
+      const pendingBefore = new Map(queue.current.map(item => [item.event.id, item.before]))
+      const merged = mergeOfficeEvents(queue.current.map(item => item.event), events, Date.now(), event =>
+        createOfficeTrip(event, pendingBefore.get(event.id) ?? previous.scene, scene, 0) !== null)
       const old = new Map(queue.current.map(item => [item.event.id, item]))
       queue.current = merged.map(event => old.get(event.id) ?? { event, before: previous.scene })
       if (active.current && events.some(event => event.actorKey === active.current!.event.actorKey)) { active.current = null; setMoving(null) }
       if (active.current && active.current.event.kind !== 'left' && !scene.actors.some(actor => actor.key === active.current!.actorKey)) { active.current = null; setMoving(null) }
     }
-    baseline.current = { snapshots, scene, enabled }
-  }, [snapshots, scene, enabled])
+    baseline.current = { snapshots, scene, enabled, scope, showQuiet }
+  }, [snapshots, scene, enabled, scope, showQuiet])
 
   const paint = (movement: Moving | null) => {
     const element = canvas.current, context = element?.getContext('2d')
@@ -269,17 +261,18 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
             {visualScene.floors.filter(f=>f.kind!=='lounge').map(floor => <div key={floor.id} className="of-floor-row" style={{ top:`${(floor.y+5)/visualScene.height*100}%` }}>
               <button type="button" className="of-floor-label" style={floor.kind === 'team' || floor.kind === 'break' ? { borderLeft:`4px solid ${floor.color}` } : undefined}
                 aria-expanded={floor.kind === 'quiet' ? showQuiet : undefined}
-                title={floor.kind === 'quiet' ? showQuiet ? 'Collapse quiet teams' : 'Expand quiet teams' : floor.title}
+                title={floor.kind === 'quiet' ? showQuiet ? 'Hide history' : 'Show history' : floor.title}
                 onClick={() => floor.kind === 'quiet' ? setShowQuiet(v=>!v) : floor.sessionId && onOpenTeam(floor.sessionId,null)}>
                 <i aria-hidden="true" style={{background:floor.waiting ? '#ffc46b' : floor.working ? '#a8d78d' : floor.color}} />
-                <strong>{floor.title}</strong><span>{floor.kind === 'quiet' ? showQuiet ? '−' : '+' : floor.subtitle}</span>
+                <strong>{floor.title}{floor.kind === 'quiet' ? showQuiet ? ' · Hide history' : ' · Show history' : ''}</strong><span>{floor.kind === 'quiet' ? showQuiet ? '−' : '+' : floor.subtitle}</span>
               </button>
-              {!!floor.overflow && <button type="button" className="of-overflow" onClick={()=>floor.sessionId&&onOpenTeam(floor.sessionId,null)} aria-label={`Open team in Board: ${floor.overflow} more agents`}>+{floor.overflow}</button>}
+              {!!floor.overflow && <button type="button" className="of-overflow" onClick={()=>floor.sessionId&&onOpenTeam(floor.sessionId,null)} aria-label={`Open team in Board: ${floor.overflow} more agents${floor.kind === 'break' ? ' resting in the break room' : ''}`}>+{floor.overflow}</button>}
             </div>)}
             {(!!lounge?.overflow || !!lounge?.party?.length) && <span className="of-resting" data-party={!!lounge?.party?.length}>
               {lounge?.party?.length ? `🎉 ${lounge.party[0]} finished${lounge.party.length > 1 ? ` +${lounge.party.length - 1}` : ''}` : ''}
               {lounge?.party?.length && lounge.overflow ? ' · ' : ''}{lounge?.overflow ? `+${lounge.overflow} more` : ''}
             </span>}
+            {!lounge?.party?.length && <span className="of-resting of-resting-muted">Party garden · No celebrations</span>}
             {displayed.filter(actor=>!actor.hidden).map(actor => {
               const waiting=actor.agent.status.startsWith('waiting_'), walking=Boolean(actor.pose?.walk||actor.pose?.climb)
               const activity=actor.agent.activities.at(-1)?.type ?? ''
@@ -288,7 +281,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
               const team=actor.team ?? visualScene.floors.find(floor=>floor.id===actor.floorId)
               const bubble=waiting ? '!' : actor.agent.status==='failed' ? '×' : /edit|write|file_change/.test(activity) ? '</>' : /search|read/.test(activity) ? '⌕' : /command|tool|shell/.test(activity) ? '>_' : '…'
               return <button key={actor.key} ref={agentRef(actor.key)} data-zone={actor.zone} type="button" className="of-agent" data-status={actor.agent.status} data-selected={selectedKey===actor.key} data-edge={actor.x>visualScene.width*.55?'end':'start'}
-                aria-pressed={selectedKey===actor.key} aria-label={`${actor.agent.name}, ${role}, ${ai}${team ? `, team ${team.title}` : ''}, ${actor.activity}`}
+                aria-pressed={selectedKey===actor.key} aria-label={`${actor.agent.name}, ${role}, ${ai}${team ? `, team ${team.title}` : ''}, ${actor.activity}${actor.party ? ", celebrating in the party garden" : actor.zone === 'lounge' ? ", resting in the break room" : ''}`}
                 style={{left:`${(actor.x-22)/visualScene.width*100}%`,top:`${(actor.y-72)/visualScene.height*100}%`,width:`${44/visualScene.width*100}%`,height:`${75/visualScene.height*100}%`}}
                 onMouseEnter={()=>setInspectedKey(actor.key)} onMouseLeave={()=>setInspectedKey(null)} onFocus={()=>setInspectedKey(actor.key)} onBlur={()=>setInspectedKey(null)}
                 onClick={()=>onSelect(actor.sessionId,actor.agent.id)}>

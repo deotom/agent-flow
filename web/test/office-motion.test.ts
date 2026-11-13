@@ -118,3 +118,28 @@ describe('Office preferences', () => {
     assert.equal(parseOfficeIdentities('[["a",-1],["b",null],["c",1.2]]').size, 0)
   })
 })
+
+
+it('excludes hidden presence and animates all room destinations', () => {
+  const teams = new Set(['t3:a']), desk = actor('worker',101)
+  const hidden = {...desk, hidden:true}
+  assert.deepEqual(officePresenceEvents(scene(hidden),scene(),teams,1000),[])
+  assert.deepEqual(officePresenceEvents(scene(),scene(hidden),teams,1000),[])
+  assert.deepEqual(officePresenceEvents(scene(hidden),scene({...hidden,zone:'lounge',floorId:'lounge'}),teams,1000),[])
+  const rest = {...desk,zone:'lounge' as const,floorId:'break',y:201}
+  const party = {...rest,floorId:'lounge',party:true,y:40}
+  for(const [from,to,caption] of [[desk,rest,'is heading to the break room'],[desk,party,'is joining the celebration'],[rest,party,'is joining the celebration']] as const){
+    const events=officePresenceEvents(scene(from),scene(to),teams,1000)
+    assert.equal(events.length,1)
+    const trip=createOfficeTrip(events[0],scene(from),scene(to),1000)!
+    assert.equal(trip.caption,caption)
+    assert.deepEqual(officeTripFrame(trip,trip.endsAt).point,{x:to.x,y:to.y})
+  }
+  assert.equal(createOfficeTrip(event('left'),scene(desk),scene(),0)?.caption,'is heading home')
+  assert.equal(createOfficeTrip(event('arrived'),scene(),scene(desk),0)?.caption,'is heading to their desk')
+})
+it('filters ineligible trips before the queue cap', () => {
+  const visible=event('left',{actorKey:'visible'})
+  const hidden=Array.from({length:30},(_,i)=>event('left',{actorKey:`hidden${i}`,id:`hidden${i}`,at:1001}))
+  assert.deepEqual(mergeOfficeEvents([],[visible,...hidden],1002,e=>e.actorKey==='visible'),[visible])
+})

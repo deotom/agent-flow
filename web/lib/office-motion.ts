@@ -18,16 +18,18 @@ export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: 
   if (!child || child.hidden) return null
   const presence = event.kind === 'arrived' || event.kind === 'left'
   if (!presence && event.kind !== 'finished' && (!parent || parent.key === child.key || child.parentKey !== parent.key)) return null
-  const completed = child.zone === 'lounge' && before.actors.find(a=>a.key===child.key)?.zone === 'desk'
-  const moving = !completed && (event.kind === 'assigned' || event.kind === 'received') ? parent! : child
+  const prior = before.actors.find(a => a.key === child.key)
+  const changedRoom = Boolean(prior && prior.floorId !== child.floorId)
+  const moving = !changedRoom && (event.kind === 'assigned' || event.kind === 'received') ? parent! : child
+  if (moving.hidden) return null
   const old = before.actors.find(actor => actor.key === moving.key)
   // A collapsed/relaid floor is no longer a valid place to start an animation.
-  if (!presence && !completed && old && !next.floors.some(floor => floor.id === old.floorId)) return null
+  if (!presence && !changedRoom && old && !next.floors.some(floor => floor.id === old.floorId)) return null
   const liftX = next.width * .945
   const door = { x: liftX, y: next.width * .335 }
-  const from = event.kind === 'arrived' ? { x: liftX, y: door.y } : point(old ?? moving)
+  const from = event.kind === 'arrived' && !old ? { x: liftX, y: door.y } : point(old ?? moving)
   const home = point(moving)
-  const destination = completed ? point(child) : event.kind === 'assigned' ? { x: child.x > 65 ? child.x - 18 : child.x + 18, y: child.y }
+  const destination = changedRoom ? point(child) : event.kind === 'assigned' ? { x: child.x > 65 ? child.x - 18 : child.x + 18, y: child.y }
     : event.kind === 'sent' ? { x: parent!.x > 100 ? parent!.x - 18 : parent!.x + 18, y: parent!.y }
     : event.kind === 'left' ? { x: liftX, y: door.y } : point(moving)
   const segments: OfficeTripSegment[] = []
@@ -44,16 +46,16 @@ export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: 
     if (cursor.x !== to.x || cursor.y !== to.y) leg(to, clamp(Math.abs(to.x - cursor.x) / 65 * 1000, 200, 1500), 'walk')
   }
   const captions: Record<OfficeEvent['kind'], string> = {
-    assigned: 'is sharing an assignment', finished: 'is taking a break in the lounge', sent: 'has sent their work', received: 'has received the work', arrived: 'is climbing down to their desk', left: 'is climbing up to the lounge',
+    assigned: 'is sharing an assignment', finished: child.floorId === 'lounge' ? 'is joining the celebration' : child.zone === 'lounge' ? 'is heading to the break room' : 'is heading to their desk', sent: 'has sent their work', received: 'has received the work', arrived: 'is heading to their desk', left: 'is heading home',
   }
-  if (event.kind === 'received' && !completed) leg(home, 1800, 'hold')
+  if (event.kind === 'received' && !changedRoom) leg(home, 1800, 'hold')
   else {
     if (event.kind === 'left') { travel(door); leg(door, 250, 'hold') }
     travel(destination)
     leg(destination, event.kind === 'finished' ? 300 : 1400, 'hold')
-    if (event.kind !== 'finished' && !presence && !completed) travel(home)
+    if (event.kind !== 'finished' && !presence && !changedRoom) travel(home)
   }
-  return { event, actorKey: moving.key, actor: moving, segments, startedAt: now, endsAt: now + segments.reduce((sum, segment) => sum + segment.duration, 0), caption: captions[event.kind] }
+  return { event, actorKey: moving.key, actor: moving, segments, startedAt: now, endsAt: now + segments.reduce((sum, segment) => sum + segment.duration, 0), caption: changedRoom && event.kind !== 'left' ? captions.finished : captions[event.kind] }
 }
 
 export function officeTripFrame(trip: OfficeTrip, now: number): OfficeTripFrame {
@@ -73,11 +75,11 @@ export function officeTripFrame(trip: OfficeTrip, now: number): OfficeTripFrame 
 }
 
 /** Bounded, short-lived visual work. Snapshots, not this queue, remain the authoritative state. */
-export function mergeOfficeEvents(pending: readonly OfficeEvent[], incoming: readonly OfficeEvent[], now: number): OfficeEvent[] {
+export function mergeOfficeEvents(pending: readonly OfficeEvent[], incoming: readonly OfficeEvent[], now: number, eligible: (event: OfficeEvent) => boolean = () => true): OfficeEvent[] {
   const rank = { assigned: 0, finished: 1, sent: 2, received: 3, arrived: 4, left: 5 }
   const latest = new Map<string, OfficeEvent>()
   for (const event of [...pending, ...incoming]) {
-    if (now - event.at > 15_000) continue
+    if (now - event.at > 15_000 || !eligible(event)) continue
     const previous = latest.get(event.actorKey)
     if (!previous || event.at > previous.at || (event.at === previous.at && rank[event.kind] > rank[previous.kind])) latest.set(event.actorKey, event)
   }
@@ -89,9 +91,9 @@ export function officePresenceEvents(before: OfficeScene | null, next: OfficeSce
   if (!before) return []
   const old = new Map(before.actors.map(actor => [actor.key, actor])), current = new Map(next.actors.map(actor => [actor.key, actor]))
   const events: OfficeEvent[] = []
-  for (const actor of before.actors) if (!current.has(actor.key)) events.push({ id: JSON.stringify(['left', actor.key, now]), kind: 'left', actorKey: actor.key, parentKey: actor.parentKey, at: now })
-  for (const actor of next.actors) if (old.get(actor.key)?.zone === 'desk' && actor.zone === 'lounge') events.push({id:JSON.stringify(['finished',actor.key,now]),kind:'finished',actorKey:actor.key,parentKey:actor.parentKey,at:now})
-  for (const actor of next.actors) if (!old.has(actor.key) && knownTeams.has(actor.sessionId) && (actor.agent.role === 'lead' || ['running','thinking','background','waiting_approval','waiting_input'].includes(actor.agent.status))) {
+  for (const actor of before.actors) if (!actor.hidden && !current.has(actor.key)) events.push({ id: JSON.stringify(['left', actor.key, now]), kind: 'left', actorKey: actor.key, parentKey: actor.parentKey, at: now })
+  for (const actor of next.actors) if (!actor.hidden && old.has(actor.key) && !old.get(actor.key)!.hidden && old.get(actor.key)!.floorId !== actor.floorId) events.push({id:JSON.stringify(['finished',actor.key,now]),kind:'finished',actorKey:actor.key,parentKey:actor.parentKey,at:now})
+  for (const actor of next.actors) if (!actor.hidden && !old.has(actor.key) && knownTeams.has(actor.sessionId) && (actor.agent.role === 'lead' || ['running','thinking','background','waiting_approval','waiting_input'].includes(actor.agent.status))) {
     events.push({ id: JSON.stringify(['arrived', actor.key, now]), kind: 'arrived', actorKey: actor.key, parentKey: actor.parentKey, at: now })
   }
   return events

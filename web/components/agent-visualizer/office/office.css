@@ -44,3 +44,5 @@
   .of-board li{font-size:18cqh}
   .of-board li+li{display:none}
 }
+
+.of-resting-muted{background:#ede5d0d9;color:#655e50;border:1px solid #b6ae98;font-size:9px}

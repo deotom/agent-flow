@@ -72,9 +72,11 @@ export const BREAK_SEATS = BREAK_ROOMS['room-break']
 export const BREAK_ASPECT = 864/1536
 /** True when a team has nobody working, waiting or failed. */
 export const officeTeamQuiet = (snapshot: TeamSnapshot) => quiet(snapshot)
-/** Display names must never carry file paths: keep only a path's last segment. */
-export const officeDisplayName = (name: string) =>
-  name.replace(/(?:[A-Za-z]:[\\/]|\/)(?:[^\s\\/·]+[\\/])+[^\s\\/·]*/g, match => match.split(/[\\/]/).filter(Boolean).pop() ?? '').replace(/\s+/g, ' ').trim() || 'Agent'
+/** Replace recognizable filesystem tokens, preserving URLs and ordinary slash-separated names. */
+export function officeDisplayName(name: string): string {
+  const paths = /\b[a-z][a-z\d+.-]*:\/\/[^\s·]+|(?:^|(?<=[\s("']))(?:[A-Za-z]:[\\/](?:[^\\/\r\n·<>"|?*]+[\\/])*[^\s\\/·<>"|?*]*|\\\\[^\s\\/]+[\\/][^\s·]+|~\/(?:[^\s·]+)|\/(?:root|home|Users|tmp|var|mnt|opt|srv|workspace|usr|etc|private)(?:\/[^\s·]*)?)(?=$|[\s)"'·])/gi
+  return name.replace(paths, match => /^[a-z][a-z\d+.-]*:\/\//i.test(match) ? match : match.split(/[\\/]/).filter(Boolean).pop() ?? '').replace(/\s+/g, ' ').trim() || 'Agent'
+}
 /**
  * Where people go:
  * - finished and failed workers of an active team rest in that team's own break room,
@@ -85,7 +87,7 @@ export const officeDisplayName = (name: string) =>
 export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: TeamScope, showQuiet: boolean, identities: ReadonlyMap<string, number>, width = 450, parties: ReadonlySet<string> = new Set()): OfficeScene {
   const priority = (s: TeamSnapshot) => s.agents.some(a => a.status.startsWith('waiting_')) ? 0 : quiet(s) ? 2 : 1
   const sorted = [...new Map(snapshots.map(s => [s.sessionId, s])).values()].sort((a,b) => priority(a)-priority(b) || a.sessionId.localeCompare(b.sessionId))
-  const quietTeams = sorted.filter(quiet), floors: OfficeFloor[] = [], actors: OfficeActor[] = [], resting: OfficeActor[] = [], guests: OfficeActor[] = []
+  const quietTeams = sorted.filter(s => quiet(s) && !(parties.has(s.sessionId) && s.agents.some(a => a.status === 'done'))), floors: OfficeFloor[] = [], actors: OfficeActor[] = [], resting: OfficeActor[] = [], guests: OfficeActor[] = []
   const partyTitles: string[] = []
   const clean = (v: string) => v.replace(/(?:[A-Za-z]:[\\/]|\/root\/|\/Users\/|\/home\/)[^ ·]+/g, '').trim()
   const surfaceHeight = width * 864/1536
@@ -145,7 +147,7 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
       y += breakHeight * .90
     }
   }
-  if (quietTeams.length) { floors.push({id:'quiet',sessionId:null,title:`${quietTeams.length} ${quietTeams.length === 1 ? 'team' : 'teams'} went home`,subtitle:'',color:'#aa9168',y,height:34,actorKeys:[],kind:'quiet'}); y+=34 }
+  if (quietTeams.length) { floors.push({id:'quiet',sessionId:null,title:`${quietTeams.length} ${quietTeams.length === 1 ? 'team' : 'teams'} at home`,subtitle:'',color:'#aa9168',y,height:34,actorKeys:[],kind:'quiet'}); y+=34 }
   // The surface lawn is the party garden.
   const seats = [[.338,.61],[.495,.61],[.64,.57],[.78,.58]]
   if (partyTitles.length) lounge.party = partyTitles

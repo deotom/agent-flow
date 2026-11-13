@@ -58,3 +58,12 @@ it('does not create historical lounge floors in Current work while a sibling is 
   assert.equal(current.floors.filter(f=>f.kind==='lounge').length,1)
   assert.equal(buildOfficeScene([snapshot],'session',false,ids).actors.length,12)
 })
+
+it('moves celebrants home only after their party',()=>{
+  const snapshot=team('s',[{...agent('lead'),status:'done'}])
+  const party=buildOfficeScene([snapshot],'active',false,new Map(),450,new Set(['s']))
+  assert.equal(party.quietTeams.length,0)
+  const home=buildOfficeScene([snapshot],'active',false,new Map())
+  assert.equal(home.quietTeams.length,1)
+  assert.equal(home.actors.length,0)
+})
