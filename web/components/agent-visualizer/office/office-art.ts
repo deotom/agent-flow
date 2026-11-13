@@ -186,7 +186,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
   const lounge=scene.floors.find(f=>f.kind==='lounge')
   if(lounge)c.rect(0,(lounge.height??0)*.68,scene.width,(lounge.height??0)*.32)
   for(const f of scene.floors){
-    if(f.kind==='team'){const h=f.height??0;c.rect(0,f.y,scene.width,h*(f.room==='room-c-big'?.10:.17));c.rect(0,f.y+h*.80,scene.width,h*.20)}
+    if(f.kind==='team'||f.kind==='break'){const h=f.height??0;c.rect(0,f.y,scene.width,h*(f.room==='room-c-big'?.10:.17));c.rect(0,f.y+h*.80,scene.width,h*.20)}
     if(f.kind==='quiet')c.rect(0,f.y,scene.width,f.height??30)
   }
   c.clip()
@@ -213,7 +213,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     }
     const t=time?time+phaseOf(actor.key):0
     c.save();c.translate(actor.x+life.dx,actor.y);c.scale(scale,scale)
-    drawOfficeAvatar(c,actor.appearance,0,0,t,{sit:!moving&&!life.stand,walk:life.walk,typing:o.live&&life.typing&&!moving,hand:o.live&&waiting,
+    drawOfficeAvatar(c,actor.appearance,0,0,t,{sit:!moving&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving,hand:o.live&&waiting,
       mug:actor.zone==='lounge'&&!moving,lead:actor.agent.role==='lead'||actor.pod,cup:life.cup,stretch:life.stretch,lean:life.lean,doze:life.doze,
       slump:life.slump,scratch:life.scratch,wave:life.wave,turn:life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose})
     if(life.mood){c.translate(0,-life.hop);drawMood(c,life.mood,t)}

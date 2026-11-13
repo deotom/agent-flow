@@ -46,17 +46,27 @@ export const OFFICE_SLOTS = {
   'room-c-big': { chairs: [[.162,.55],[.378,.55],[.601,.55],[.815,.55],[.148,.765],[.375,.765],[.603,.765],[.826,.765]], monitors: [[.172,.421],[.386,.421],[.602,.421],[.815,.421],[.153,.622],[.382,.622],[.607,.622],[.832,.622]], aspect: 1 },
 } as const
 export const LOUNGE_CAP = 4
-/** A team that went quiet within this window throws a party in the lounge, then goes home. */
+/** A team seen finishing celebrates on the surface for this long, then goes home. */
 export const OFFICE_PARTY_MS = 15 * 60_000
+/** Break room spots as [x, y, standing] fractions of the room art: sofas, coffee bar, ping-pong, beanbags. */
+export const BREAK_SEATS: readonly (readonly [number, number, 0 | 1])[] = [[.275,.6,0],[.415,.6,0],[.70,.6,0],[.84,.6,0],[.15,.74,1],[.54,.75,1],[.66,.75,1],[.235,.67,0],[.48,.67,0]]
+export const BREAK_ASPECT = 864/1536
+/** True when a team has nobody working, waiting or failed. */
+export const officeTeamQuiet = (snapshot: TeamSnapshot) => quiet(snapshot)
+/** Display names must never carry file paths: keep only a path's last segment. */
+export const officeDisplayName = (name: string) =>
+  name.replace(/(?:[A-Za-z]:[\\/]|\/)(?:[^\s\\/·]+[\\/])+[^\s\\/·]*/g, match => match.split(/[\\/]/).filter(Boolean).pop() ?? '').replace(/\s+/g, ' ').trim() || 'Agent'
 /**
- * Lounge rules: finished and failed workers of active teams rest in the lounge (a failed root
- * lead stays at its desk). Quiet teams go home, except that a team which just finished
- * celebrates in the lounge for OFFICE_PARTY_MS. `now` enables parties; omitted, nobody parties.
+ * Where people go:
+ * - finished and failed workers of active teams rest in the underground break room
+ *   (a failed root lead keeps its desk);
+ * - quiet teams go home, except teams in `parties` (seen finishing by the viewer), which
+ *   celebrate on the surface lawn first.
  */
-export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: TeamScope, showQuiet: boolean, identities: ReadonlyMap<string, number>, width = 450, now?: number): OfficeScene {
+export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: TeamScope, showQuiet: boolean, identities: ReadonlyMap<string, number>, width = 450, parties: ReadonlySet<string> = new Set()): OfficeScene {
   const priority = (s: TeamSnapshot) => s.agents.some(a => a.status.startsWith('waiting_')) ? 0 : quiet(s) ? 2 : 1
   const sorted = [...new Map(snapshots.map(s => [s.sessionId, s])).values()].sort((a,b) => priority(a)-priority(b) || a.sessionId.localeCompare(b.sessionId))
-  const quietTeams = sorted.filter(quiet), floors: OfficeFloor[] = [], actors: OfficeActor[] = [], resting: OfficeActor[] = []
+  const quietTeams = sorted.filter(quiet), floors: OfficeFloor[] = [], actors: OfficeActor[] = [], resting: OfficeActor[] = [], guests: OfficeActor[] = []
   const partyTitles: string[] = []
   const clean = (v: string) => v.replace(/(?:[A-Za-z]:[\\/]|\/root\/|\/Users\/|\/home\/)[^ ·]+/g, '').trim()
   const surfaceHeight = width * 864/1536
@@ -71,7 +81,7 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
     const rootLead = (a: TeamAgentRow) => a.role === 'lead' && !a.parentId
     const done = (a: TeamAgentRow) => a.status === 'done' || a.status === 'cancelled' || (a.status === 'failed' && !rootLead(a))
     const teamQuiet = quiet(snap)
-    const partying = teamQuiet && now !== undefined && snap.updatedAt !== null && now - snap.updatedAt <= OFFICE_PARTY_MS && snap.agents.some(a => a.status === 'done')
+    const partying = teamQuiet && parties.has(snap.sessionId) && snap.agents.some(a => a.status === 'done')
     if (partying) partyTitles.push(clean(snap.title) || 'Team')
     // Limited desks go to whoever most needs to be seen: root lead, waiting, failed, working, then idle.
     const rank = (r: (typeof ordered)[number]) => r.agent.role === 'lead' && !r.agent.parentId ? 0 : r.agent.status.startsWith('waiting_') ? 1 : r.agent.status === 'failed' ? 2 : isWorking(r.agent.status) ? 3 : 4
@@ -87,27 +97,37 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
       if (!terminal && !included) continue
       const chair = slots.chairs[Math.max(0,slot) % slots.chairs.length], monitor = slots.monitors[Math.max(0,slot) % slots.monitors.length]
       const activity = row.agent.activities.at(-1)
-      const actor: OfficeActor = { key, sessionId:snap.sessionId, agent:row.agent, task:row.task,
+      const actor: OfficeActor = { key, sessionId:snap.sessionId, agent:{ ...row.agent, name:officeDisplayName(row.agent.name) }, task:row.task,
         parentKey:row.agent.parentId && agents.has(row.agent.parentId) ? officeKey(snap.sessionId,row.agent.parentId) : null,
         appearance:officeAppearance(identities.get(key) ?? 0), floorId:id, zone:terminal ? 'lounge' : 'desk',
         x:chair[0]*width, y:y+chair[1]*height, monitor:{x:monitor[0]*width,y:y+monitor[1]*height},
         hidden:!terminal && slot>=slots.chairs.length, pod:snap.agents.some(a=>a.parentId===row.agent.id),
         activity:activity && row.agent.status === 'running' ? describeActivity(activity).label : row.statusText,
         runtimeName:row.agent.runtime ? runtimeNames[row.agent.runtime] : 'Unknown AI', team:{ title, color:teamColor(snap.sessionId) } }
-      // Quiet teams go home; their people only appear in the lounge while celebrating.
-      if (terminal) { if (!teamQuiet) resting.push(actor); else if (partying) resting.push({ ...actor, party:true }) }
+      // Active teams rest in the break room; quiet teams go home unless they are celebrating.
+      if (terminal) { if (!teamQuiet) resting.push(actor); else if (partying) guests.push({ ...actor, party:true }) }
       else actors.push(actor)
     }
     if (included) y += height * .90
   }
+  if (resting.length) {
+    const height = width * BREAK_ASPECT, breakFloor: OfficeFloor = { id:'break', sessionId:null, title:'Break room', subtitle:`${resting.length} resting`,
+      color:'#c98a4b', y, height, room:'room-break', actorKeys:[], kind:'break', overflow:Math.max(0, resting.length - BREAK_SEATS.length) }
+    floors.push(breakFloor)
+    resting.forEach((actor, i) => {
+      const [sx, sy, stand] = BREAK_SEATS[i % BREAK_SEATS.length]
+      actors.push({ ...actor, floorId:'break', monitor:undefined, x:sx*width, y:y+sy*height, stand:stand === 1, hidden:i >= BREAK_SEATS.length })
+      breakFloor.actorKeys.push(actor.key)
+    })
+    y += height * .90
+  }
   if (quietTeams.length) { floors.push({id:'quiet',sessionId:null,title:`${quietTeams.length} ${quietTeams.length === 1 ? 'team' : 'teams'} went home`,subtitle:'',color:'#aa9168',y,height:34,actorKeys:[],kind:'quiet'}); y+=34 }
+  // The surface lawn is the party garden.
   const seats = [[.338,.61],[.495,.61],[.64,.57],[.78,.58]]
-  // Party guests take the lounge first.
-  resting.sort((a,b) => Number(Boolean(b.party))-Number(Boolean(a.party)))
   if (partyTitles.length) lounge.party = partyTitles
-  resting.forEach((actor,i) => { const seat=seats[i%seats.length]; actors.push({...actor, floorId:'lounge',monitor:undefined,x:seat[0]*width,y:seat[1]*surfaceHeight,hidden:i>=LOUNGE_CAP}); lounge.actorKeys.push(actor.key) })
-  lounge.overflow=Math.max(0,resting.length-LOUNGE_CAP)
-  return { width, height:y+width/3, floors, actors, quietTeams, totalAgents:sorted.reduce((n,s)=>n+s.agents.length,0), finishedCount:resting.length }
+  guests.forEach((actor,i) => { const seat=seats[i%seats.length]; actors.push({...actor, floorId:'lounge',monitor:undefined,x:seat[0]*width,y:seat[1]*surfaceHeight,hidden:i>=LOUNGE_CAP}); lounge.actorKeys.push(actor.key) })
+  lounge.overflow=Math.max(0,guests.length-LOUNGE_CAP)
+  return { width, height:y+width/3, floors, actors, quietTeams, totalAgents:sorted.reduce((n,s)=>n+s.agents.length,0), finishedCount:resting.length + guests.length }
 }
 
 /**
@@ -119,10 +139,10 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
  */
 export function officeBoard(snap: TeamSnapshot, goal: string, clean: (value: string) => string = v => v): OfficeBoard {
   const tasks = snap.tasks.filter(task => task.status !== 'cancelled')
-  const names = new Map(snap.agents.map(agent => [agent.id, agent.name]))
+  const names = new Map(snap.agents.map(agent => [agent.id, officeDisplayName(agent.name)]))
   const label = (task: TeamSnapshot['tasks'][number]) => (clean(names.get(task.childId) ?? task.name).replace(/\s+/g, ' ').trim() || 'Agent').slice(0, 60)
   const items: OfficeBoardItem[] = [
-    ...snap.agents.filter(agent => agent.status.startsWith('waiting_')).map(agent => ({ label: `${agent.name} needs you`, state: 'waiting' as const })),
+    ...snap.agents.filter(agent => agent.status.startsWith('waiting_')).map(agent => ({ label: `${officeDisplayName(agent.name)} needs you`, state: 'waiting' as const })),
     ...tasks.filter(task => task.status === 'failed').map(task => ({ label: label(task), state: 'failed' as const })),
     ...tasks.filter(task => task.status === 'working').map(task => ({ label: label(task), state: 'working' as const })),
     ...tasks.filter(task => task.status === 'done').sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0)).map(task => ({ label: label(task), state: 'done' as const })),

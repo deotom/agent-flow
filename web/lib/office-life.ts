@@ -160,7 +160,8 @@ export function officeLifePairs(actors: readonly OfficeActor[]): Map<string, Off
   const groups = new Map<string, OfficeActor[]>()
   for (const actor of actors) {
     if (actor.hidden || actor.pose?.walk || actor.pose?.climb) continue
-    const group = actor.zone === 'lounge' ? 'lounge' : `${actor.floorId}\0${Math.round(actor.y / 8)}`
+    // Pair within one room and one row of seats (the lawn and the break room are separate rooms).
+    const group = `${actor.zone}\0${actor.floorId}\0${Math.round(actor.y / (actor.zone === 'lounge' ? 12 : 8))}`
     groups.set(group, [...groups.get(group) ?? [], actor])
   }
   const pairs = new Map<string, OfficeLifePair>()

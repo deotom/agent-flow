@@ -5,7 +5,7 @@ import type { TeamSnapshot } from '../../../lib/team-types'
 import { isWorking, type TeamScope } from '../../../lib/team-model'
 import type { AnimationMode } from '../../../lib/viewer-preferences'
 import type { OfficeActor, OfficeEvent, OfficePet, OfficeScene } from '../../../lib/office-types'
-import { assignOfficeIdentities, buildOfficeScene, currentOfficeBoard, officeEvents, officeKey } from '../../../lib/office-model'
+import { assignOfficeIdentities, buildOfficeScene, currentOfficeBoard, OFFICE_PARTY_MS, officeEvents, officeKey, officeTeamQuiet } from '../../../lib/office-model'
 import { createOfficeTrip, mergeOfficeEvents, officeAllowsMotion, officeDepartureScene, officePresenceEvents, populatedOfficeTeams, officeTripFrame, parseOfficeIdentities, type OfficeTrip } from '../../../lib/office-motion'
 import { drawOfficeFrame, officeAmbient } from './office-art'
 
@@ -60,7 +60,21 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const sceneWidth = 450
   // Parties end on a minute clock so the scene is not rebuilt every second.
   const partyClock = Math.floor(now / 60_000) * 60_000
-  const scene = useMemo(() => buildOfficeScene(snapshots, scope, showQuiet, identities, sceneWidth, partyClock), [snapshots, scope, showQuiet, identities, sceneWidth, partyClock])
+  // Parties are for teams this viewer actually saw finish (active -> quiet), at most two at a time.
+  // Derived during render so finishers go straight from their desks to the party, never via home.
+  const partyLog = useRef({ quiet: null as Map<string, boolean> | null, since: new Map<string, number>(), snapshots: null as readonly TeamSnapshot[] | null })
+  const parties = useMemo(() => {
+    const log = partyLog.current
+    if (log.snapshots !== snapshots) {
+      const quietNow = new Map(snapshots.map(snapshot => [snapshot.sessionId, officeTeamQuiet(snapshot)]))
+      if (log.quiet) for (const [id, isQuiet] of quietNow) if (isQuiet && log.quiet.get(id) === false) log.since.set(id, Date.now())
+      for (const id of [...log.since.keys()]) if (!quietNow.get(id)) log.since.delete(id)
+      log.quiet = quietNow; log.snapshots = snapshots
+    }
+    for (const [id, at] of [...log.since]) if (partyClock - at >= OFFICE_PARTY_MS) log.since.delete(id)
+    return new Set([...log.since].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([id]) => id))
+  }, [snapshots, partyClock])
+  const scene = useMemo(() => buildOfficeScene(snapshots, scope, showQuiet, identities, sceneWidth, parties), [snapshots, scope, showQuiet, identities, sceneWidth, parties])
   const [heldLayout, setHeldLayout] = useState<OfficeScene | null>(null)
   const held = useRef<OfficeScene | null>(null)
   const holdLayout = (value: OfficeScene | null) => { held.current = value; setHeldLayout(value) }
@@ -203,7 +217,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     const room = new Map<string, number>(), seated = visualScene.actors.filter(actor => !actor.hidden)
     for (const actor of seated) {
       let nearest = Infinity
-      for (const other of seated) if (other !== actor && other.zone === actor.zone && other.floorId === actor.floorId && Math.abs(other.y - actor.y) < 24) nearest = Math.min(nearest, Math.abs(other.x - actor.x))
+      for (const other of seated) if (other !== actor && other.zone === actor.zone && other.floorId === actor.floorId && Math.abs(other.y - actor.y) < 12) nearest = Math.min(nearest, Math.abs(other.x - actor.x))
       room.set(actor.key, Math.min(nearest, actor.zone === 'lounge' ? 70 : 99))
     }
     return room

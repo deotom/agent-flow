@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { assignOfficeIdentities, buildOfficeScene, officeEvents, officeKey, officeAppearance, OFFICE_PARTY_MS } from '../lib/office-model'
+import { assignOfficeIdentities, buildOfficeScene, officeEvents, officeKey, officeAppearance, officeDisplayName, BREAK_SEATS } from '../lib/office-model'
 import type { TeamAgentRow, TeamSnapshot, TeamTaskRow } from '../lib/team-types'
 
 const agent = (id: string, status: TeamAgentRow['status'] = 'thinking', parentId: string | null = null, startedAt = 1): TeamAgentRow => ({
@@ -104,14 +104,14 @@ test('room choice, priority, failed lead seating, quiet teams going home and lou
   // A failed root lead keeps its desk.
   assert.equal(scene.actors.find(a=>a.agent.id==='error')?.zone,'desk')
   // Just finished: the quiet team celebrates in the lounge, guests first, capped at four seats.
-  const party=buildOfficeScene(all,'active',false,ids,450,(quiet.updatedAt??0)+60_000)
+  const party=buildOfficeScene(all,'active',false,ids,450,new Set(['quiet']))
   const guests=party.actors.filter(a=>a.zone==='lounge')
   assert.equal(guests.filter(a=>!a.hidden).length,4)
   assert.equal(party.floors[0].overflow,4)
   assert.ok(guests.every(a=>a.party&&a.sessionId==='quiet'))
   assert.deepEqual(party.floors[0].party,['quiet'])
   // After the party they go home.
-  const later=buildOfficeScene(all,'active',false,ids,450,(quiet.updatedAt??0)+OFFICE_PARTY_MS+1)
+  const later=buildOfficeScene(all,'active',false,ids,450,new Set())
   assert.equal(later.actors.filter(a=>a.zone==='lounge').length,0)
   assert.equal(later.floors.find(f=>f.kind==='quiet')?.title,'1 team went home')
   assert.equal(scene.floors.at(-1)?.kind,'quiet')
@@ -128,4 +128,36 @@ test('limited desks seat the lead first, then agents waiting on the user or fail
   // A failed worker's job is over: it goes up to rest instead of holding a desk.
   assert.equal(scene.actors.find(a=>a.agent.id==='broke')?.zone,'lounge')
   assert.equal(scene.floors.find(f=>f.sessionId==='crowd')?.overflow,3)
+})
+
+test('finished and failed workers of active teams rest in the break room, quiet teams never do', () => {
+  const busy=team('busy',[agent('lead'),agent('w','running','lead'),...Array.from({length:10},(_,i)=>agent(`d${i}`,'done','lead')),agent('oops','failed','lead')])
+  const home=team('home',[agent('idle','idle'),agent('gone','done','idle')])
+  const ids=assignOfficeIdentities([busy,home].flatMap(s=>s.agents.map(a=>officeKey(s.sessionId,a.id))))
+  const scene=buildOfficeScene([busy,home],'session',false,ids)
+  const room=scene.floors.find(f=>f.kind==='break')!
+  assert.equal(room.room,'room-break')
+  assert.equal(room.subtitle,'11 resting')
+  assert.equal(room.overflow,11-BREAK_SEATS.length)
+  const resting=scene.actors.filter(a=>a.floorId==='break')
+  assert.equal(resting.length,11)
+  assert.equal(resting.filter(a=>!a.hidden).length,BREAK_SEATS.length)
+  assert.ok(resting.every(a=>a.sessionId==='busy'&&a.zone==='lounge'))
+  assert.ok(resting.some(a=>a.agent.id==='oops'))
+  assert.ok(resting.some(a=>a.stand)&&resting.some(a=>!a.stand))
+  // The surface lawn is empty without a party, and the break room sits above the quiet strip.
+  assert.equal(scene.actors.filter(a=>a.floorId==='lounge').length,0)
+  const kinds=scene.floors.map(f=>f.kind)
+  assert.ok(kinds.indexOf('break')>kinds.lastIndexOf('team')&&kinds.indexOf('break')<kinds.indexOf('quiet'))
+  // No resting workers, no break room.
+  assert.equal(buildOfficeScene([home],'session',false,ids).floors.some(f=>f.kind==='break'),false)
+})
+
+test('display names never carry file paths', () => {
+  assert.equal(officeDisplayName('/root/office-verification/notes'),'notes')
+  assert.equal(officeDisplayName(String.raw`Review C:\Users\me\repo\plan.md now`),'Review plan.md now')
+  assert.equal(officeDisplayName('Lead / Planner'),'Lead / Planner')
+  assert.equal(officeDisplayName('API/Builder'),'API/Builder')
+  assert.equal(officeDisplayName('/root/'),'root')
+  assert.equal(officeDisplayName('   '),'Agent')
 })

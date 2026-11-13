@@ -1,6 +1,7 @@
 # Office background assets
 
 User-supplied, approved shipping artwork from `artifacts.local/office-concept`.
+`room-break.webp` was generated in the same Figma file and encoded with Pillow WebP q78.
 The concept image is not included. Encoded with Electron canvas WebP quality .83,
 1000 px wide (2x a 500 px scene); no runtime image dependency.
 
@@ -11,7 +12,8 @@ The concept image is not included. Encoded with Electron canvas WebP quality .83
 | room-b-lead.webp | 106,046 |
 | room-c-big.webp | 123,150 |
 | bottom.webp | 46,372 |
-| Total | 428,840 |
+| room-break.webp | 72,084 |
+| Total | 500,924 |
 
 Seat and monitor coordinates are normalized against the original full image in
 `OFFICE_SLOTS` in `web/lib/office-model.ts`. Rooms overlap their soil bands by

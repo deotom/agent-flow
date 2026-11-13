@@ -24,6 +24,8 @@ export interface OfficeActor extends OfficePoint {
   zone: 'desk' | 'lounge'
   activity: string
   runtimeName: string
+  /** Rest spot is a standing one (coffee bar, ping-pong). */
+  stand?: boolean
   /** Celebrating a team that just finished (lounge only). */
   party?: boolean
   /** Team identity, kept even when the actor rests in the shared lounge. */
@@ -41,9 +43,9 @@ export interface OfficeFloor {
   color: string
   y: number
   actorKeys: string[]
-  kind: 'team' | 'lounge' | 'quiet'
+  kind: 'team' | 'lounge' | 'quiet' | 'break'
   height?: number
-  room?: 'room-a' | 'room-b-lead' | 'room-c-big'
+  room?: 'room-a' | 'room-b-lead' | 'room-c-big' | 'room-break'
   overflow?: number
   working?: number
   waiting?: number
