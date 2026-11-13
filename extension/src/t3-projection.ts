@@ -140,7 +140,9 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
     for (const [id, row] of members) {
       const payload = t3Payload(row)
       const runs = data.runs.filter(run => run.thread_id === id).sort((a, b) => Number(b.ordinal) - Number(a.ordinal))
-      const latest = runs[0]
+      // A queued or steered message can create a newer run that ends "cancelled" while the
+      // previous run is still working, so a still-running run wins over a newer finished one.
+      const latest = runs.find(run => running(run.status)) ?? runs[0]
       const provider = data.providerThreads.find(p => p.provider_thread_id === (payload.activeProviderThreadId || row.active_provider_thread_id || latest?.provider_thread_id))
       const task = taskRows.filter(t => t.child_thread_id === id).sort((a, b) => timestamp(b.updated_at) - timestamp(a.updated_at))[0]
       const items = data.items.filter(item => item.thread_id === id && (!latest || item.run_id === latest.run_id)

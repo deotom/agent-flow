@@ -154,3 +154,20 @@ test('reports the current provider after a lead switches from Claude to Codex', 
   assert.equal(officeAndBoardLead.runtime, 'codex')
   assert.equal(officeAndBoardLead.model, 'gpt-test')
 })
+
+test('keeps a lead working when a newer queued run was cancelled while the previous run still runs', () => {
+  const data = fixture()
+  // Real T3 shape: run 34 still running, run 35 (a cancelled follow-up) has the higher ordinal.
+  data.runs = data.runs.filter(run => run.thread_id !== 'lead')
+  data.runs.push(row({ run_id: 'r-34', thread_id: 'lead', ordinal: 34, status: 'running' }), row({ run_id: 'r-35', thread_id: 'lead', ordinal: 35, status: 'cancelled' }))
+  data.items = [row({ turn_item_id: 'tool34', thread_id: 'lead', run_id: 'r-34', type: 'command_execution', status: 'running' }, { title: 'oc get pods' })]
+  const team = projectT3Teams(data, ['D:/Project/TH']).find(t => t.session.id === 't3:lead')!
+  const lead = (team.event.payload.team as TeamSnapshot).agents.find(a => a.role === 'lead')!
+  assert.equal(lead.status, 'running')
+  assert.equal(team.session.status, 'active')
+  // Once nothing runs, the newest run decides again.
+  data.runs = data.runs.map(run => run.run_id === 'r-34' ? { ...run, status: 'completed' } : run)
+  data.items = []
+  const after = projectT3Teams(data, ['D:/Project/TH']).find(t => t.session.id === 't3:lead')!
+  assert.equal((after.event.payload.team as TeamSnapshot).agents.find(a => a.role === 'lead')!.status, 'cancelled')
+})
