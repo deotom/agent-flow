@@ -61,7 +61,7 @@ export class T3SessionWatcher {
   get replies(): T3Reply[] { return this.replyList }
   private teams = new Map<string, T3Team>()
   private fingerprints = new Map<string, string>()
-  private timer?: ReturnType<typeof setInterval>
+  private timer?: ReturnType<typeof setTimeout>
   private lastError = ''
   private lastSuccessAt: number | null = null
   private lastChangeAt: number | null = null
@@ -73,7 +73,17 @@ export class T3SessionWatcher {
   start(): void {
     if (this.timer || this.disposed) return
     this.poll()
-    this.timer = setInterval(() => this.poll(), T3_POLL_INTERVAL_MS)
+    this.scheduleNextPoll()
+  }
+  private scheduleNextPoll(): void {
+    if (this.disposed) return
+    // A synchronous SQLite read can exceed the interval. Wait after it finishes
+    // so missed interval deadlines cannot keep the relay worker busy polling.
+    this.timer = setTimeout(() => {
+      this.timer = undefined
+      this.poll()
+      this.scheduleNextPoll()
+    }, T3_POLL_INTERVAL_MS)
     this.timer.unref?.()
   }
   get diagnostic(): string { return this.lastError || 'T3 local teams (read-only)' }
@@ -120,7 +130,7 @@ export class T3SessionWatcher {
   }
 poll(): void {
     if (this.disposed) return
-    const checkedAt = Date.now()
+    let checkedAt = Date.now()
     let db: ReadDatabase | undefined
     try {
       if (!fs.existsSync(this.databasePath)) throw new Error('T3 database not found. Open T3 or set AGENT_FLOW_T3_DB.')
@@ -187,6 +197,8 @@ poll(): void {
       if (changed) this.sessionLists.fire(this.getActiveSessions())
       this.updateProjects(projects)
       this.updateReplies(db, [...next.keys()])
+      // Date the completed read, not its start: large snapshots take time.
+      checkedAt = Date.now()
       this.lastSuccessAt = checkedAt
       if (changed) this.lastChangeAt = checkedAt
       if (this.lastError) this.diagnostics.fire('T3 local teams (read-only)')
@@ -194,6 +206,7 @@ poll(): void {
       this.latestHealth = { source: 't3', state: 'ok', checkedAt, lastSuccessAt: this.lastSuccessAt,
         lastChangeAt: this.lastChangeAt, pollIntervalMs: T3_POLL_INTERVAL_MS, reason: null }
     } catch (error) {
+      checkedAt = Date.now()
       // Fail visibly without falling back to unrelated native sessions or leaking paths/data.
       const reason = error instanceof Error && /not found/.test(error.message) ? error.message : 'T3 projection unavailable or incompatible. Check T3 version and database path.'
       if (reason !== this.lastError) { console.warn(`[T3] ${reason}`); this.diagnostics.fire(reason) }
@@ -207,7 +220,7 @@ poll(): void {
   }
   dispose(): void {
     this.disposed = true
-    clearInterval(this.timer)
+    clearTimeout(this.timer)
     this.teams.clear(); this.fingerprints.clear()
     this.events.dispose(); this.lifecycle.dispose(); this.detected.dispose(); this.diagnostics.dispose(); this.sessionLists.dispose(); this.sourceHealthEvents.dispose()
   }

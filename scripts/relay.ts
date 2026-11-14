@@ -125,6 +125,22 @@ function broadcastT3ConnectionStatus(health: SourceHealth): void {
 
 const eventBuffer = new Map<string, AgentEvent[]>()
 
+/** T3 snapshots replay from the watcher as current state, not incremental history. */
+export function bufferRelayHistory(buffers: Map<string, AgentEvent[]>, event: AgentEvent): void {
+  if (event.type === 'session_snapshot' && event.payload.source === 't3') {
+    if (event.sessionId) buffers.delete(event.sessionId)
+    return
+  }
+  if (event.sessionId) {
+    let buf = buffers.get(event.sessionId) || []
+    buf.push(event)
+    if (buf.length > MAX_EVENT_BUFFER) {
+      buf = buf.slice(buf.length - MAX_EVENT_BUFFER)
+    }
+    buffers.set(event.sessionId, buf)
+  }
+}
+
 function broadcastEvent(event: AgentEvent) {
   sessionEventCount++
   if (event.type === 'model_detected') {
@@ -134,14 +150,7 @@ function broadcastEvent(event: AgentEvent) {
   const sid = event.sessionId?.slice(0, SESSION_ID_DISPLAY) || '?'
   log(`[event] ${event.type} (session ${sid})`)
 
-  if (event.sessionId) {
-    let buf = eventBuffer.get(event.sessionId) || []
-    buf.push(event)
-    if (buf.length > MAX_EVENT_BUFFER) {
-      buf = buf.slice(buf.length - MAX_EVENT_BUFFER)
-    }
-    eventBuffer.set(event.sessionId, buf)
-  }
+  bufferRelayHistory(eventBuffer, event)
 
   broadcast(JSON.stringify({ type: 'agent-event', event }))
 }

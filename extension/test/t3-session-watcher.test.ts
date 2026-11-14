@@ -31,11 +31,20 @@ test('reads committed WAL changes without modifying T3, replays teams and recove
   const watcher = new T3SessionWatcher(['D:/Project/TH'], file)
   t.after(() => watcher.dispose())
   const events: AgentEvent[] = [], lifecycle: string[] = []
-  const health: Array<{ state: string; lastSuccessAt: number | null; lastChangeAt: number | null }> = []
+  const health: Array<{ state: string; checkedAt: number; lastSuccessAt: number | null; lastChangeAt: number | null }> = []
   watcher.onEvent(event => events.push(event))
   watcher.onSessionLifecycle(event => lifecycle.push(event.type))
   watcher.onSourceHealth(value => health.push(value))
+  // A successful heartbeat is fresh when it is published, even when reading/
+  // delivering a large all-project snapshot takes longer than the warning age.
+  let clock = 100_000
+  const dateNow = t.mock.method(Date, 'now', () => clock)
+  const slowDelivery = watcher.onEvent(() => { clock = 112_000 })
   watcher.poll()
+  assert.equal(health.at(-1)?.checkedAt, 112_000)
+  assert.equal(health.at(-1)?.lastSuccessAt, 112_000)
+  slowDelivery.dispose()
+  dateNow.mock.restore()
   assert.equal(watcher.getActiveSessions().length, 1)
   assert.deepEqual(watcher.projects, [{ id: 'p', title: 'TH', root: 'D:/Project/TH', current: true }], 'Older schemas fall back to the folder name')
   assert.equal(events.length, 1)
@@ -114,4 +123,28 @@ test('reads only the lead\'s latest reply text, cleaned and capped, for the loca
   assert.ok(!JSON.stringify(watcher.replies).includes('PRIVATE'))
   watcher.poll()
   assert.equal(fired.length, 1, 'An unchanged reply is not sent again')
+})
+
+
+test('waits for the poll interval after a slow read instead of immediately catching up missed polls', t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 0 })
+  const watcher = new T3SessionWatcher([])
+  let polls = 0
+  t.mock.method(watcher, 'poll', () => {
+    polls++
+    // Simulate a synchronous database read crossing several timer deadlines.
+    if (polls === 2) t.mock.timers.setTime(7000)
+  })
+  t.after(() => watcher.dispose())
+  watcher.start()
+  assert.equal(polls, 1)
+  t.mock.timers.tick(2000)
+  assert.equal(polls, 2, 'a slow read must not trigger catch-up polling')
+  t.mock.timers.tick(1999)
+  assert.equal(polls, 2)
+  t.mock.timers.tick(1)
+  assert.equal(polls, 3)
+  watcher.dispose()
+  t.mock.timers.tick(10_000)
+  assert.equal(polls, 3, 'disposal cancels the next read')
 })

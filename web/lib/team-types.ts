@@ -105,7 +105,7 @@ export interface TeamSnapshot {
 export interface SourceHealth {
   source: 't3'
   state: 'ok' | 'unavailable'
-  /** When the adapter last attempted a read. */
+  /** When the latest read attempt finished (successfully or not). */
   checkedAt: number
   /** Last successful read. Null when no read has succeeded yet. */
   lastSuccessAt: number | null
