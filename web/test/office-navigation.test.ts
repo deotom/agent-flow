@@ -1,6 +1,7 @@
 import { it } from 'node:test'
 import assert from 'node:assert/strict'
 import { officeNavigation, officeLanding, officeHatchOpen, officeAisle } from '../lib/office-navigation'
+import {officeStationPoint} from '../lib/office-stations'
 import { buildOfficeScene } from '../lib/office-model'
 import { createOfficeTrip, officeTripFrame } from '../lib/office-motion'
 
@@ -36,12 +37,12 @@ it('bounds the shaft at occupied landings and opens the hatch only for actual pa
  assert.equal(officeHatchOpen(scene,null,true),true)
 })
 
-it('anchors lift thresholds on grass and the wooden back-wall floor line, not the soil lip',()=>{
+it('aligns basement lift thresholds with the walking floor while retaining the grounded garden entrance',()=>{
  const scene=buildOfficeScene([team],'active',false,new Map())
  const room=scene.floors.find(f=>f.kind==='team')!,surface=scene.floors.find(f=>f.kind==='lounge')!
  const door=officeLanding(scene,room.id)!,aisle=officeAisle(scene,room.id)!
- assert.equal(door.y,room.y+room.height!*.64)
- assert.ok(door.y<aisle.y)
+ assert.equal(door.y,officeStationPoint(room,scene.width,'build').y,'door sill shares the agents walking plane')
+ assert.equal(door.y,aisle.y,'no raised step at the side entrance')
  assert.ok(officeNavigation(scene).hatch.y<surface.height!*.76,'base stays above painted grass edge')
  const trip=createOfficeTrip({id:'enter',kind:'arrived',actorKey:scene.actors[0].key,parentKey:null,at:1},{...scene,actors:[]},scene,0)!
  const ride=trip.segments.find(s=>s.kind==='ride')!

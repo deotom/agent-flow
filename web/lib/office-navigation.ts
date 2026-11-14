@@ -28,13 +28,11 @@ export function officeLanding(scene:OfficeScene,floorId:string):OfficePoint|null
  if(!f)return null
  if(f.annexOf)return officeInteriorDoor(scene,floorId)
  const scale=scene.width/450,shaftX=scene.width*SHAFT_X_RATIO,h=f.height??75
- return f.kind==='lounge'?{x:shaftX,y:f.y+h*.74}:{x:shaftX-28*scale,y:f.y+h*.64}
+ return f.kind==='lounge'?{x:shaftX,y:f.y+h*.74}:{x:shaftX-28*scale,y:f.y+h*.79}
 }
-/** Front aisle and side bay remain clear of the wall-mounted lift doors. */
+/** The lift entrance meets the clear walking aisle without a raised step. */
 export function officeAisle(scene:OfficeScene,floorId:string):OfficePoint|null {
- const floor=scene.floors.find(f=>f.id===floorId),landing=officeLanding(scene,floorId)
- if(!floor||!landing)return null
- return floor.kind==='lounge'||floor.annexOf?landing:{x:landing.x,y:floor.y+(floor.height??75)*.79}
+ return officeLanding(scene,floorId)
 }
 export function officeNavigation(scene:OfficeScene){
  const scale=scene.width/450,shaftX=scene.width*SHAFT_X_RATIO
