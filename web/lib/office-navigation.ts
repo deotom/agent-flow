@@ -28,7 +28,13 @@ export function officeLanding(scene:OfficeScene,floorId:string):OfficePoint|null
  if(!f)return null
  if(f.annexOf)return officeInteriorDoor(scene,floorId)
  const scale=scene.width/450,shaftX=scene.width*SHAFT_X_RATIO,h=f.height??75
- return f.kind==='lounge'?{x:shaftX,y:f.y+h*.82}:{x:shaftX-28*scale,y:f.y+h*.79}
+ return f.kind==='lounge'?{x:shaftX,y:f.y+h*.74}:{x:shaftX-28*scale,y:f.y+h*.64}
+}
+/** Front aisle and side bay remain clear of the wall-mounted lift doors. */
+export function officeAisle(scene:OfficeScene,floorId:string):OfficePoint|null {
+ const floor=scene.floors.find(f=>f.id===floorId),landing=officeLanding(scene,floorId)
+ if(!floor||!landing)return null
+ return floor.kind==='lounge'||floor.annexOf?landing:{x:landing.x,y:floor.y+(floor.height??75)*.79}
 }
 export function officeNavigation(scene:OfficeScene){
  const scale=scene.width/450,shaftX=scene.width*SHAFT_X_RATIO
@@ -36,7 +42,7 @@ export function officeNavigation(scene:OfficeScene){
  const occupied=scene.floors.filter(f=>!f.annexOf&&(f.kind==='team'||f.kind==='break')&&(f.actorKeys.length>0||scene.actors.some(a=>a.floorId===f.id&&!a.hidden)))
  const landings=occupied.map(f=>({...officeLanding(scene,f.id)!,id:f.id}))
  return {scale,shaftX,hatch,top:hatch.y+4*scale,left:shaftX-22*scale,right:shaftX+22*scale,railHalf:18*scale,rungPitch:18*scale,
-   bottom:Math.max(hatch.y,...landings.map(p=>p.y))+12*scale,landings,visible:landings.length>0}
+   bottom:Math.max(hatch.y,...occupied.map(f=>officeAisle(scene,f.id)!.y))+12*scale,landings,visible:landings.length>0}
 }
 export function officeHatchOpen(scene:OfficeScene,point:OfficePoint|null,manual:boolean){
  const nav=officeNavigation(scene)

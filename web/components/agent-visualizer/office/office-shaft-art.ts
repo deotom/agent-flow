@@ -39,6 +39,7 @@ export function drawOfficeShaft(c:CanvasRenderingContext2D,scene:OfficeScene,fro
     fill('#bba16a',x-32*s,p.y-85*s,64*s,3*s)
     fill('#6e5c3e',x-28*s,p.y,56*s,5*s);fill('#c4ad77',x-28*s,p.y,56*s,1.5*s)
    }
+   if(!p.surface){fill('#7e5734',n.left-8*s,p.y+2*s,54*s,4*s);fill('#c4a36b',n.left-8*s,p.y+2*s,54*s,s)}
    // Keep the painted frame fixed; only the inner leaves slide under its jamb.
    if(art){
     c.save();c.beginPath();c.rect(x-28*s,p.y-84*s,56*s,84*s);c.rect(x-14*s,p.y-66*s,28*s,66*s);c.clip('evenodd')

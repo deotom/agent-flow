@@ -1,6 +1,6 @@
 import type { OfficeActor, OfficeEvent, OfficePoint, OfficeScene } from './office-types'
 import { createOfficeTrip, officeTripFrame, type OfficeTrip, type OfficeTripSegment } from './office-motion'
-import { officeLanding, officeNavigation, officeInteriorDoor } from './office-navigation'
+import { officeLanding, officeNavigation, officeInteriorDoor, officeAisle } from './office-navigation'
 
 /** Arrivals have their own durable lane: a long climb must not expire in the work-event queue. */
 export function addOfficeArrivals(existing: ReadonlyMap<string,OfficeTrip>, events:readonly OfficeEvent[], before:OfficeScene, next:OfficeScene, now:number) {
@@ -20,8 +20,8 @@ function retarget(trip:OfficeTrip,actor:OfficeActor,scene:OfficeScene,now:number
   }
   const targetFloor=scene.floors.find(f=>f.id===actor.floorId)
   const publicFloor=targetFloor?.annexOf??actor.floorId
-  const nav=officeNavigation(scene),landing=officeLanding(scene,publicFloor)
-  if(!landing)return trip
+  const nav=officeNavigation(scene),landing=officeLanding(scene,publicFloor),aisle=officeAisle(scene,publicFloor)
+  if(!landing||!aisle)return trip
   const frame=officeTripFrame(trip,now)
   let cursor=frame.point,cursorFloor=frame.floorId??trip.actor.floorId
   const segments:OfficeTripSegment[]=[]
@@ -36,14 +36,14 @@ function retarget(trip:OfficeTrip,actor:OfficeActor,scene:OfficeScene,now:number
     walk({x:nav.shaftX,y:cursor.y})
     leg({x:nav.shaftX,y:landing.y},'ride',Math.abs(cursor.y-landing.y)/(80*nav.scale)*1000)
     cursorFloor=publicFloor
-    leg(cursor,'hold',280);walk(landing)
+    leg(cursor,'hold',650);walk(landing);walk(aisle)
   }
   if(targetFloor?.annexOf){
     const threshold=officeInteriorDoor(scene,targetFloor.id)!
     walk({x:cursor.x,y:landing.y});walk(threshold);leg(cursor,'hold',280)
     cursorFloor=actor.floorId;leg(cursor,'hold',280)
   }else cursorFloor=actor.floorId
-  walk({x:actor.x,y:landing.y});walk(actor);leg(actor,'hold',300)
+  walk({x:actor.x,y:aisle.y});walk(actor);leg(actor,'hold',300)
   return {...trip,actor,segments,startedAt:now,endsAt:now+segments.reduce((n,s)=>n+s.duration,0),shaftX:nav.shaftX,rungPitch:nav.rungPitch}
 }
 

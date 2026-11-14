@@ -3,7 +3,7 @@ import type { TeamSnapshot } from './team-types'
 import { isWorking, statusText } from './team-model'
 import type { AnimationMode } from './viewer-preferences'
 import { officeWorkTarget, OFFICE_STATION_LABELS } from './office-work'
-import { officeNavigation, officeLanding, officeInteriorDoor } from './office-navigation'
+import { officeNavigation, officeLanding, officeInteriorDoor, officeAisle } from './office-navigation'
 
 export type OfficePane = 'board' | 'graph' | 'office'
 export interface OfficeTripSegment { from: OfficePoint; to: OfficePoint; duration: number; kind: 'walk' | 'ride' | 'hold'; floorId?: string; opacity?:readonly [number,number] }
@@ -63,14 +63,16 @@ export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: 
       const threshold=officeInteriorDoor(next,targetFloor.id)
       if(threshold){travel(threshold,targetFloor.annexOf);leg(cursor,280,'hold',[1,0]);cursorFloor=toFloor;cursorScene=next;leg(cursor,280,'hold',[0,1]);walk({x:to.x,y:threshold.y});walk(to);return}
     }
-    const target=officeLanding(next,toFloor)??{x:liftX-28*nav.scale,y:to.y}
+    const target=officeAisle(next,toFloor)??{x:liftX-28*nav.scale,y:to.y}
+    const targetDoor=officeLanding(next,toFloor)??target
     if(cursorFloor!==toFloor){
-      const source=officeLanding(cursorScene,cursorFloor)??{x:liftX-28*nav.scale,y:cursor.y}
-      walk({x:cursor.x,y:source.y});walk(source);walk({x:liftX,y:source.y});leg(cursor,650,'hold')
-      const distance=Math.abs(target.y-cursor.y)
-      if(distance>.01)leg({x:liftX,y:target.y},distance/(80*nav.scale)*1000,'ride')
+      const source=officeAisle(cursorScene,cursorFloor)??{x:liftX-28*nav.scale,y:cursor.y}
+      const sourceDoor=officeLanding(cursorScene,cursorFloor)??source
+      walk({x:cursor.x,y:source.y});walk(source);walk(sourceDoor);walk({x:liftX,y:sourceDoor.y});leg(cursor,650,'hold')
+      const distance=Math.abs(targetDoor.y-cursor.y)
+      if(distance>.01)leg({x:liftX,y:targetDoor.y},distance/(80*nav.scale)*1000,'ride')
       cursorFloor=toFloor;cursorScene=next
-      leg(cursor,650,'hold');walk(target)
+      leg(cursor,650,'hold');walk(targetDoor);walk(target)
     }else{walk({x:cursor.x,y:target.y})}
     walk({x:to.x,y:target.y});walk(to)
   }
