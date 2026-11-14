@@ -243,14 +243,14 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     c.fillStyle=`rgba(31,43,38,${.08+daylight.light*.06})`
     c.beginPath();c.ellipse(scene.width*(.14+daylight.shadow*.07),surface.height*.60,scene.width*(.06+Math.abs(daylight.shadow)*.09),surface.height*.022,daylight.shadow*.12,0,Math.PI*2);c.fill()
   }
-  drawOfficeShaft(c,scene,false,o.architectureArt)
+  drawOfficeShaft(c,scene,false,o.architectureArt,false,o.lift)
   drawOfficeInteriorDoors(c,scene,o.openDoorFloorId,o.architectureArt)
   const visible=scene.actors.filter(a=>!a.hidden),byKey=new Map(visible.map(a=>[a.key,a]))
   const pairs=time?pairsFor(scene.actors):new Map<string,OfficeLifePair>()
   const offsets=new Map<string,OfficeDrawnOffset>()
   for(const actor of visible.sort((a,b)=>a.y-b.y)) {
-    if(actor.pose?.inLift)continue
-    const moving=Boolean(actor.pose?.walk||actor.pose?.climb)
+    if(actor.pose?.inLift&&!o.lift)continue
+    const moving=Boolean(actor.pose?.walk||actor.pose?.climb||actor.pose?.inLift)
     const waiting=actor.agent.status.startsWith('waiting_'),failed=actor.agent.status==='failed'
     const pair=pairs.get(actor.key),partner=pair&&byKey.get(pair.partnerKey)
     const life=officeLife(actor,time,{partnerDx:pair?.partnerDx,pairSeed:pair?.pairSeed,tripActive:actor.key===o.tripKey||o.leisureKeys?.has(actor.key),greet:actor.key===o.greetKey,
@@ -265,7 +265,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
       c.fillStyle='#ecf8dc';for(let i=0;i<3;i++)c.fillRect(m.x-w*scale*.35,m.y+(-4+i*3)*scale,(4+((i+scroll)*5)%9)*scale,scale)
     }
     const t=time?time+phaseOf(actor.key):0
-    c.save();c.globalAlpha=(Number.isFinite(c.globalAlpha)?c.globalAlpha:1)*(actor.pose?.opacity??1);c.translate(actor.x+life.dx,actor.y);c.scale(scale,scale)
+    c.save();c.globalAlpha=(Number.isFinite(c.globalAlpha)?c.globalAlpha:1)*(actor.pose?.opacity??1);c.translate(actor.x+life.dx,actor.y);const carScale=actor.pose?.inLift?(.72+.28*(actor.pose.walk?Math.max(0,Math.min(1,(scene.width*.938-actor.x)/(28*scale))):0)):1;c.scale(scale*carScale,scale*carScale)
     drawOfficeAvatar(c,actor.appearance,0,0,t,{sit:!moving&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving,hand:o.live&&waiting,
       mug:actor.zone==='lounge'&&!moving&&(!life.objectAction||life.objectAction==='coffee'),objectAction:life.objectAction,lead:actor.agent.role==='lead'||actor.pod,cup:life.cup,stretch:life.stretch,lean:life.lean,doze:life.doze,
       slump:life.slump,scratch:life.scratch,wave:life.wave,turn:life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose,climb:false})
@@ -273,7 +273,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     c.restore()
     offsets.set(actor.key,{dx:life.dx,dy:-life.hop*scale})
   }
-  drawOfficeShaft(c,scene,true,o.architectureArt,o.liftSurfaceOpen)
+  drawOfficeShaft(c,scene,true,o.architectureArt,o.liftSurfaceOpen,o.lift)
   if(time)drawAmbient(c,scene,time,officeAmbient(o.date).night)
   return offsets
 }

@@ -7,7 +7,7 @@ import { createOfficeTrip, officeTripFrame } from '../lib/office-motion'
 
 import type {TeamSnapshot} from '../lib/team-types'
 const team:TeamSnapshot={sessionId:'s',title:'Team',active:true,updatedAt:1,tasks:[],agents:[{id:'lead',parentId:null,role:'lead',name:'Lead',runtime:'codex',model:null,status:'thinking',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1,updatedAt:1,completedAt:null}]}
-it('uses floor landings and steady climb speed, not the destination chair height',()=>{
+it('uses floor landings and steady lift speed, not the destination chair height',()=>{
  const before=buildOfficeScene([team],'active',false,new Map()),after=structuredClone(before)
  const actor=after.actors[0],room=after.floors.find(f=>f.kind==='team')!
  const rest={...room,id:'rest',kind:'break' as const,y:room.y+1000,height:250,actorKeys:[actor.key]}
@@ -24,7 +24,7 @@ it('uses floor landings and steady climb speed, not the destination chair height
  assert.deepEqual(trip.segments.at(-1)!.to,{x:actor.x,y:actor.y})
  const start=trip.segments.slice(0,trip.segments.indexOf(ride)).reduce((n,s)=>n+s.duration,0)
  const a=officeTripFrame(trip,start+100),b=officeTripFrame(trip,start+300)
- assert.equal(a.pose.climb,true);assert.ok(a.pose.climbStep!==b.pose.climbStep)
+ assert.equal(a.pose.inLift,true);assert.equal(a.pose.climb,false);assert.ok(a.point.y!==b.point.y)
 })
 it('bounds the shaft at occupied landings and opens the hatch only for actual passage or a click',()=>{
  const scene=buildOfficeScene([team],'active',false,new Map()),nav=officeNavigation(scene)

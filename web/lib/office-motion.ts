@@ -6,7 +6,8 @@ import { officeWorkTarget, OFFICE_STATION_LABELS } from './office-work'
 import { officeNavigation, officeLanding, officeInteriorDoor, officeAisle } from './office-navigation'
 
 export type OfficePane = 'board' | 'graph' | 'office'
-export interface OfficeTripSegment { from: OfficePoint; to: OfficePoint; duration: number; kind: 'walk' | 'ride' | 'hold'; floorId?: string; opacity?:readonly [number,number] }
+export type OfficeLiftPhase = 'boarding' | 'closing' | 'riding' | 'opening' | 'alighting'
+export interface OfficeTripSegment { from: OfficePoint; to: OfficePoint; duration: number; kind: 'walk' | 'ride' | 'hold'; floorId?: string; opacity?:readonly [number,number]; liftPhase?:OfficeLiftPhase }
 export interface OfficeTrip { event: OfficeEvent; actorKey: string; actor: OfficeActor; segments: OfficeTripSegment[]; startedAt: number; endsAt: number; caption: string; shaftX:number; rungPitch:number; workFloor?:{id:string;y:number;height:number;width:number} }
 export interface OfficeTripFrame { point: OfficePoint; pose: OfficePose; elevatorY: number | null; done: boolean; floorId?: string }
 
@@ -23,7 +24,7 @@ const clamp = (value: number, low: number, high: number) => Math.max(low, Math.m
 
 /** Lifecycle trips need new evidence; activity trips illustrate current observed work. */
 export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: OfficeScene, now: number, activityTarget?:OfficePoint): OfficeTrip | null {
-  const child = next.actors.find(actor => actor.key === event.actorKey) ?? (event.kind === 'left' ? before.actors.find(actor => actor.key === event.actorKey) : null)
+  const child = event.kind==='left' ? before.actors.find(actor=>actor.key===event.actorKey&&!actor.hidden) : next.actors.find(actor=>actor.key===event.actorKey)
   const parent = event.parentKey ? next.actors.find(actor => actor.key === event.parentKey) : null
   if (!child || child.hidden) return null
   const presence = event.kind === 'arrived' || event.kind === 'left'
@@ -68,11 +69,23 @@ export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: 
     if(cursorFloor!==toFloor){
       const source=officeAisle(cursorScene,cursorFloor)??{x:liftX-28*nav.scale,y:cursor.y}
       const sourceDoor=officeLanding(cursorScene,cursorFloor)??source
-      walk({x:cursor.x,y:source.y});walk(source);walk(sourceDoor);walk({x:liftX,y:sourceDoor.y});leg(cursor,650,'hold')
+      const sourceWait=Math.abs(sourceDoor.x-liftX)<.01?{x:liftX-28*nav.scale,y:sourceDoor.y}:sourceDoor
+      walk({x:cursor.x,y:source.y});walk(sourceWait)
+      // The passenger crosses an open threshold, then waits inside while doors close.
+      const boardingStart=segments.length
+      walk({x:liftX,y:sourceDoor.y})
+      if(segments.length===boardingStart)leg(cursor,280,'hold')
+      segments[segments.length-1].liftPhase='boarding'
+      leg(cursor,650,'hold');segments[segments.length-1].liftPhase='closing'
       const distance=Math.abs(targetDoor.y-cursor.y)
-      if(distance>.01)leg({x:liftX,y:targetDoor.y},distance/(80*nav.scale)*1000,'ride')
+      if(distance>.01){leg({x:liftX,y:targetDoor.y},distance/(80*nav.scale)*1000,'ride');segments[segments.length-1].liftPhase='riding'}
       cursorFloor=toFloor;cursorScene=next
-      leg(cursor,650,'hold');walk(targetDoor);walk(target)
+      leg(cursor,650,'hold');segments[segments.length-1].liftPhase='opening'
+      const alightingStart=segments.length
+      const targetExit=Math.abs(targetDoor.x-liftX)<.01?{x:liftX-28*nav.scale,y:targetDoor.y}:targetDoor
+      walk(targetExit);if(Math.abs(target.x-liftX)>.01)walk(target)
+      if(segments.length===alightingStart)leg(cursor,280,'hold')
+      segments[alightingStart].liftPhase='alighting'
     }else{walk({x:cursor.x,y:target.y})}
     walk({x:to.x,y:target.y});walk(to)
   }
@@ -89,6 +102,12 @@ export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: 
     if (event.kind !== 'finished' && event.kind!=='activity' && !presence && !changedRoom) travel(home,moving.floorId)
   }
   const floor=event.kind==='activity'?next.floors.find(f=>f.id===moving.floorId):null
+  if(event.kind==='arrived'&&segments[0]?.kind==='walk')segments[0].opacity=[0,1]
+  if(event.kind==='left'){
+    const lastWalk=segments.findLast(segment=>segment.kind==='walk')
+    if(lastWalk)lastWalk.opacity=[1,0]
+    segments.at(-1)!.opacity=[0,0]
+  }
   return { event, actorKey: moving.key, actor: moving, segments, startedAt: now, endsAt: now + segments.reduce((sum, segment) => sum + segment.duration, 0), caption: changedRoom && event.kind !== 'left' ? captions.finished : captions[event.kind],shaftX:nav.shaftX,rungPitch:nav.rungPitch,workFloor:floor?{id:floor.id,y:floor.y,height:floor.height??next.width*.5625,width:next.width}:undefined }
 }
 
@@ -108,14 +127,14 @@ export function officeTripFrame(trip: OfficeTrip, now: number): OfficeTripFrame 
       const ratio = clamp(elapsed / segment.duration, 0, 1)
       const position = { x: segment.from.x + (segment.to.x - segment.from.x) * ratio, y: segment.from.y + (segment.to.y - segment.from.y) * ratio }
       return { point: position, done: false, floorId:segment.floorId, elevatorY: segment.kind === 'ride' ? position.y : null,
-        pose: { inLift:segment.kind==='ride',opacity:segment.opacity?segment.opacity[0]+(segment.opacity[1]-segment.opacity[0])*ratio:undefined,climb: segment.kind === 'ride'||(segment.kind==='hold'&&Math.abs(position.x-trip.shaftX)<.01),climbStep:position.y/trip.rungPitch,walk: segment.kind === 'walk', face:segment.to.x<segment.from.x?-1:1, sit: false, carry: trip.event.kind === 'sent' || trip.event.kind === 'assigned',
+        pose: { inLift:Boolean(segment.liftPhase&&Math.abs(position.x-trip.shaftX)<10*trip.rungPitch/18),opacity:segment.opacity?segment.opacity[0]+(segment.opacity[1]-segment.opacity[0])*ratio:undefined,climb: false,climbStep:position.y/trip.rungPitch,walk: segment.kind === 'walk', face:segment.to.x<segment.from.x?-1:1, sit: false, carry: trip.event.kind === 'sent' || trip.event.kind === 'assigned',
           objectAction:segment.kind==='hold'&&trip.event.kind==='activity'&&trip.event.station==='research'?'book':undefined,
           typing:segment.kind==='hold'&&trip.event.kind==='activity'&&(trip.event.station==='build'||trip.event.station==='terminal'),
           hand:segment.kind==='hold'&&(trip.event.kind==='received'||(trip.event.kind==='activity'&&(trip.event.station==='planning'||trip.event.station==='quality'))) } }
     }
     elapsed -= segment.duration
   }
-  return { point: point(last.to), pose: {}, elevatorY: null, done, floorId:last.floorId }
+  return { point: point(last.to), pose: last.opacity?{opacity:last.opacity[1]}:{}, elevatorY: null, done, floorId:last.floorId }
 }
 
 /** Bounded, short-lived visual work. Snapshots, not this queue, remain the authoritative state. */
@@ -123,11 +142,14 @@ export function mergeOfficeEvents(pending: readonly OfficeEvent[], incoming: rea
   const rank = { activity:-1, assigned: 0, finished: 1, sent: 2, received: 3, arrived: 4, left: 5 }
   const latest = new Map<string, OfficeEvent>()
   for (const event of [...pending, ...incoming]) {
-    if (now - event.at > 15_000 || !eligible(event)) continue
+    if ((event.kind!=='left'&&now-event.at>15_000)||!eligible(event))continue
     const previous = latest.get(event.actorKey)
     if (!previous || event.at > previous.at || (event.at === previous.at && rank[event.kind] > rank[previous.kind])) latest.set(event.actorKey, event)
   }
-  return [...latest.values()].sort((a, b) => a.at - b.at || a.id.localeCompare(b.id)).slice(-12)
+  const ordered=[...latest.values()].sort((a,b)=>a.at-b.at||a.id.localeCompare(b.id))
+  const departures=ordered.filter(event=>event.kind==='left')
+  const capacity=Math.max(0,12-departures.length),transient=ordered.filter(event=>event.kind!=='left')
+  return [...departures,...(capacity?transient.slice(-capacity):[])].sort((a,b)=>a.at-b.at||a.id.localeCompare(b.id))
 }
 
 /** Display presence is separate from task delivery; no entering/leaving animation claims receipt. */
@@ -149,13 +171,40 @@ export function populatedOfficeTeams(snapshots: readonly TeamSnapshot[]): Set<st
 export function officeDepartureScene(held: OfficeScene, next: OfficeScene, snapshots: readonly TeamSnapshot[]): OfficeScene {
   const current = new Map(next.actors.map(actor => [actor.key, actor]))
   const teams = new Map(snapshots.map(team => [team.sessionId, team]))
-  return { ...held, totalAgents: next.totalAgents, finishedCount: next.finishedCount, quietTeams: next.quietTeams,
-    actors: held.actors.map(actor => {
-      const latest = current.get(actor.key)
-      if (latest) return { ...latest, x: actor.x, y: actor.y, floorId: actor.floorId }
-      const source = teams.get(actor.sessionId), agent = source?.agents.find(item => item.id === actor.agent.id)
-      return { ...actor, agent: agent ?? actor.agent, activity: agent ? statusText(agent) : `Last known: ${actor.activity}`, pose: { ...actor.pose, typing: false, hand: false } }
-    }) }
+  const floors=held.floors.filter(f=>f.kind!=='quiet').map(f=>{
+    if(f.kind!=='team')return {...f}
+    const agents=teams.get(f.sessionId??'')?.agents??[],working=agents.filter(a=>isWorking(a.status)).length,waiting=agents.filter(a=>a.status.startsWith('waiting_')).length
+    const subtitle=[working?`${working} working`:'',waiting?`${waiting} needs you`:''].filter(Boolean).join(' · ')||'Heading home'
+    return {...f,working,waiting,subtitle}
+  })
+  const byId=new Map(floors.map(f=>[f.id,f]))
+  let bottom=Math.max(0,...floors.filter(f=>!f.annexOf).map(f=>f.y+(f.height??0)))
+  // Keep departing floors in place while new teams are admitted below them.
+  for(const floor of next.floors.filter(f=>!f.annexOf&&f.kind!=='quiet'))if(!byId.has(floor.id)){
+    const added={...floor,y:bottom};floors.push(added);byId.set(added.id,added);bottom+=added.height??0
+  }
+  for(const floor of next.floors.filter(f=>f.annexOf))if(!byId.has(floor.id)){
+    const added={...floor,y:byId.get(floor.annexOf!)?.y??floor.y};floors.push(added);byId.set(added.id,added)
+  }
+  const quiet=next.floors.find(f=>f.kind==='quiet')
+  if(quiet){floors.push({...quiet,y:bottom});bottom+=quiet.height??0}
+  const actors=held.actors.map(actor=>{
+    const latest=current.get(actor.key)
+    if(latest){
+      const from=next.floors.find(f=>f.id===latest.floorId),to=byId.get(latest.floorId)
+      if(!latest.hidden&&from&&to&&(latest.floorId===actor.floorId||latest.zone!==actor.zone||from.kind!==byId.get(actor.floorId)?.kind))return {...latest,y:to.y+(latest.y-from.y)*(to.height??1)/(from.height??1)}
+      return {...latest,hidden:actor.hidden,x:actor.x,y:actor.y,floorId:actor.floorId}
+    }
+    const source=teams.get(actor.sessionId),agent=source?.agents.find(item=>item.id===actor.agent.id)
+    return {...actor,agent:agent??actor.agent,activity:agent?statusText(agent):`Last known: ${actor.activity}`,pose:{...actor.pose,typing:false,hand:false}}
+  })
+  const known=new Set(actors.map(a=>a.key))
+  for(const actor of next.actors)if(!known.has(actor.key)){
+    const from=next.floors.find(f=>f.id===actor.floorId),to=byId.get(actor.floorId)
+    actors.push({...actor,y:from&&to?to.y+(actor.y-from.y)*(to.height??1)/(from.height??1):actor.y})
+  }
+  return {...held,floors,actors,height:bottom+held.width/3,totalAgents:next.totalAgents,finishedCount:next.finishedCount,quietTeams:next.quietTeams}
+
 }
 
 export function parseOfficePane(value: string | null): OfficePane { return value === 'office' || value === 'graph' ? value : 'board' }

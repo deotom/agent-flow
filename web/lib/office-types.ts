@@ -92,7 +92,9 @@ export interface OfficeArchitectureArt {
   liftCabin:CanvasImageSource
   liftShaft:CanvasImageSource
 }
+export interface OfficeLiftVisual {y:number;doorsOpen:number;moving:boolean;passengerKeys:readonly string[]}
 export interface OfficePaintOptions {
+  lift?:OfficeLiftVisual
   architectureArt?:OfficeArchitectureArt|null
   liftSurfaceOpen?:boolean
   openDoorFloorId?: string | null

@@ -148,3 +148,39 @@ test('waits for the poll interval after a slow read instead of immediately catch
   t.mock.timers.tick(10_000)
   assert.equal(polls, 3, 'disposal cancels the next read')
 })
+
+
+test('keeps the next poll scheduled when a health listener throws during start or a timer callback', t => {
+  let pending: { callback: () => void; delay: number | undefined } | undefined
+  const handle = { unref() {} }
+  t.mock.method(globalThis, 'setTimeout', ((callback: () => void, delay?: number) => {
+    pending = { callback, delay }
+    return handle
+  }) as unknown as typeof setTimeout)
+  t.mock.method(globalThis, 'clearTimeout', () => { pending = undefined })
+  t.mock.method(console, 'warn', () => {})
+  const missing = path.join(os.tmpdir(), `agent-flow-poll-guard-missing-${process.pid}.sqlite`)
+  assert.equal(fs.existsSync(missing), false)
+  const watcher = new T3SessionWatcher([], missing)
+  t.after(() => watcher.dispose())
+  let notifications = 0
+  watcher.onSourceHealth(() => {
+    notifications++
+    if (notifications <= 2) throw new Error('health listener failed')
+  })
+  const runNext = () => {
+    assert.equal(pending?.delay, 2000, 'poll waits for its normal interval')
+    const next = pending!
+    pending = undefined
+    next.callback()
+  }
+  // Exercise the actual emitter and poll finally, not a replacement poll method.
+  assert.throws(() => watcher.start(), /health listener failed/)
+  assert.equal(notifications, 1)
+  assert.throws(runNext, /health listener failed/)
+  assert.equal(notifications, 2)
+  runNext()
+  assert.equal(notifications, 3, 'a caught observer error does not silently disable future polling')
+  watcher.dispose()
+  assert.equal(pending, undefined, 'disposal cancels the next read')
+})

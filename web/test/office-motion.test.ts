@@ -157,3 +157,15 @@ it('filters ineligible trips before the queue cap', () => {
   const hidden=Array.from({length:30},(_,i)=>event('left',{actorKey:`hidden${i}`,id:`hidden${i}`,at:1001}))
   assert.deepEqual(mergeOfficeEvents([],[visible,...hidden],1002,e=>e.actorKey==='visible'),[visible])
 })
+
+it('keeps waiting departures through repeated snapshots and gives them capacity before transient work',()=>{
+ const left=event('left',{actorKey:'going-home',at:0}),work=Array.from({length:20},(_,i)=>event('sent',{id:`new${i}`,actorKey:`work${i}`,at:20_000+i}))
+ let pending=mergeOfficeEvents([left],work,20_020)
+ assert.ok(pending.some(e=>e.id===left.id&&e.actorKey===left.actorKey))
+ assert.ok(pending.length<=12)
+ pending=mergeOfficeEvents(pending,[],40_000)
+ assert.deepEqual(pending,[left])
+ assert.deepEqual(mergeOfficeEvents(pending,[],40_001,()=>false),[],'an invalidated departure still leaves the queue')
+ const many=Array.from({length:14},(_,i)=>event('left',{id:`left${i}`,actorKey:`home${i}`,at:i}))
+ assert.equal(mergeOfficeEvents(many,work,50_000).length,14,'no held person is silently lost to the transient cap')
+})

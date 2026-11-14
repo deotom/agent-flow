@@ -72,8 +72,8 @@ export class T3SessionWatcher {
 
   start(): void {
     if (this.timer || this.disposed) return
-    this.poll()
-    this.scheduleNextPoll()
+    try { this.poll() }
+    finally { this.scheduleNextPoll() }
   }
   private scheduleNextPoll(): void {
     if (this.disposed) return
@@ -81,8 +81,10 @@ export class T3SessionWatcher {
     // so missed interval deadlines cannot keep the relay worker busy polling.
     this.timer = setTimeout(() => {
       this.timer = undefined
-      this.poll()
-      this.scheduleNextPoll()
+      // Observer errors may escape poll's finally; keep the timer lifecycle
+      // intact without changing the caller/host's error handling policy.
+      try { this.poll() }
+      finally { this.scheduleNextPoll() }
     }, T3_POLL_INTERVAL_MS)
     this.timer.unref?.()
   }

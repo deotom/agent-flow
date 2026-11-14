@@ -3,7 +3,7 @@ const SHAFT_X_RATIO=.938
 
 /** The lift travels behind its service wall; labels follow the same occlusion. */
 export function officeInsideLift(scene:OfficeScene,actor:Pick<OfficeActor,'x'|'pose'>){
- return Boolean(actor.pose?.climb||(actor.pose?.walk&&actor.x>=scene.width*SHAFT_X_RATIO-22*scene.width/450))
+ return Boolean(actor.pose?.inLift||actor.pose?.climb||(actor.pose?.walk&&actor.x>=scene.width*SHAFT_X_RATIO-22*scene.width/450))
 }
 
 /** Parent office and its private annex use the same interior threshold. */

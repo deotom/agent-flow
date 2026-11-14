@@ -7,13 +7,15 @@ import type { TeamSnapshot } from '../lib/team-types'
 const team=(sessionId:string,count:number):TeamSnapshot=>({sessionId,title:sessionId,active:true,updatedAt:1,tasks:[],agents:Array.from({length:count},(_,i)=>({id:`a${i}`,parentId:i?'a0':null,role:i?'worker':'lead',name:`Agent ${i}`,runtime:null,model:null,status:'running',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1,updatedAt:1,completedAt:null}))})
 const scene=(teams:TeamSnapshot[])=>buildOfficeScene(teams,'active',false,assignOfficeIdentities(teams.flatMap(t=>t.agents.map(a=>officeKey(t.sessionId,a.id)))))
 
-test('new agents wait outside and enter in staggered parallel trips without desk flashes or queue expiry',()=>{
+test('new agents wait outside and enter serially without desk flashes or queue expiry',()=>{
  const before=scene([team('a',1)]),next=scene([team('a',5)])
  const events=officePresenceEvents(before,next,new Set(['a']),1000)
  const trips=addOfficeArrivals(new Map(),events,before,next,0)
  assert.equal(trips.size,4)
  const starts=[...trips.values()].map(t=>t.startedAt)
- assert.deepEqual(starts,[0,900,1800,2700])
+ assert.equal(starts[0],0)
+ const ordered=[...trips.values()]
+ for(let i=1;i<ordered.length;i++)assert.ok(starts[i]>=ordered[i-1].endsAt)
  const visible=officeActorsWithArrivals(next,trips,0)
  assert.equal(visible.length,2)
  const first=visible.find(a=>a.key===events[0].actorKey)!

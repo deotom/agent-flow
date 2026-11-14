@@ -1,15 +1,18 @@
 import type { OfficeActor, OfficeEvent, OfficePoint, OfficeScene } from './office-types'
 import { createOfficeTrip, officeTripFrame, type OfficeTrip, type OfficeTripSegment } from './office-motion'
 import { officeLanding, officeNavigation, officeInteriorDoor, officeAisle } from './office-navigation'
+import { createOfficeLift, reserveOfficeLiftTrip, cancelOfficeLiftTrips, restoreOfficeLiftCall, type OfficeLiftState } from './office-lift'
 
 /** Arrivals have their own durable lane: a long climb must not expire in the work-event queue. */
-export function addOfficeArrivals(existing: ReadonlyMap<string,OfficeTrip>, events:readonly OfficeEvent[], before:OfficeScene, next:OfficeScene, now:number) {
+export function addOfficeArrivals(existing: ReadonlyMap<string,OfficeTrip>, events:readonly OfficeEvent[], before:OfficeScene, next:OfficeScene, now:number, lift?:OfficeLiftState) {
   const trips=new Map(existing)
-  let start=Math.max(now,...[...trips.values()].map(t=>t.startedAt+900))
+  const car=lift??createOfficeLift(next)
+  if(!lift&&trips.size){const last=[...trips.values()].sort((a,b)=>a.endsAt-b.endsAt).at(-1)!;car.availableAt=last.endsAt;car.y=last.segments.findLast(s=>s.liftPhase)?.to.y??car.y;car.doorsOpen=0}
+  let start=Math.max(now,...[...trips.values()].map(t=>t.endsAt))
   for(const event of events.filter(e=>e.kind==='arrived').sort((a,b)=>a.actorKey.localeCompare(b.actorKey))){
     if(trips.has(event.actorKey))continue
     const trip=createOfficeTrip(event,{...before,actors:before.actors.filter(a=>a.key!==event.actorKey)},next,start)
-    if(trip){trips.set(trip.actorKey,trip);start+=900}
+    if(trip){const scheduled=reserveOfficeLiftTrip(car,trip,next,now);trips.set(trip.actorKey,scheduled);start=scheduled.endsAt}
   }
   return trips
 }
@@ -25,18 +28,27 @@ function retarget(trip:OfficeTrip,actor:OfficeActor,scene:OfficeScene,now:number
   const frame=officeTripFrame(trip,now)
   let cursor=frame.point,cursorFloor=frame.floorId??trip.actor.floorId
   const segments:OfficeTripSegment[]=[]
-  const leg=(to:OfficePoint,kind:OfficeTripSegment['kind'],duration:number)=>{segments.push({from:{...cursor},to:{...to},kind,duration,floorId:cursorFloor});cursor={...to}}
+  const leg=(to:OfficePoint,kind:OfficeTripSegment['kind'],duration:number,liftPhase?:OfficeTripSegment['liftPhase'])=>{segments.push({from:{...cursor},to:{...to},kind,duration,floorId:cursorFloor,liftPhase});cursor={...to}}
   const walk=(to:OfficePoint)=>{const d=Math.hypot(to.x-cursor.x,to.y-cursor.y);if(d>.01)leg(to,'walk',Math.max(150,d/(75*nav.scale)*1000))}
   const source=scene.floors.find(f=>f.id===cursorFloor)
   if(source?.annexOf){
     const threshold=officeInteriorDoor(scene,source.id)
     if(threshold){walk({x:cursor.x,y:threshold.y});walk(threshold);leg(cursor,'hold',280);cursorFloor=source.annexOf;leg(cursor,'hold',280)}
   }
-  if(cursorFloor!==publicFloor||(Math.abs(cursor.x-nav.shaftX)<.01&&Math.abs(cursor.y-landing.y)>.01)){
-    walk({x:nav.shaftX,y:cursor.y})
-    leg({x:nav.shaftX,y:landing.y},'ride',Math.abs(cursor.y-landing.y)/(80*nav.scale)*1000)
+  if(frame.pose.inLift||cursorFloor!==publicFloor||(Math.abs(cursor.x-nav.shaftX)<.01&&Math.abs(cursor.y-landing.y)>.01)){
+    if(!frame.pose.inLift){
+      const sourceLanding=officeLanding(scene,cursorFloor)
+      if(sourceLanding){walk({x:cursor.x,y:sourceLanding.y});walk(Math.abs(sourceLanding.x-nav.shaftX)<.01?{x:nav.shaftX-28*nav.scale,y:sourceLanding.y}:sourceLanding)}
+      const count=segments.length;walk({x:nav.shaftX,y:cursor.y})
+      if(count===segments.length)leg(cursor,'hold',280,'boarding');else segments.at(-1)!.liftPhase='boarding'
+      leg(cursor,'hold',650,'closing')
+    }else if(Math.abs(cursor.x-nav.shaftX)>.01){
+      walk({x:nav.shaftX,y:cursor.y});segments.at(-1)!.liftPhase='boarding'
+    }
+    leg({x:nav.shaftX,y:landing.y},'ride',Math.max(1,Math.abs(cursor.y-landing.y)/(80*nav.scale)*1000),'riding')
     cursorFloor=publicFloor
-    leg(cursor,'hold',650);walk(landing);walk(aisle)
+    leg(cursor,'hold',650,'opening');const count=segments.length;walk(landing);walk(aisle)
+    if(count===segments.length)leg(cursor,'hold',280,'alighting');else segments[count].liftPhase='alighting'
   }
   if(targetFloor?.annexOf){
     const threshold=officeInteriorDoor(scene,targetFloor.id)!
@@ -44,18 +56,28 @@ function retarget(trip:OfficeTrip,actor:OfficeActor,scene:OfficeScene,now:number
     cursorFloor=actor.floorId;leg(cursor,'hold',280)
   }else cursorFloor=actor.floorId
   walk({x:actor.x,y:aisle.y});walk(actor);leg(actor,'hold',300)
+  if(frame.pose.opacity!==undefined&&frame.pose.opacity<1&&segments.length)segments[0].opacity=[frame.pose.opacity,1]
   return {...trip,actor,segments,startedAt:now,endsAt:now+segments.reduce((n,s)=>n+s.duration,0),shaftX:nav.shaftX,rungPitch:nav.rungPitch}
 }
 
-export function advanceOfficeArrivals(existing:ReadonlyMap<string,OfficeTrip>,scene:OfficeScene,now:number) {
+export function advanceOfficeArrivals(existing:ReadonlyMap<string,OfficeTrip>,scene:OfficeScene,now:number,lift?:OfficeLiftState,target:OfficeScene=scene) {
   const trips=new Map<string,OfficeTrip>(),completed:OfficeTrip[]=[]
+  const changed=[...existing].some(([key,trip])=>{
+    const actor=target.actors.find(a=>a.key===key&&!a.hidden)
+    const missingReservation=lift&&now<trip.endsAt&&trip.segments.some(s=>s.liftPhase)&&!lift.reservations.some(leg=>leg.actorKey===key&&leg.end>now)
+    return missingReservation||!actor||actor.floorId!==trip.actor.floorId||actor.x!==trip.actor.x||actor.y!==trip.actor.y
+  })
+  const car=lift??createOfficeLift(target)
+  if(changed)cancelOfficeLiftTrips(car,new Set(existing.keys()),now)
   for(const [key,previous] of existing){
-    const actor=scene.actors.find(a=>a.key===key&&!a.hidden)
+    const actor=target.actors.find(a=>a.key===key&&!a.hidden)
     if(!actor)continue
-    const trip=actor.floorId!==previous.actor.floorId||actor.x!==previous.actor.x||actor.y!==previous.actor.y?retarget(previous,actor,scene,now):previous
+    const revised=changed&&now<previous.endsAt?retarget(previous,actor,target,now):previous
+    const trip=changed&&now<previous.endsAt?reserveOfficeLiftTrip(car,revised,target,now):previous
     if(now>=trip.endsAt)completed.push(trip)
     else trips.set(key,trip)
   }
+  restoreOfficeLiftCall(car,target,now)
   return {trips,completed}
 }
 

@@ -25,22 +25,34 @@ it('shows lift doors at each actual landing and a garden pavilion above the eart
  assert.ok(nav.top>nav.hatch.y,'shaft starts below the grass threshold')
  for(const c of calls)for(const v of c.args)if(typeof v==='number')assert.ok(Number.isFinite(v))
 })
-it('reveals cabin interiors through open landing doors and hides between-floor travel',()=>{
+it('reveals the boarding cabin and closes landing doors while the car travels',()=>{
  const scene=fixture(),nav=officeNavigation(scene),landing=nav.landings[0]
  scene.actors=[{key:'a',floorId:'main',x:nav.shaftX,y:landing.y,pose:{climb:true}} as OfficeScene['actors'][number]]
  const back=recorder();drawOfficeShaft(back.ctx,scene,false,art)
  assert.ok(back.calls.some(c=>c.op==='drawImage'&&c.args[0]===art.liftCabin))
  const front=recorder();drawOfficeShaft(front.ctx,scene,true,art)
- assert.ok(front.calls.filter(c=>c.op==='clip'&&c.args[0]==='evenodd').length>=nav.landings.length+2,'painted frames leave cabin apertures clear')
- assert.ok(front.calls.some(c=>c.op==='rect'&&c.args[2]>30&&c.args[3]===78))
+ assert.ok(front.calls.filter(c=>c.op==='clip'&&c.args[0]==='evenodd').length>=nav.landings.length+1,'painted frames leave cabin apertures clear')
+ assert.ok(front.calls.some(c=>c.op==='drawImage'&&c.args[0]===art.doorClosed&&c.args[1]===nav.shaftX-46),'door leaves slide away from the opening')
  scene.actors[0].pose={climb:true,inLift:true}
  const between=recorder();drawOfficeShaft(between.ctx,scene,true,art)
- assert.ok(!between.calls.some(c=>c.op==='rect'&&c.args[2]>30&&c.args[3]===78))
+ assert.ok(!between.calls.some(c=>c.op==='drawImage'&&c.args[0]===art.doorClosed&&c.args[1]===nav.shaftX-46),'doors close before travel')
 })
 it('keeps labels inside the recessed lift hidden through ride and doorway crossing',()=>{
  const scene=fixture(),nav=officeNavigation(scene)
  assert.equal(officeInsideLift(scene,{x:nav.shaftX,pose:{climb:true}}),true)
+ assert.equal(officeInsideLift(scene,{x:nav.shaftX,pose:{inLift:true,climb:false}}),true)
  assert.equal(officeInsideLift(scene,{x:nav.left+1,pose:{walk:true}}),true)
  assert.equal(officeInsideLift(scene,{x:nav.left-1,pose:{walk:true}}),false)
  assert.equal(officeInsideLift(scene,{x:100,pose:{typing:true}}),false)
+})
+
+it('draws one moving cabin at its physical position instead of copies at every stop',()=>{
+ const scene=fixture(),nav=officeNavigation(scene),y=(nav.hatch.y+nav.landings[0].y)/2
+ const frame={y,doorsOpen:0,moving:true,passengerKeys:['a']}
+ const back=recorder();drawOfficeShaft(back.ctx,scene,false,art,false,frame)
+ const cabins=back.calls.filter(c=>c.op==='drawImage'&&c.args[0]===art.liftCabin)
+ assert.equal(cabins.length,1)
+ assert.equal(cabins[0].args[2]+86,y)
+ const front=recorder();drawOfficeShaft(front.ctx,scene,true,art,false,frame)
+ assert.ok(!front.calls.some(c=>c.op==='fillRect'&&c.args[0]===nav.left&&c.args[1]===nav.top&&c.args[2]>=nav.right-nav.left&&c.args[3]===nav.bottom-nav.top),'front cutaway does not hide the travelling car')
 })

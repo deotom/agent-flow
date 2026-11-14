@@ -1,34 +1,36 @@
 import {officeNavigation} from '../../../lib/office-navigation'
-import type {OfficeArchitectureArt,OfficeScene} from '../../../lib/office-types'
+import type {OfficeArchitectureArt,OfficeScene,OfficeLiftVisual} from '../../../lib/office-types'
 
-/** Fixed landing doors conceal travel; the garden entrance stands on the grass. */
-export function drawOfficeShaft(c:CanvasRenderingContext2D,scene:OfficeScene,front=false,art?:OfficeArchitectureArt|null,surfaceOpen=false){
- const n=officeNavigation(scene);if(!n.visible)return
+/** A single timber car travels through the cutaway shaft behind fixed landing doors. */
+export function drawOfficeShaft(c:CanvasRenderingContext2D,scene:OfficeScene,front=false,art?:OfficeArchitectureArt|null,surfaceOpen=false,lift?:OfficeLiftVisual){
+ const n=officeNavigation(scene);if(!n.visible&&!scene.floors.some(f=>f.kind==='lounge'))return
  const s=n.scale,x=n.shaftX,h=n.bottom-n.top
- const stops=[{...n.hatch,id:'surface',surface:true},...n.landings.map(p=>({...p,surface:false}))].map(p=>{
-  const proximity=Math.max(0,...scene.actors.filter(a=>!a.hidden&&!a.pose?.inLift&&(a.pose?.walk||a.pose?.climb)).map(a=>
-   Math.min(1,Math.max(0,(a.x-(n.left-26*s))/(16*s)))*Math.max(0,Math.min(1,(32*s-Math.abs(a.y-p.y))/(24*s)))))
-  return {...p,open:p.surface&&surfaceOpen?1:proximity}
- })
+ const rider=scene.actors.find(a=>!a.hidden&&(a.pose?.climb||a.pose?.inLift))
+ const car=lift??{y:rider?.y??n.hatch.y,doorsOpen:rider&&!rider.pose?.inLift?1:0,moving:Boolean(rider?.pose?.inLift),passengerKeys:rider?[rider.key]:[]}
+ const stops=[{...n.hatch,id:'surface',surface:true},...n.landings.map(p=>({...p,surface:false}))].map(p=>({
+  ...p,open:Math.abs(car.y-p.y)<2*s?Math.max(car.doorsOpen,p.surface&&surfaceOpen&&!car.moving&&!car.passengerKeys.length?1:0):0,
+ }))
+ const clipShaft=()=>{c.beginPath();c.rect(n.left,n.top,scene.width-n.left,h);c.rect(x-22*s,n.hatch.y-86*s,44*s,90*s);c.clip()}
  const fill=(color:string,px:number,py:number,w:number,ph:number)=>{c.fillStyle=color;c.fillRect(px,py,w,ph)}
  c.save()
  if(!front){
-  // Each doorway reveals a stationary cabin interior, never a naked earth shaft.
-  for(const p of stops){
-   c.save();c.beginPath();c.rect(x-18*s,p.y-78*s,36*s,78*s);c.clip()
-   fill('#272f28',x-18*s,p.y-78*s,36*s,78*s)
-   if(art)c.drawImage(art.liftCabin,x-23*s,p.y-86*s,46*s,92*s)
-   fill('#b48a4e',x-18*s,p.y-2*s,36*s,2*s)
-   c.restore()
-  }
+  // One timber car moves through a cutaway shaft; cables and earth remain behind it.
+  c.save();c.beginPath();c.rect(n.left,n.top,scene.width-n.left,h);c.clip()
+  fill('#292820',n.left,n.top,scene.width-n.left,h)
+  if(art){c.globalAlpha=.55;for(let y=n.top;y<n.bottom;y+=128*s)c.drawImage(art.liftShaft,n.left,y,n.right-n.left,128*s);c.globalAlpha=1}
+  fill('#75674e',x-15*s,n.top,s,h);fill('#75674e',x+15*s,n.top,s,h)
+  fill('#171c18',x-.5*s,n.top,s,Math.max(0,car.y-86*s-n.top));c.restore()
+  c.save();clipShaft()
+  fill('#242b24',x-20*s,car.y-82*s,40*s,84*s)
+  if(art)c.drawImage(art.liftCabin,x-23*s,car.y-86*s,46*s,92*s)
+  else{fill('#9b6d3d',x-22*s,car.y-86*s,44*s,4*s);fill('#775334',x-22*s,car.y-82*s,3*s,86*s);fill('#775334',x+19*s,car.y-82*s,3*s,86*s)}
+  fill('#b18b4e',x-23*s,car.y+2*s,46*s,3*s)
+  c.restore()
  }else{
-  // Only open landing apertures reveal actors. All between-floor trips stay occluded.
-  c.save();c.beginPath();c.rect(n.left,n.top,scene.width-n.left,h)
-  for(const p of stops)if(p.open>0)c.rect(x-18*s*p.open,p.y-78*s,36*s*p.open,78*s)
-  c.clip('evenodd')
-  fill('#3d3024',n.left,n.top,scene.width-n.left,h)
-  if(art)for(let y=n.top;y<n.bottom;y+=128*s)c.drawImage(art.liftShaft,n.left,y,n.right-n.left,128*s)
-  fill('#8f673e',n.left,n.top,2*s,h)
+  // Thin front guides leave both the travelling cabin and its passenger visible.
+  c.save();clipShaft()
+  fill('#916539',n.left,n.top,2*s,h);fill('#493a28',n.right-s,n.top,s,h)
+  fill('#9b7849',x-22*s,car.y-81*s,2*s,83*s);fill('#87643c',x+20*s,car.y-81*s,2*s,83*s)
   c.restore()
   for(const p of stops){
    if(p.surface){
@@ -37,13 +39,13 @@ export function drawOfficeShaft(c:CanvasRenderingContext2D,scene:OfficeScene,fro
     fill('#705333',x-26*s,p.y-86*s,7*s,88*s);fill('#5a412b',x+19*s,p.y-86*s,7*s,88*s)
     c.fillStyle='#394f3b';c.beginPath();c.moveTo(x-32*s,p.y-85*s);c.lineTo(x-24*s,p.y-96*s);c.lineTo(x+24*s,p.y-96*s);c.lineTo(x+32*s,p.y-85*s);c.closePath();c.fill()
     fill('#bba16a',x-32*s,p.y-85*s,64*s,3*s)
-    fill('#6e5c3e',x-28*s,p.y,56*s,5*s);fill('#c4ad77',x-28*s,p.y,56*s,1.5*s)
+    fill('#6e5c3e',x-28*s,p.y,56*s,5*s);fill('#b98748',x-28*s,p.y,56*s,1.5*s)
    }
    if(!p.surface){
     // The top of the landing meets the sill; its support stays below the floor.
-    fill('#7e5734',n.left-10*s,p.y,56*s,4*s)
-    fill('#c4a36b',n.left-10*s,p.y-2*s,56*s,2*s)
-    fill('#493323',n.left-10*s,p.y+4*s,56*s,s)
+    fill('#7e5734',n.left-6*s,p.y,52*s,4*s)
+    fill('#ad773c',n.left-6*s,p.y-2*s,52*s,2*s)
+    fill('#493323',n.left-6*s,p.y+4*s,52*s,s)
    }
    // Keep the painted frame fixed; only the inner leaves slide under its jamb.
    if(art){
