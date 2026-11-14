@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {OfficeDailyRuntime} from '../lib/office-daily-runtime'
 import {createOfficeLift,advanceOfficeLift,reserveOfficeLiftTrip} from '../lib/office-lift'
 import {createOfficeTrip,officeTripFrame} from '../lib/office-motion'
-import {OFFICE_CANTEEN_ID} from '../lib/office-daily-scene'
+import {OFFICE_CANTEEN_ID,OFFICE_DAILY_SEATS} from '../lib/office-daily-scene'
 import {emptyOfficeDailyLedger} from '../lib/office-daily-events'
 import type {OfficeActor,OfficeFloor,OfficeScene} from '../lib/office-types'
 const floor = (id:string,y:number,kind:OfficeFloor['kind']='team',annexOf?:string):OfficeFloor => ({id,y,height:200,kind,annexOf,sessionId:'team',title:id,subtitle:'',color:'',actorKeys:[]})
@@ -15,6 +15,53 @@ const scene:OfficeScene={width:450,height:1000,totalAgents:1,finishedCount:1,qui
 
 const noon=new Date(2026,10,14,12,1)
 const input=(runtime:OfficeDailyRuntime,source=scene,at=0,weather:'clear'|'rain'='clear',blocked=false)=>({source,scene:runtime.project(source),date:noon,at,weather,blocked,busyKeys:new Set<string>()})
+it('walks lunch guests to genuinely free garden seats when a party starts mid-meal',()=>{
+ const source={...scene,actors:[actor,{...actor,key:'second',agent:{...actor.agent,id:'second'}}]}
+ const runtime=new OfficeDailyRuntime(),lift=createOfficeLift(source)
+ runtime.step({...input(runtime,source),lift})
+ const end=Math.max(...[...runtime.guests.values()].map(g=>g.trip!.endsAt))
+ runtime.step({...input(runtime,source,end),lift})
+ const mealUntil=[...runtime.guests.values()].map(g=>g.until)
+ const parties=OFFICE_DAILY_SEATS.slice(0,2).map((seat,i)=>({...actor,key:`party-${i}`,floorId:'lounge',party:true,x:source.width*seat[0],y:200*seat[1]}))
+ const next={...source,actors:[...source.actors,...parties]}
+ const positions=runtime.actors(runtime.project(next),end)
+ runtime.step({...input(runtime,next,end+1,'clear',true),lift})
+ const guests=[...runtime.guests.values()]
+ assert.deepEqual(guests.map(g=>g.seat).sort(),[2,3])
+ for(const g of guests){
+  assert.equal(g.phase,'relocating');assert.equal(g.destination,'garden')
+  const before=positions.find(a=>a.key===g.actorKey)!
+  assert.deepEqual(g.trip!.segments[0].from,{x:before.x,y:before.y})
+  assert.ok(!g.trip!.segments.some(s=>s.liftPhase),'changing garden chairs does not reserve the lift')
+ }
+ const arrived=Math.max(...guests.map(g=>g.trip!.endsAt))
+ runtime.step({...input(runtime,next,arrived,'clear',true),lift})
+ assert.deepEqual(guests.map(g=>g.until),mealUntil,'moving seats does not restart the meal')
+ const seated=runtime.actors(runtime.project(next),arrived)
+ assert.ok(seated.every(g=>parties.every(p=>Math.hypot(p.x-g.x,p.y-g.y)>40)))
+ assert.equal(runtime.canteenOpen,false)
+})
+it('moves conflicting guests indoors if a new party occupies every garden seat',()=>{
+ const runtime=new OfficeDailyRuntime(),lift=createOfficeLift(scene)
+ runtime.step({...input(runtime),lift});const guest=runtime.guests.get(actor.key)!,end=guest.trip!.endsAt
+ runtime.step({...input(runtime,scene,end),lift})
+ const parties=OFFICE_DAILY_SEATS.map((seat,i)=>({...actor,key:`party-${i}`,floorId:'lounge',party:true,x:scene.width*seat[0],y:200*seat[1]}))
+ const next={...scene,actors:[...scene.actors,...parties]}
+ runtime.step({...input(runtime,next,end+1,'clear',true),lift})
+ assert.equal(guest.destination,'canteen');assert.equal(guest.phase,'relocating');assert.ok(runtime.canteenOpen)
+})
+it('gives source work priority when three party guests arrive and leaves the free seat for a resting diner',()=>{
+ const source={...scene,actors:[actor,{...actor,key:'z-second',agent:{...actor.agent,id:'z-second'}}]}
+ const runtime=new OfficeDailyRuntime(),lift=createOfficeLift(source)
+ runtime.step({...input(runtime,source),lift})
+ const end=Math.max(...[...runtime.guests.values()].map(g=>g.trip!.endsAt));runtime.step({...input(runtime,source,end),lift})
+ const parties=OFFICE_DAILY_SEATS.slice(0,3).map((seat,i)=>({...actor,key:`party-${i}`,floorId:'lounge',party:true,x:450*seat[0],y:200*seat[1]}))
+ const working={...source,actors:[{...actor,floorId:'office',zone:'desk' as const,agent:{...actor.agent,status:'running' as const}},source.actors[1],...parties]}
+ runtime.step({...input(runtime,working,end+1,'clear',true),lift})
+ const worker=runtime.guests.get(actor.key)!,diner=runtime.guests.get('z-second')!
+ assert.equal(worker.phase,'returning');assert.equal(worker.trip!.actor.floorId,'office')
+ assert.equal(diner.destination,'garden');assert.equal(diner.seat,3);assert.equal(diner.phase,'relocating')
+})
 it('keeps an admitted lunch journey progressing through ordinary same-room work pulses',()=>{
  const runtime=new OfficeDailyRuntime(),lift=createOfficeLift(scene)
  runtime.step({...input(runtime),lift})

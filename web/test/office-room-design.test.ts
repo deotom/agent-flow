@@ -10,9 +10,41 @@ it('derives stable work themes from mission and stable variation from team ident
  assert.equal(roomDesignFor(floor('Design illustration studio')).theme,'studio')
  assert.equal(roomDesignFor(floor('Deploy server operations')).theme,'operations')
  assert.equal(roomDesignFor(floor('Test verification quality')).theme,'quality')
+ assert.equal(roomDesignFor(floor('AgentFlow UX/UI')).theme,'studio')
+ assert.equal(roomDesignFor(floor('quickVendor API')).theme,'operations')
+ assert.equal(roomDesignFor(floor('Frontend UI components')).theme,'studio')
+ assert.equal(roomDesignFor(floor('Vendor integration backend')).theme,'operations')
  assert.deepEqual(roomDesignFor(floor()),roomDesignFor({...floor(),subtitle:'Reading file tool',working:7,actorKeys:['new']}))
  const variants=new Set(Array.from({length:12},(_,i)=>roomDesignFor({...floor(),sessionId:`project-${i}`}).variant))
  assert.ok(variants.size>2)
+})
+it('same-theme projects keep distinct stable decor even when their low hash bits collide',()=>{
+ const first=roomDesignFor({...floor('UI design'),sessionId:'project-0'})
+ const other=Array.from({length:90},(_,i)=>roomDesignFor({...floor('UI design'),sessionId:`other-${i}`})).find(d=>d.variant===first.variant)!
+ assert.ok(other)
+ assert.notEqual(first.accent,other.accent)
+})
+it('mission themes lead the station grouping without moving shared station geometry',()=>{
+ const studio=floor('AgentFlow UX/UI'),operations=floor('quickVendor API'),research=floor('Research specimens'),quality=floor('Quality verification')
+ const layouts=[studio,operations,research,quality].map(f=>roomStationLayout(f,450))
+ assert.deepEqual(layouts.map(layout=>layout[0].kind),['build','terminal','research','quality'])
+ for(const layout of layouts)assert.deepEqual(layout.map(({kind,...geometry})=>geometry),layouts[0].map(({kind,...geometry})=>geometry))
+ assert.deepEqual(roomStationLayout({...operations,subtitle:'Reading UI test tool',working:9,actorKeys:['one']},450),layouts[1])
+})
+it('painted themes change wall and floor accents plus distinct secondary wall displays',()=>{
+ const art={shell:{width:1000,height:563},props:{width:1536,height:1024},breakRoom:{width:1000,height:563}} as unknown as Parameters<typeof drawOfficeRoomShell>[3]
+ const render=(title:string)=>{
+  const colors:string[]=[],images:unknown[][]=[]
+  const c={fillStyle:'',drawImage:(...args:unknown[])=>images.push(args),save(){},restore(){},fillRect(this:{fillStyle:string}){colors.push(this.fillStyle)}} as unknown as CanvasRenderingContext2D
+  const f=floor(title),scene={width:450,height:600,floors:[f],actors:[],quietTeams:[],totalAgents:0,finishedCount:0}
+  drawOfficeRoomDesign(c,scene,f,art)
+  return {colors,images}
+ }
+ const studio=render('AgentFlow UX/UI'),operations=render('quickVendor API')
+ assert.equal(studio.colors.length,2,'wall tint and stained floorboards both use mission accent')
+ assert.notDeepEqual(studio.colors,operations.colors)
+ assert.notDeepEqual(studio.images[4],operations.images[4],'secondary painted wall display changes with mission')
+ assert.deepEqual(studio,render('AgentFlow UX/UI'))
 })
 it('paints a fixed-height old wall with deeper floorboards, plus bounded matching daily props',()=>{
  const calls:unknown[][]=[]

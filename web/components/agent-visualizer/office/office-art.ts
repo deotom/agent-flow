@@ -241,7 +241,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
   drawOfficeSky(c,scene,time,o.date)
   drawOfficeGarden(c,scene,o.date,time)
   drawOfficeSeasonalRooms(c,{...scene,floors:scene.floors.filter(f=>!f.annexOf||!scene.floors.some(p=>p.id===f.annexOf))},o.date,time)
-  drawOfficeDailyArt(c,scene,o.date,{kind:o.dailyArt?.kind,delivered:o.dailyArt?.delivery,eatingKeys:new Set(o.dailyArt?.guests.filter(g=>g.phase==='eating').map(g=>g.actorKey))},o.roomArt)
+  drawOfficeDailyArt(c,scene,o.date,{kind:o.dailyArt?.kind,delivered:o.dailyArt?.delivery,cleanup:o.dailyArt?.cleanup,eatingKeys:new Set(o.dailyArt?.guests.filter(g=>g.phase==='eating'&&g.kind==='lunch').map(g=>g.actorKey))},o.roomArt)
   const daylight=officeDaylight(o.date),surface=scene.floors.find(f=>f.kind==='lounge')
   if(surface?.height&&daylight.sun){
     c.fillStyle=`rgba(31,43,38,${.08+daylight.light*.06})`

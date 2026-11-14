@@ -4,7 +4,7 @@ import {createOfficeTrip,officeTripFrame,officeWorkTripFrame} from '../lib/offic
 import {officeWorkTarget} from '../lib/office-work'
 import {rememberOfficeWorkPlace,officeActorAtWorkPlace,officeSceneAtWorkPlaces,officeWorkPresenceTarget} from '../lib/office-work-presence'
 import type {OfficeActor,OfficeScene,OfficeEvent,OfficePoint} from '../lib/office-types'
-import {roomStationSpots} from '../lib/office-room-design'
+import {roomActorSpots,roomLeadRestPoint,roomStationSpots} from '../lib/office-room-design'
 
 const actor:OfficeActor={key:'worker',sessionId:'s',floorId:'team',x:15,y:279,zone:'desk',parentKey:null,task:null,activity:'Working',runtimeName:'Codex',stand:true,
  appearance:{slot:0,kind:'human',shirt:'#369',hair:'#321',skin:'#cba',pants:'#333',cut:'',gear:''},
@@ -60,7 +60,7 @@ it('does not overlap a planning teammate with someone using the bench below the 
 })
 it('uses the second depth row of a large room instead of squeezing everyone along one axis',()=>{
  const s=scene();s.floors[0]={...s.floors[0],room:'room-stations-large',height:337.5}
- const spots=roomStationSpots(s.floors[0],s.width,'build')
+ const spots=[...roomStationSpots(s.floors[0],s.width,'build'),...roomActorSpots(s.floors[0],s.width)]
  const places=new Map<string,NonNullable<ReturnType<typeof rememberOfficeWorkPlace>>>()
  const points:OfficePoint[]=[]
  for(let i=0;i<4;i++){
@@ -80,4 +80,30 @@ it('keeps a working station user clear of the idle lead reading nook',()=>{
  const close={...officeWorkTarget(worker,s,kind),x:nook.x-12},place=rememberOfficeWorkPlace(s,worker,close,kind)!
  const target=officeWorkPresenceTarget(s,worker,kind,new Map([[worker.key,place]]))
  assert.ok(Math.hypot(target.x-nook.x,target.y-nook.y)>=32)
+})
+
+it('keeps three persistent coworkers a full avatar apart with an idle lead in the small-room nook',()=>{
+ const s=scene();s.floors[0]={...s.floors[0],height:253.125,room:'room-stations'}
+ s.actors=roomActorSpots(s.floors[0],s.width).slice(0,3).map((point,i)=>({...structuredClone(actor),...point,key:`person-${i}`}))
+ const nook=roomLeadRestPoint(s.floors[0],s.width)
+ s.actors.push({...structuredClone(actor),...nook,key:'lead',zone:'lounge',agent:{...actor.agent,role:'lead',status:'idle'}})
+ const places=new Map<string,NonNullable<ReturnType<typeof rememberOfficeWorkPlace>>>()
+ const workers=s.actors.filter(a=>a.zone==='desk')
+ for(const person of workers){const point=officeWorkPresenceTarget(s,person,'build',places);places.set(person.key,rememberOfficeWorkPlace(s,person,point,'build')!)}
+ const points=workers.map(a=>officeActorAtWorkPlace(s,a,places.get(a.key)))
+ for(let i=0;i<points.length;i++){
+  assert.equal(points[i].y,s.floors[0].y+s.floors[0].height!*.79,'feet remain on the painted front floorboards')
+  assert.ok(Math.abs(points[i].x-nook.x)>=44,'work bodies leave the reading nook clear')
+  for(let j=0;j<i;j++)assert.ok(Math.abs(points[i].x-points[j].x)>=44,'same-row avatars have full body width clearance')
+  assert.deepEqual(officeWorkPresenceTarget(s,workers[i],'build',places),{x:points[i].x,y:points[i].y},'valid persistent positions stay still on later pulses')
+ }
+})
+
+it('includes visible uncached desk occupants when choosing a workplace',()=>{
+ const s=scene();s.floors[0]={...s.floors[0],height:253.125,room:'room-stations'}
+ const base=officeWorkTarget(s.actors[0],s,'terminal')
+ const uncached={...structuredClone(actor),key:'uncached',...base}
+ s.actors.push(uncached)
+ const point=officeWorkPresenceTarget(s,s.actors[0],'terminal',new Map())
+ assert.ok(Math.hypot(point.x-base.x,point.y-base.y)>=44)
 })

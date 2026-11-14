@@ -1,6 +1,6 @@
 import type {OfficeActor,OfficeFloor,OfficeScene} from './office-types'
 import {advanceOfficeDailyLedger,emptyOfficeDailyLedger,markOfficeDailyAttendance,officeDailyActorEligible,officeDailyWindow,planOfficeDailyEvents,readOfficeDailyLedger,type OfficeDailyInvitation,type OfficeDailyLedger} from './office-daily-events'
-import {OFFICE_CANTEEN_ID,OFFICE_CANTEEN_SEATS,OFFICE_DAILY_SEATS,projectOfficeDailyScene} from './office-daily-scene'
+import {OFFICE_CANTEEN_ID,OFFICE_CANTEEN_SEATS,OFFICE_DAILY_SEATS,officeGardenOccupiedSeats,projectOfficeDailyScene} from './office-daily-scene'
 import {createOfficeRoutineTrip,type OfficeRoutineTarget} from './office-daily-trips'
 import {officeTripFrame,type OfficeTrip} from './office-motion'
 import {cancelOfficeLiftTrips,reserveOfficeLiftTrip,type OfficeLiftState} from './office-lift'
@@ -11,6 +11,7 @@ export type OfficeDailyPhase='outbound'|'eating'|'relocating'|'returning'
 export interface OfficeDailyRuntimeGuest extends OfficeDailyInvitation {
  phase:OfficeDailyPhase; home:OfficeActor; physical:OfficeActor; trip:OfficeTrip|null; until:number
  returnNeeded:boolean; indoorNeeded:boolean
+ gardenSeatNeeded?:number
 }
 export interface OfficeDailyRuntimeInput {
  source:OfficeScene; scene:OfficeScene; date:Date; at:number; lift:OfficeLiftState
@@ -85,14 +86,24 @@ export class OfficeDailyRuntime {
   const {source,date,at,lift}=input,weather=input.weather??skyWeather(date),wet=weather==='rain'||weather==='storm'
   const window=officeDailyWindow(date)
   let geometry=this.project(input.scene)
-  const gardenOther=source.actors.filter(a=>!a.hidden&&!this.guests.has(a.key)&&source.floors.some(f=>f.id===a.floorId&&f.kind==='lounge')).length
-  const gardenGuests=[...this.guests.values()].filter(g=>g.destination==='garden')
-  const crowded=new Set(gardenGuests.slice(Math.max(0,4-gardenOther)).map(g=>g.actorKey))
+  // Release source-working participants before allocating the remaining meal seats.
   for(const g of this.guests.values()){
    const canonical=source.actors.find(a=>a.key===g.actorKey)
    if(!canonical||!officeDailyActorEligible(canonical,source)||window.occurrenceKey!==g.occurrenceKey||input.busyKeys.has(g.actorKey))g.returnNeeded=true
-   if((wet||crowded.has(g.actorKey))&&g.destination==='garden')g.indoorNeeded=true
-   if(g.trip&&g.phase!=='returning'&&at<g.trip.endsAt&&(g.returnNeeded||g.indoorNeeded||input.preemptQueuedTravel)){
+  }
+  const gardenGuests=[...this.guests.values()].filter(g=>g.destination==='garden')
+  const partySeats=officeGardenOccupiedSeats(source,new Set(this.guests.keys())),reserved=new Set(partySeats)
+  for(const g of gardenGuests)if(!partySeats.has(g.gardenSeatNeeded??g.seat))reserved.add(g.gardenSeatNeeded??g.seat)
+  for(const g of gardenGuests){
+   if(g.returnNeeded||g.phase==='returning')continue
+   if(wet){g.indoorNeeded=true;g.gardenSeatNeeded=undefined;continue}
+   if(!partySeats.has(g.gardenSeatNeeded??g.seat))continue
+   const seat=[0,1,2,3].find(s=>!reserved.has(s))
+   if(seat===undefined){g.indoorNeeded=true;g.gardenSeatNeeded=undefined}
+   else{reserved.add(seat);g.gardenSeatNeeded=seat}
+  }
+  for(const g of this.guests.values()){
+   if(g.trip&&g.phase!=='returning'&&at<g.trip.endsAt&&(g.returnNeeded||g.indoorNeeded||g.gardenSeatNeeded!==undefined||input.preemptQueuedTravel)){
     let time=g.trip.startedAt,boarding=Infinity,clear=-Infinity
     for(const segment of g.trip.segments){if(segment.liftPhase){boarding=Math.min(boarding,time);clear=time+segment.duration}time+=segment.duration}
     if(at<boarding||at>=clear){
@@ -113,15 +124,20 @@ export class OfficeDailyRuntime {
      if(!latest||(latest.floorId===g.physical.floorId&&Math.hypot(latest.x-g.physical.x,latest.y-g.physical.y)<1)){
       this.completedOrigins.set(g.actorKey,g.physical);this.guests.delete(g.actorKey);continue
      }
-    }else{g.phase='eating';g.until=at+(g.kind==='lunch'?60_000+(hash(g.actorKey)%61)*1000:18_000);g.trip=null}
+    }else{g.phase='eating';if(g.until===0)g.until=at+(g.kind==='lunch'?60_000+(hash(g.actorKey)%61)*1000:18_000);g.trip=null}
    }
    if(g.phase==='eating'&&at>=g.until)g.returnNeeded=true
-   if(input.blocked&&!g.returnNeeded&&!g.indoorNeeded)continue
+   if(input.blocked&&!g.returnNeeded&&!g.indoorNeeded&&g.gardenSeatNeeded===undefined)continue
    if(g.returnNeeded){
     const home=geometry.actors.find(a=>a.key===g.actorKey&&!a.hidden)
     const fallback=geometry.floors.some(f=>f.id===g.home.floorId)?g.home:null
     const target=home??fallback??{floorId:geometry.floors.find(f=>f.kind==='lounge')?.id??'lounge',...officeNavigation(geometry).hatch}
     this.start(g,geometry,{floorId:target.floorId,x:target.x,y:target.y},at,lift,'returning','is returning to the office')
+   }else if(g.gardenSeatNeeded!==undefined&&!g.indoorNeeded){
+    const priorSeat=g.seat;g.seat=g.gardenSeatNeeded
+    const target=this.target(geometry,g)
+    if(target&&this.start(g,geometry,target,at,lift,'relocating','is moving to a free garden seat'))g.gardenSeatNeeded=undefined
+    else g.seat=priorSeat
    }else if(g.indoorNeeded){
     this.canteenOpen=true
     geometry=this.project(input.scene)
@@ -131,7 +147,7 @@ export class OfficeDailyRuntime {
    }else if(!g.trip&&g.phase!=='eating'){const target=this.target(geometry,g);if(target)this.start(g,geometry,target,at,lift,g.phase,g.kind==='lunch'?'is collecting lunch':'is getting a drink')}
   }
   const busy=new Set([...input.busyKeys,...this.guests.keys()])
-  const plan=planOfficeDailyEvents({date,scene:source,ledger:this.ledger,busyKeys:busy,guests:[...this.guests.values()],weather})
+  const plan=planOfficeDailyEvents({date,scene:source,ledger:this.ledger,busyKeys:busy,guests:[...this.guests.values()].map(g=>({...g,seat:g.gardenSeatNeeded??g.seat})),weather})
   this.ledger=advanceOfficeDailyLedger(plan.ledger,date)
   if(!input.blocked){
    for(const invite of plan.invitations){

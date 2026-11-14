@@ -25,6 +25,7 @@ import { OfficeBreakPeek } from './office-break-peek'
 import {officeLeadRestTransitions,officePendingOriginKeys} from '../../../lib/office-lead-rest'
 import {createOfficeLeadRestTrip} from '../../../lib/office-lead-rest-motion'
 import {officeWorkExchange} from '../../../lib/office-communication'
+import {officeActorLocation} from '../../../lib/office-location'
 import {OfficeDailyRuntime,OFFICE_DAILY_STORAGE} from '../../../lib/office-daily-runtime'
 import {useOfficeRoomArt} from './use-office-room-art'
 import {drawOfficeRoomDesign} from './office-room-design-art'
@@ -547,7 +548,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
             <div aria-hidden="true" className="of-art of-art-bottom" style={{bottom:0,height:`${visualScene.width/3/visualScene.height*100}%`}} />
             {/* Covers the old painted pit; the moving car has its own cutaway above it. */}
             <div aria-hidden="true" data-season={sky.season} className="of-hatch-closed" style={{height:`${(lounge?.height??0)/visualScene.height*100}%`,filter:`brightness(${.32+.68*daylight.light}) saturate(${.7+.3*daylight.light})`}}/>
-            <span className="of-season-label" title={`${sky.label} · Simulated weather · ${seasonalActivity.label}`} style={{top:`${(lounge?.height??0)*.86/visualScene.height*100}%`}}>{sky.label} · {seasonalActivity.label}</span>
+            <span className="of-season-label" title={`${sky.label} · Simulated weather · ${seasonalActivity.label}`} style={{top:`calc(${((publicFloors.find(f=>f.kind!=='lounge')?.y??(lounge?.height??0)*.9)+5)/visualScene.height*100}% - 26px)`}}>{sky.label} · {seasonalActivity.label}</span>
             <canvas ref={roomCanvas} aria-hidden="true" style={{zIndex:0,pointerEvents:'none',height:'100%'}} />
             {visualScene.floors.filter(f=>f.kind==='team'&&!f.constructing).flatMap(floor=>officeStations(floor,visualScene.width).map(station=>{
               const users=officeStationUsers(scene,floor,station.kind)
@@ -628,7 +629,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
               const bubble=waiting ? '!' : actor.agent.status==='failed' ? '×' : /edit|write|file_change/.test(activity) ? '</>' : /search|read/.test(activity) ? '⌕' : /command|tool|shell/.test(activity) ? '>_' : '…'
               return <button key={actor.key} ref={agentRef(actor.key)} data-daily-phase={daily.current!.guests.get(actor.key)?.phase} data-daily-destination={daily.current!.guests.get(actor.key)?.destination} data-floor-id={actor.floorId} data-zone={actor.zone} type="button" className="of-agent" data-lift-travel={officeInsideLift(visualScene,actor)&&officeLiftFrame(lift.current!,motionClock.current).moving} data-status={actor.agent.status} data-selected={selectedKey===actor.key} data-edge={actor.x>visualScene.width*.55?'end':'start'}
                 tabIndex={peekFloor?.sessionId===actor.sessionId?-1:0}
-                aria-pressed={selectedKey===actor.key} aria-label={`${actor.agent.name}, ${role}, ${ai}${team ? `, team ${team.title}` : ''}, ${actor.activity}${actor.party ? ", celebrating in the party garden" : actor.zone === 'lounge' ? ", resting in the break room" : ''}`}
+                aria-pressed={selectedKey===actor.key} aria-label={`${actor.agent.name}, ${role}, ${ai}${team ? `, team ${team.title}` : ''}, ${actor.activity}, ${officeActorLocation(actor,visualScene)}`}
                 style={{left:`${(actor.x-22)/visualScene.width*100}%`,top:`${(actor.y-72)/visualScene.height*100}%`,width:`${44/visualScene.width*100}%`,height:`${75/visualScene.height*100}%`,opacity:actor.pose?.opacity}}
                 onMouseEnter={()=>setInspectedKey(actor.key)} onMouseLeave={()=>setInspectedKey(null)} onFocus={()=>setInspectedKey(actor.key)} onBlur={()=>setInspectedKey(null)}
                 onClick={()=>onSelect(actor.sessionId,actor.agent.id)}>

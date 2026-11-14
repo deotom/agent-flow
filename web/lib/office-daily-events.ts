@@ -1,5 +1,6 @@
 import type { OfficeActor, OfficeScene } from './office-types'
 import { skyWeather, type Weather } from './office-sky'
+import {officeGardenOccupiedSeats} from './office-daily-scene'
 
 export type OfficeDailyKind = 'coffee' | 'lunch' | 'tea'
 export type OfficeDailyDestination = 'garden' | 'canteen' | 'home'
@@ -69,7 +70,8 @@ export function planOfficeDailyEvents(input:OfficeDailyPlanInput) {
  for(const a of scene.actors)if(!a.hidden&&scene.floors.some(f=>f.id===a.floorId&&f.kind==='lounge'))gardenKeys.add(a.key)
  for(const g of guests)if(g.destination==='garden')gardenKeys.add(g.actorKey)
  // Existing party occupants and reservations occupy the remaining earliest seats.
- const gardenSeats=new Set(guests.filter(g=>g.destination==='garden').map(g=>g.seat))
+ const gardenSeats=officeGardenOccupiedSeats(scene,new Set(guests.map(g=>g.actorKey)))
+ for(const guest of guests)if(guest.destination==='garden')gardenSeats.add(guest.seat)
  const indoorSeats=new Set(guests.filter(g=>g.destination==='canteen').map(g=>g.seat))
  for(let i=0,n=gardenKeys.size-gardenSeats.size;n>0&&i<4;i++)if(!gardenSeats.has(i)){gardenSeats.add(i);n--}
  const cap=Math.min(kind==='lunch'?4:2,LIMITS[kind]-attended.length)

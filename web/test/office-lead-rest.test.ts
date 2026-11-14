@@ -45,3 +45,9 @@ test('large-room model actors occupy the actual staggered depth rows used by fur
  assert.ok(Math.max(...actors.map(a=>a.y))-Math.min(...actors.map(a=>a.y))>s.width*.15)
  assert.ok(actors.every(a=>a.x<s.width*.75))
 })
+test('initial small-room staging leaves the occupied lead nook clear before the first work pulse',()=>{
+ const source=snapshot('idle');source.agents.push(agent('extra1','running','lead'),agent('extra2','running','lead'))
+ const s=build(source),people=s.actors.filter(a=>!a.hidden&&s.floors.some(f=>f.id===a.floorId&&f.kind==='team'))
+ assert.equal(s.floors.find(f=>f.kind==='team')!.room,'room-stations')
+ for(let i=0;i<people.length;i++)for(let j=0;j<i;j++)assert.ok(Math.abs(people[i].x-people[j].x)>=48||Math.abs(people[i].y-people[j].y)>=60,'initial bodies are clear, not just later cached positions')
+})
