@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import {createOfficeTrip,officeTripFrame,officeWorkTripFrame} from '../lib/office-motion'
 import {officeWorkTarget} from '../lib/office-work'
 import {rememberOfficeWorkPlace,officeActorAtWorkPlace,officeSceneAtWorkPlaces,officeWorkPresenceTarget} from '../lib/office-work-presence'
-import type {OfficeActor,OfficeScene,OfficeEvent} from '../lib/office-types'
+import type {OfficeActor,OfficeScene,OfficeEvent,OfficePoint} from '../lib/office-types'
+import {roomStationSpots} from '../lib/office-room-design'
 
 const actor:OfficeActor={key:'worker',sessionId:'s',floorId:'team',x:15,y:279,zone:'desk',parentKey:null,task:null,activity:'Working',runtimeName:'Codex',stand:true,
  appearance:{slot:0,kind:'human',shirt:'#369',hair:'#321',skin:'#cba',pants:'#333',cut:'',gear:''},
@@ -56,4 +57,27 @@ it('does not overlap a planning teammate with someone using the bench below the 
  s.actors.push(coworker)
  const target=officeWorkPresenceTarget(s,coworker,station,new Map([['worker',place]]))
  assert.ok(Math.abs(target.x-point.x)>=28)
+})
+it('uses the second depth row of a large room instead of squeezing everyone along one axis',()=>{
+ const s=scene();s.floors[0]={...s.floors[0],room:'room-stations-large',height:337.5}
+ const spots=roomStationSpots(s.floors[0],s.width,'build')
+ const places=new Map<string,NonNullable<ReturnType<typeof rememberOfficeWorkPlace>>>()
+ const points:OfficePoint[]=[]
+ for(let i=0;i<4;i++){
+  const person={...structuredClone(actor),key:`worker-${i}`};s.actors.push(person)
+  const point=officeWorkPresenceTarget(s,person,'build',places)
+  points.push(point);places.set(person.key,rememberOfficeWorkPlace(s,person,point,'build')!)
+ }
+ assert.ok(points.some(p=>p.y!==points[0].y),'a crowded station uses real floor depth')
+ assert.ok(points.every(p=>spots.some(q=>Math.abs(p.x-q.x)<.01&&Math.abs(p.y-q.y)<.01)))
+ for(let i=0;i<points.length;i++)for(let j=0;j<i;j++)assert.ok(Math.hypot(points[i].x-points[j].x,points[i].y-points[j].y)>=26)
+})
+it('keeps a working station user clear of the idle lead reading nook',()=>{
+ const s=scene(),worker=s.actors[0];s.floors[0].height=253
+ const nook={...structuredClone(worker),key:'lead',zone:'lounge' as const,x:335.25,y:380,agent:{...worker.agent,role:'lead' as const,status:'idle' as const}}
+ s.actors.push(nook)
+ const kind=(['research','build','quality','terminal'] as const).reduce((a,b)=>Math.abs(officeWorkTarget(worker,s,a).x-nook.x)<Math.abs(officeWorkTarget(worker,s,b).x-nook.x)?a:b)
+ const close={...officeWorkTarget(worker,s,kind),x:nook.x-12},place=rememberOfficeWorkPlace(s,worker,close,kind)!
+ const target=officeWorkPresenceTarget(s,worker,kind,new Map([[worker.key,place]]))
+ assert.ok(Math.hypot(target.x-nook.x,target.y-nook.y)>=32)
 })

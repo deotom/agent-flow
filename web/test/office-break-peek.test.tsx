@@ -16,3 +16,8 @@ it('opens a same-floor private room with back navigation, actors and object cont
  assert.ok(html.includes('of-break-overflow')&&html.includes('2 more resting agents'))
  assert.equal((html.match(/<canvas/g)??[]).length,1)
 })
+it('counts physical residents while a source-room actor is away for lunch',()=>{
+ const html=renderToStaticMarkup(<OfficeBreakPeek floor={{...floor,actorKeys:['worker','away'],overflow:0}} width={450} buildingHeight={1000} actors={[actor,{...actor,key:'away',floorId:'daily-canteen'}]} canvasRef={{current:null}} onClose={()=>{}} onSelect={()=>{}} onOpenTeam={()=>{}} onObject={()=>{}} now={1} selectedKey={null}/>)
+ assert.ok(html.includes('Break room · 1 resting'))
+ assert.ok(!html.includes('2 resting agents'))
+})

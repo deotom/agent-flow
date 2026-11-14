@@ -3,6 +3,7 @@ import type { TeamAgentRow, TeamSnapshot } from './team-types'
 import { buildTeamView, describeActivity, isWorking, type TeamScope } from './team-model'
 import { agentWorkStation } from './office-stations'
 import { officeLeisureForSpot } from './office-leisure'
+import { roomActorSpots, roomLeadRestPoint } from './office-room-design'
 
 export const officeKey = (sessionId: string, agentId: string): string => JSON.stringify([sessionId, agentId])
 
@@ -134,21 +135,28 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
     const working = snap.agents.filter(a => isWorking(a.status)).length, waiting = snap.agents.filter(a => a.status.startsWith('waiting_')).length
     const project = clean(snap.project ?? ''), title = [project, clean(snap.title)].filter((v,i,a) => v && a.indexOf(v)===i).join(' · ') || 'Team'
     if (included) floors.push({ id, sessionId:snap.sessionId, title, board:officeBoard(snap, clean(snap.title) || title, clean), subtitle:[working ? `${working} working` : '', waiting ? `${waiting} needs you` : ''].filter(Boolean).join(' · '), working, waiting, overflow:Math.max(0,desks.length-slots.chairs.length), color:teamColor(snap.sessionId), y, height, room, actorKeys:desks.map(r => officeKey(snap.sessionId,r.agent.id)), kind:'team' })
+    const mainFloor=floors.find(f=>f.id===id)
+    const actorSpots=mainFloor?roomActorSpots(mainFloor,width):slots.chairs.map(([sx,sy])=>({x:sx*width,y:y+sy*height}))
     const teamResting: OfficeActor[] = []
     for (const row of ordered) {
       const terminal = done(row.agent), slot = desks.indexOf(row), key = officeKey(snap.sessionId,row.agent.id)
       if (!terminal && !included) continue
-      const chair = slots.chairs[Math.max(0,slot) % slots.chairs.length]
+      const spot = actorSpots[Math.max(0,slot) % actorSpots.length]
       const activity = row.agent.activities.at(-1), station=agentWorkStation(row.agent)
       const actor: OfficeActor = { key, sessionId:snap.sessionId, agent:{ ...row.agent, name:officeDisplayName(row.agent.name) }, task:row.task,
         parentKey:row.agent.parentId && agents.has(row.agent.parentId) ? officeKey(snap.sessionId,row.agent.parentId) : null,
         appearance:officeAppearance(identities.get(key) ?? 0), floorId:id, zone:terminal ? 'lounge' : 'desk',
         // Stable staging spots are independent of tool changes. Motion owns the trip to a station.
-        x:chair[0]*width,y:y+chair[1]*height,
+        x:spot.x,y:spot.y,
         monitor:undefined, workStation:terminal?undefined:station,stand:!terminal,
         hidden:!terminal && slot>=slots.chairs.length, pod:snap.agents.some(a=>a.parentId===row.agent.id),
         activity:activity && row.agent.status === 'running' ? describeActivity(activity).label : row.statusText,
         runtimeName:row.agent.runtime ? runtimeNames[row.agent.runtime] : 'Unknown AI', team:{ title, color:teamColor(snap.sessionId) } }
+      // An actually idle root lead rests inside its own office, keeping its desk slot reserved.
+      if(rootLead(row.agent)&&row.agent.status==='idle'&&!teamQuiet) {
+        const floor=floors.find(f=>f.id===id)
+        if(floor)Object.assign(actor,roomLeadRestPoint(floor,width),{zone:'lounge',stand:false,workStation:undefined,objectAction:'book',activity:'Reading reports'})
+      }
       // Active teams rest in their own break room; quiet teams go home unless they are celebrating.
       if (terminal) { if (!teamQuiet) teamResting.push(actor); else if (partying) guests.push({ ...actor, party:true }) }
       else actors.push(actor)

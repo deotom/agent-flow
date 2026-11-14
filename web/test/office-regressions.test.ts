@@ -54,7 +54,10 @@ it('does not create historical lounge floors in Current work while a sibling is 
   const snapshot=team('s',[lead,agent('worker','lead'),...old],old.map(a=>task({id:a.id,childId:a.id,status:'done',delivery:'pending'})))
   const ids=assignOfficeIdentities(snapshot.agents.map(a=>officeKey('s',a.id)))
   const current=buildOfficeScene([snapshot],'active',false,ids)
-  assert.deepEqual(current.actors.filter(a=>a.zone==='desk').map(a=>a.agent.id).sort(),['lead','worker'])
+  assert.deepEqual(current.actors.filter(a=>a.zone==='desk').map(a=>a.agent.id).sort(),['worker'])
+  const restingLead=current.actors.find(a=>a.agent.id==='lead')!
+  assert.equal(restingLead.zone,'lounge')
+  assert.equal(current.floors.find(f=>f.id===restingLead.floorId)?.kind,'team','idle lead rests inside the active office')
   assert.equal(current.floors.filter(f=>f.kind==='lounge').length,1)
   assert.equal(buildOfficeScene([snapshot],'session',false,ids).actors.length,12)
 })

@@ -22,32 +22,13 @@ export function officeCanResumeTrip(trip: OfficeTrip | null, scene: OfficeScene)
 const point = (value: OfficePoint): OfficePoint => ({ x: value.x, y: value.y })
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value))
 
-/** Lifecycle trips need new evidence; activity trips illustrate current observed work. */
-export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: OfficeScene, now: number, activityTarget?:OfficePoint): OfficeTrip | null {
-  const child = event.kind==='left' ? before.actors.find(actor=>actor.key===event.actorKey&&!actor.hidden) : next.actors.find(actor=>actor.key===event.actorKey)
-  const parent = event.parentKey ? next.actors.find(actor => actor.key === event.parentKey) : null
-  if (!child || child.hidden) return null
-  const presence = event.kind === 'arrived' || event.kind === 'left'
-  if (!presence && event.kind !== 'finished' && event.kind !== 'activity' && (!parent || parent.key === child.key || child.parentKey !== parent.key)) return null
-  if(event.kind==='activity'&&child.zone!=='desk')return null
-  const prior = before.actors.find(a => a.key === child.key)
-  const changedRoom = Boolean(prior && prior.floorId !== child.floorId)
-  const moving = !changedRoom && (event.kind === 'assigned' || event.kind === 'received') ? parent! : child
-  if (moving.hidden) return null
-  const old = before.actors.find(actor => actor.key === moving.key)
-  // A collapsed/relaid floor is no longer a valid place to start an animation.
-  if (!presence && !changedRoom && old && !next.floors.some(floor => floor.id === old.floorId)) return null
+/** Shared physical navigation for lifecycle and cosmetic journeys. It does not reserve the lift. */
+export function createOfficeTravelPath(sourceScene:OfficeScene,next:OfficeScene,from:OfficePoint,fromFloor:string) {
   const nav=officeNavigation(next),liftX=nav.shaftX
-  const door=nav.hatch
-  const from = event.kind === 'arrived' && !old ? { x: liftX-60*nav.scale, y: door.y } : point(old ?? moving)
-  const home = point(moving)
-  const destination = changedRoom ? point(child) : event.kind === 'activity' ? activityTarget??officeWorkTarget(child,next,event.station??'terminal') : event.kind === 'assigned' ? { x: child.x > 65 ? child.x - 18 : child.x + 18, y: child.y }
-    : event.kind === 'sent' ? { x: parent!.x > 100 ? parent!.x - 18 : parent!.x + 18, y: parent!.y }
-    : event.kind === 'left' ? { x: liftX-60*nav.scale, y: door.y } : point(moving)
   const segments: OfficeTripSegment[] = []
   let cursor = from
-  let cursorFloor=event.kind==='arrived'&&!old?'lounge':old?.floorId??moving.floorId
-  let cursorScene=old?before:next
+  let cursorFloor=fromFloor
+  let cursorScene=sourceScene
   const leg = (to: OfficePoint, duration: number, kind: OfficeTripSegment['kind'], opacity?:readonly [number,number]) => {
     segments.push({ from: point(cursor), to: point(to), duration, kind, floorId:cursorFloor,opacity })
     cursor = point(to)
@@ -89,8 +70,36 @@ export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: 
     }else{walk({x:cursor.x,y:target.y})}
     walk({x:to.x,y:target.y});walk(to)
   }
+  return {segments,leg,travel,nav}
+}
+
+/** Lifecycle trips need new evidence; activity trips illustrate current observed work. */
+export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: OfficeScene, now: number, activityTarget?:OfficePoint): OfficeTrip | null {
+  if(event.kind==='routine')return null
+  const child = event.kind==='left' ? before.actors.find(actor=>actor.key===event.actorKey&&!actor.hidden) : next.actors.find(actor=>actor.key===event.actorKey)
+  const parent = event.parentKey ? next.actors.find(actor => actor.key === event.parentKey) : null
+  if (!child || child.hidden) return null
+  const presence = event.kind === 'arrived' || event.kind === 'left'
+  if (!presence && event.kind !== 'finished' && event.kind !== 'activity' && (!parent || parent.key === child.key || child.parentKey !== parent.key)) return null
+  if(event.kind==='activity'&&child.zone!=='desk')return null
+  const prior = before.actors.find(a => a.key === child.key)
+  const changedRoom = Boolean(prior && prior.floorId !== child.floorId)
+  const moving = !changedRoom && (event.kind === 'assigned' || event.kind === 'received') ? parent! : child
+  if (moving.hidden) return null
+  const old = before.actors.find(actor => actor.key === moving.key)
+  // A collapsed/relaid floor is no longer a valid place to start an animation.
+  if (!presence && !changedRoom && old && !next.floors.some(floor => floor.id === old.floorId)) return null
+  const nav=officeNavigation(next),liftX=nav.shaftX
+  const door=nav.hatch
+  const from = event.kind === 'arrived' && !old ? { x: liftX-60*nav.scale, y: door.y } : point(old ?? moving)
+  const home = point(moving)
+  const destination = changedRoom ? point(child) : event.kind === 'activity' ? activityTarget??officeWorkTarget(child,next,event.station??'terminal') : event.kind === 'assigned' ? { x: child.x > 65 ? child.x - 18 : child.x + 18, y: child.y }
+    : event.kind === 'sent' ? { x: parent!.x > 100 ? parent!.x - 18 : parent!.x + 18, y: parent!.y }
+    : event.kind === 'left' ? { x: liftX-60*nav.scale, y: door.y } : point(moving)
+  const {segments,leg,travel}=createOfficeTravelPath(old?before:next,next,from,event.kind==='arrived'&&!old?'lounge':old?.floorId??moving.floorId)
   const destinationFloor=event.kind==='left'?'lounge':event.kind==='sent'&&!changedRoom?parent!.floorId:event.kind==='assigned'&&!changedRoom?child.floorId:moving.floorId
   const captions: Record<OfficeEvent['kind'], string> = {
+    routine:'',
     activity:`is working at the ${OFFICE_STATION_LABELS[event.station??'terminal']}`,
     assigned: 'is sharing an assignment', finished: child.floorId === 'lounge' ? 'is joining the celebration' : child.zone === 'lounge' ? 'is heading to the break room' : 'is heading to their desk', sent: 'has sent their work', received: 'has received the work', arrived: 'is heading to their desk', left: 'is heading home',
   }
@@ -122,6 +131,7 @@ export function officeTripFrame(trip: OfficeTrip, now: number): OfficeTripFrame 
   let elapsed = Math.max(0, now - trip.startedAt)
   const done = now >= trip.endsAt
   const last = trip.segments.at(-1)!
+  if(done)return {point:point(last.to),pose:last.opacity?{opacity:last.opacity[1]}:{},elevatorY:null,done:true,floorId:last.floorId}
   for (const segment of trip.segments) {
     if (elapsed < segment.duration) {
       const ratio = clamp(elapsed / segment.duration, 0, 1)
@@ -139,7 +149,7 @@ export function officeTripFrame(trip: OfficeTrip, now: number): OfficeTripFrame 
 
 /** Bounded, short-lived visual work. Snapshots, not this queue, remain the authoritative state. */
 export function mergeOfficeEvents(pending: readonly OfficeEvent[], incoming: readonly OfficeEvent[], now: number, eligible: (event: OfficeEvent) => boolean = () => true): OfficeEvent[] {
-  const rank = { activity:-1, assigned: 0, finished: 1, sent: 2, received: 3, arrived: 4, left: 5 }
+  const rank = { routine:-2, activity:-1, assigned: 0, finished: 1, sent: 2, received: 3, arrived: 4, left: 5 }
   const latest = new Map<string, OfficeEvent>()
   for (const event of [...pending, ...incoming]) {
     if ((event.kind!=='left'&&now-event.at>15_000)||!eligible(event))continue

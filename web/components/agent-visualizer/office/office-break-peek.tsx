@@ -18,15 +18,16 @@ interface OfficeBreakPeekProps {
   agentRef?: (key: string) => (element: HTMLButtonElement | null) => void
   now: number
   selectedKey: string | null
+  focusOnOpen?:boolean
 }
 
 /** A view through the interior door; it occupies the main room's existing bounds. */
-export function OfficeBreakPeek({ floor, width, buildingHeight, actors, canvasRef, onClose, onSelect, onOpenTeam, onObject, agentRef, now, selectedKey }: OfficeBreakPeekProps) {
+export function OfficeBreakPeek({ floor, width, buildingHeight, actors, canvasRef, onClose, onSelect, onOpenTeam, onObject, agentRef, now, selectedKey,focusOnOpen=true }: OfficeBreakPeekProps) {
   const back=useRef<HTMLButtonElement>(null)
-  useEffect(()=>{back.current?.focus()},[])
+  useEffect(()=>{if(focusOnOpen)back.current?.focus()},[focusOnOpen])
   const height = floor.height ?? width * .5625
   const residents = actors.filter(actor => actor.floorId === floor.id && !actor.hidden)
-  const count = floor.actorKeys.length || residents.length
+  const count = residents.length
   const objects = [
     ...officeLeisureObjects(floor, width).map(object => ({ ...object, label: OFFICE_OBJECT_NAMES[object.kind] })),
     ...officeSeasonalObjects(floor, width, new Date(now)),

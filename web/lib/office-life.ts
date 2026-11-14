@@ -82,6 +82,8 @@ export function officeLife(actor: OfficeActor, time: number, context: OfficeLife
   const still = frame({ typing: status === 'running' && actor.zone === 'desk' })
   if (context.tripActive || actor.pose?.walk || actor.pose?.climb) return still
   if(actor.zone==='lounge'&&context.objectAction&&(RESTING.has(status)||status==='failed'))return objectFrame(context.objectAction,time,actor.party)
+  // Idle leads remain seated at their report nook rather than falling asleep at a workstation.
+  if(actor.zone==='lounge'&&status==='idle'&&actor.agent.role==='lead'&&!actor.agent.parentId&&!actor.parentKey&&!actor.party)return objectFrame(actor.objectAction==='coffee'?'coffee':'book',time)
   if(!time)return actor.zone==='lounge'&&actor.objectAction?objectFrame(actor.objectAction,0,actor.party):still
   if (context.greet) return frame({ wave: true, turn: .5 })
   const s = officeSeed(actor.key)

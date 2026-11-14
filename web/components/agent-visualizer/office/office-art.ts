@@ -5,6 +5,9 @@ import { drawOfficeSky } from './office-sky-art'
 import { drawOfficeSeasonalRooms } from './office-seasonal-art'
 import { drawOfficeGarden } from './office-garden-art'
 import { drawOfficeInteriorDoors } from './office-door-art'
+import {drawOfficeDailyArt} from './office-daily-art'
+import {drawOfficeCommunications} from './office-communication-art'
+import {officeRestConversations} from '../../../lib/office-communication'
 import type { OfficeActor, OfficeAppearance, OfficeDrawnOffset, OfficePaintOptions, OfficePose, OfficeScene, OfficeLeisureAction } from '../../../lib/office-types'
 import { officeLife, officeLifeCanChat, officeLifePairs, officeSeed, type OfficeLifePair, type OfficeMood } from '../../../lib/office-life'
 
@@ -238,6 +241,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
   drawOfficeSky(c,scene,time,o.date)
   drawOfficeGarden(c,scene,o.date,time)
   drawOfficeSeasonalRooms(c,{...scene,floors:scene.floors.filter(f=>!f.annexOf||!scene.floors.some(p=>p.id===f.annexOf))},o.date,time)
+  drawOfficeDailyArt(c,scene,o.date,{kind:o.dailyArt?.kind,delivered:o.dailyArt?.delivery,eatingKeys:new Set(o.dailyArt?.guests.filter(g=>g.phase==='eating').map(g=>g.actorKey))},o.roomArt)
   const daylight=officeDaylight(o.date),surface=scene.floors.find(f=>f.kind==='lounge')
   if(surface?.height&&daylight.sun){
     c.fillStyle=`rgba(31,43,38,${.08+daylight.light*.06})`
@@ -246,11 +250,23 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
   drawOfficeShaft(c,scene,false,o.architectureArt,false,o.lift)
   drawOfficeInteriorDoors(c,scene,o.openDoorFloorId,o.architectureArt)
   const visible=scene.actors.filter(a=>!a.hidden),byKey=new Map(visible.map(a=>[a.key,a]))
+  const exchange=o.exchange??null
+  const chats=officeRestConversations(scene,time,new Set([o.tripKey,...(o.leisureKeys??[]),...(exchange?[exchange.senderKey,exchange.receiverKey]:[])].filter((key):key is string=>!!key)))
+  const interactions=new Map<string,{face:1|-1;speaking:boolean}>()
+  const interact=(speakerKey:string,listenerKey:string)=>{
+    const speaker=byKey.get(speakerKey),listener=byKey.get(listenerKey)
+    if(!speaker||!listener||speaker.floorId!==listener.floorId)return
+    interactions.set(speakerKey,{face:listener.x>=speaker.x?1:-1,speaking:true})
+    interactions.set(listenerKey,{face:speaker.x>=listener.x?1:-1,speaking:false})
+  }
+  for(const chat of chats)interact(chat.speakerKey,chat.listenerKey)
+  if(exchange&&!exchange.remote)interact(exchange.kind==='received'?exchange.receiverKey:exchange.senderKey,exchange.kind==='received'?exchange.senderKey:exchange.receiverKey)
   const pairs=time?pairsFor(scene.actors):new Map<string,OfficeLifePair>()
   const offsets=new Map<string,OfficeDrawnOffset>()
   for(const actor of visible.sort((a,b)=>a.y-b.y)) {
     if(actor.pose?.inLift&&!o.lift)continue
     const moving=Boolean(actor.pose?.walk||actor.pose?.climb||actor.pose?.inLift)
+    const interaction=moving?undefined:interactions.get(actor.key)
     const waiting=actor.agent.status.startsWith('waiting_'),failed=actor.agent.status==='failed'
     const pair=pairs.get(actor.key),partner=pair&&byKey.get(pair.partnerKey)
     const life=officeLife(actor,time,{partnerDx:pair?.partnerDx,pairSeed:pair?.pairSeed,tripActive:actor.key===o.tripKey||o.leisureKeys?.has(actor.key),greet:actor.key===o.greetKey,
@@ -268,11 +284,12 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     c.save();c.globalAlpha=(Number.isFinite(c.globalAlpha)?c.globalAlpha:1)*(actor.pose?.opacity??1);c.translate(actor.x+life.dx,actor.y);const carScale=actor.pose?.inLift?(.72+.28*(actor.pose.walk?Math.max(0,Math.min(1,(scene.width*.938-actor.x)/(28*scale))):0)):1;c.scale(scale*carScale,scale*carScale)
     drawOfficeAvatar(c,actor.appearance,0,0,t,{sit:!moving&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving,hand:o.live&&waiting,
       mug:actor.zone==='lounge'&&!moving&&(!life.objectAction||life.objectAction==='coffee'),objectAction:life.objectAction,lead:actor.agent.role==='lead'||actor.pod,cup:life.cup,stretch:life.stretch,lean:life.lean,doze:life.doze,
-      slump:life.slump,scratch:life.scratch,wave:life.wave,turn:life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose,climb:false})
+      slump:life.slump,scratch:life.scratch,wave:life.wave||interaction?.speaking,turn:interaction?(interaction.speaking ? .25 : -.2):life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose,...(interaction?{face:interaction.face}:{}),climb:false})
     if(life.mood){c.translate(0,-life.hop);drawMood(c,life.mood,t)}
     c.restore()
     offsets.set(actor.key,{dx:life.dx,dy:-life.hop*scale})
   }
+  drawOfficeCommunications(c,scene,time,exchange,chats)
   drawOfficeShaft(c,scene,true,o.architectureArt,o.liftSurfaceOpen,o.lift)
   if(time)drawAmbient(c,scene,time,officeAmbient(o.date).night)
   return offsets

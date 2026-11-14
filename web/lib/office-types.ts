@@ -53,7 +53,7 @@ export interface OfficeFloor {
   constructing?: boolean
   constructionProgress?: number
   height?: number
-  room?: 'room-a' | 'room-b-lead' | 'room-c-big' | 'room-stations' | 'room-stations-large' | OfficeBreakRoom
+  room?: 'room-a' | 'room-b-lead' | 'room-c-big' | 'room-stations' | 'room-stations-large' | 'room-canteen' | OfficeBreakRoom
   overflow?: number
   working?: number
   waiting?: number
@@ -77,7 +77,7 @@ export interface OfficeScene {
 }
 export interface OfficeEvent {
   id: string
-  kind: 'assigned' | 'finished' | 'sent' | 'received' | 'arrived' | 'left' | 'activity'
+  kind: 'assigned' | 'finished' | 'sent' | 'received' | 'arrived' | 'left' | 'activity' | 'routine'
   station?: OfficeWorkStation
   actorKey: string
   parentKey: string | null
@@ -93,7 +93,16 @@ export interface OfficeArchitectureArt {
   liftShaft:CanvasImageSource
 }
 export interface OfficeLiftVisual {y:number;doorsOpen:number;moving:boolean;passengerKeys:readonly string[]}
+export interface OfficeDailyVisual {
+  kind?:'coffee'|'lunch'|'tea'|null
+  delivery:boolean
+  cleanup:boolean
+  guests:readonly {actorKey:string;kind:'coffee'|'lunch'|'tea';phase:'outbound'|'eating'|'relocating'|'returning';floorId:string;x:number;y:number;seat:number}[]
+}
 export interface OfficePaintOptions {
+  exchange?:import('./office-communication').OfficeWorkExchange|null
+  roomArt?:{shell:CanvasImageSource;props:CanvasImageSource;breakRoom:CanvasImageSource}|null
+  dailyArt?:OfficeDailyVisual
   lift?:OfficeLiftVisual
   architectureArt?:OfficeArchitectureArt|null
   liftSurfaceOpen?:boolean

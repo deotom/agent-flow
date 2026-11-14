@@ -22,6 +22,12 @@ import {createOfficeLift,closeOfficeLiftGardenDoor,callOfficeLiftToGarden,reserv
 import { addOfficeArrivals, advanceOfficeArrivals, officeActorsWithArrivals } from '../../../lib/office-arrivals'
 import { useOfficeLayout } from './use-office-layout'
 import { OfficeBreakPeek } from './office-break-peek'
+import {officeLeadRestTransitions,officePendingOriginKeys} from '../../../lib/office-lead-rest'
+import {createOfficeLeadRestTrip} from '../../../lib/office-lead-rest-motion'
+import {officeWorkExchange} from '../../../lib/office-communication'
+import {OfficeDailyRuntime,OFFICE_DAILY_STORAGE} from '../../../lib/office-daily-runtime'
+import {useOfficeRoomArt} from './use-office-room-art'
+import {drawOfficeRoomDesign} from './office-room-design-art'
 import {useOfficeArchitectureArt} from './use-office-architecture-art'
 
 interface OfficeViewProps {
@@ -82,7 +88,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const [showQuiet, setShowQuiet] = useState(false)
   const [peekId,setPeekId] = useState<string|null>(null)
   const lastDoor=useRef<HTMLButtonElement|null>(null)
-  const closePeek=()=>{setPeekId(null);requestAnimationFrame(()=>{if(lastDoor.current?.isConnected)lastDoor.current.focus()})}
+  const closePeek=()=>{const automatic=Boolean(autoPeek.current);autoPeek.current=null;setPeekId(null);if(!automatic)requestAnimationFrame(()=>{if(lastDoor.current?.isConnected)lastDoor.current.focus()})}
   const [stationSelection,setStationSelection]=useState<{sessionId:string;kind:OfficeWorkStation}|null>(null)
   // The user's own pause choice persists across launches.
   const [paused, setPaused] = useState(() => { try { return localStorage.getItem(PAUSE_STORAGE) === 'true' } catch { return false } })
@@ -98,13 +104,19 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   useEffect(() => { partyLog.current = partyHistory }, [partyHistory])
   const parties = partyHistory.parties
   const scene = useMemo(() => buildOfficeScene(snapshots, scope, showQuiet, identities, sceneWidth, parties, teamOrder), [snapshots, scope, showQuiet, identities, sceneWidth, parties, teamOrder])
+  const daily=useRef<OfficeDailyRuntime|null>(null)
+  if(!daily.current){let saved:unknown;try{saved=JSON.parse(localStorage.getItem(OFFICE_DAILY_STORAGE)??'null')}catch{}daily.current=new OfficeDailyRuntime(saved)}
+  const [dailyVersion,setDailyVersion]=useState(0)
+  const persistedDaily=useRef('')
   const [heldLayout, setHeldLayout] = useState<OfficeScene | null>(null)
   const held = useRef<OfficeScene | null>(null)
   const holdLayout = (value: OfficeScene | null) => { held.current = value; setHeldLayout(value) }
   const enabled = visible && pageVisible && live && officeAllowsMotion(animationMode) && !paused
-  const layoutTarget = useMemo(() => heldLayout ? officeDepartureScene(heldLayout, scene, snapshots) : scene, [heldLayout, scene, snapshots])
+  const layoutTarget = useMemo(() => daily.current!.project(heldLayout ? officeDepartureScene(heldLayout, scene, snapshots) : scene), [heldLayout, scene, snapshots,dailyVersion])
   const visualScene = useOfficeLayout(layoutTarget,visible&&pageVisible&&officeAllowsMotion(animationMode)&&!paused,!live)
   const architectureArt=useOfficeArchitectureArt()
+  const roomArt=useOfficeRoomArt()
+  const roomCanvas=useRef<HTMLCanvasElement>(null)
   const lift=useRef<OfficeLiftState|null>(null)
   if(!lift.current)lift.current=createOfficeLift(visualScene)
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -114,6 +126,9 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const painted = useRef(false)
   const reconnecting = useRef(false)
   const objectCue = useRef<{actorKey:string;kind:OfficeLeisureAction;until:number}|null>(null)
+  const leadOrigins=useRef(new Map<string,OfficeActor>())
+  const autoPeek=useRef<{key:string;floorId:string}|null>(null)
+  const autoPeeked=useRef(new Set<string>())
   const leisureTrips = useRef(new Map<string,{trip:OfficeTrip;kind:OfficeLeisureAction}>())
   const leisureVisual = useRef(new Map<string,Moving>())
   const arrivalTrips = useRef(new Map<string,OfficeTrip>())
@@ -149,17 +164,22 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const greet = useRef<{ key: string; until: number } | null>(null)
   const greetCooldown = useRef(new Map<string, number>())
   const [inspectedKey, setInspectedKey] = useState<string | null>(null)
-  const current = useRef({ scene: visualScene,target:layoutTarget,sourceScene:scene, selectedKey, pets, petEvent, enabled, live, peekId,architectureArt })
-  current.current = { scene: visualScene,target:layoutTarget,sourceScene:scene, selectedKey, pets, petEvent, enabled, live, peekId,architectureArt }
+  const current = useRef({ scene: visualScene,target:layoutTarget,sourceScene:scene, selectedKey, pets, petEvent, enabled, live, peekId,architectureArt,roomArt,wallNow:now })
+  current.current = { scene: visualScene,target:layoutTarget,sourceScene:scene, selectedKey, pets, petEvent, enabled, live, peekId,architectureArt,roomArt,wallNow:now }
   const createVisualTrip=(event:OfficeEvent,before:OfficeScene,next:OfficeScene,at:number)=>{
     const prior=officeSceneAtWorkPlaces(before,workPlaces.current),present=officeSceneAtWorkPlaces(next,workPlaces.current)
     const person=present.actors.find(a=>a.key===event.actorKey)
+    if(event.kind==='routine'){
+      const actual=daily.current!.completedOrigins.get(event.actorKey)??leadOrigins.current.get(event.actorKey)??(lastPainted.current?.actor.key===event.actorKey?lastPainted.current.actor:undefined)??prior.actors.find(a=>a.key===event.actorKey)
+      const trip=createOfficeLeadRestTrip(prior,present,event.actorKey,at,actual)
+      return trip?{...trip,event}:null
+    }
     const target=event.kind==='activity'&&person?officeWorkPresenceTarget(next,person,event.station??officeWorkStation(person),workPlaces.current):undefined
     let trip=createOfficeTrip(event,prior,present,at,target)
     if(!trip)return null
-    const actual=leisureVisual.current.get(trip.actorKey)?.actor??(lastPainted.current?.actor.key===trip.actorKey?lastPainted.current.actor:present.actors.find(a=>a.key===trip!.actorKey))
-    if(actual&&prior.actors.some(a=>a.key===trip!.actorKey&&a.floorId===actual.floorId)){
-      const origin={...prior,actors:prior.actors.map(a=>a.key===trip!.actorKey?{...a,x:actual.x,y:actual.y}:a)}
+    const actual=daily.current!.completedOrigins.get(trip.actorKey)??leadOrigins.current.get(trip.actorKey)??leisureVisual.current.get(trip.actorKey)?.actor??(lastPainted.current?.actor.key===trip.actorKey?lastPainted.current.actor:present.actors.find(a=>a.key===trip!.actorKey))
+    if(actual&&prior.actors.some(a=>a.key===trip!.actorKey&&(a.floorId===actual.floorId||daily.current!.completedOrigins.has(trip!.actorKey)))){
+      const origin={...prior,floors:[...prior.floors,...present.floors.filter(f=>!prior.floors.some(p=>p.id===f.id))],actors:prior.actors.map(a=>a.key===trip!.actorKey?{...a,x:actual.x,y:actual.y,floorId:actual.floorId}:a)}
       trip=createOfficeTrip(event,origin,present,at,target)
     }
     return trip
@@ -184,21 +204,31 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
       return
     }
     if (!enabled || !previous?.enabled || previous.scope !== scope || previous.showQuiet !== showQuiet) {
-      queue.current = []; active.current = null; setMoving(null); holdLayout(null)
-      const car=officeLiftFrame(lift.current!,motionClock.current);lift.current={y:car.y,doorsOpen:0,availableAt:motionClock.current,reservations:[]}
+      if(!daily.current!.guests.size){
+      queue.current = []; active.current = null; leadOrigins.current.clear();setMoving(null); holdLayout(null)
+      if(!daily.current!.guests.size){const car=officeLiftFrame(lift.current!,motionClock.current);lift.current={y:car.y,doorsOpen:0,availableAt:motionClock.current,reservations:[]}}
       if(arrivalTrips.current.size){arrivalTrips.current.clear();setArrivalTick(n=>n+1)}
+      }
     } else if (previous.scene !== scene) {
       const priorIds=new Set(previous.snapshots.map(s=>s.sessionId))
       const newTeams=new Set(previous.snapshots.length?snapshots.filter(s=>!priorIds.has(s.sessionId)).map(s=>s.sessionId):[])
-      const observed = [...officeEvents(previous.snapshots, snapshots, Date.now()), ...officePresenceEvents(previous.scene, scene, populatedOfficeTeams(previous.snapshots), Date.now(),newTeams), ...officeWorkEvents(previous.scene,scene,Date.now())]
-      arrivalTrips.current=addOfficeArrivals(arrivalTrips.current,observed,previous.scene,scene,motionClock.current,lift.current!)
+      const restEvents:OfficeEvent[]=officeLeadRestTransitions(previous.scene,scene).map(change=>{
+        const liveTrip=active.current?.actorKey===change.actorKey?active.current:null
+        const frame=liveTrip?officeTripFrame(liveTrip,motionClock.current):null
+        const actual=daily.current!.actors(current.current.scene,motionClock.current).find(a=>a.key===change.actorKey)??(frame?{...change.from,...frame.point,floorId:frame.floorId??change.from.floorId}:leadOrigins.current.get(change.actorKey)??officeActorAtWorkPlace(previous.scene,change.from,workPlaces.current.get(change.actorKey)))
+        leadOrigins.current.set(change.actorKey,actual)
+        if(liveTrip?.event.kind==='routine'){active.current=null;setMoving(null)}
+        return {id:JSON.stringify(['lead-rest',change.actorKey,Date.now()]),kind:'routine',actorKey:change.actorKey,parentKey:null,at:Date.now()}
+      })
+      const observed = [...restEvents,...officeEvents(previous.snapshots, snapshots, Date.now()), ...officePresenceEvents(previous.scene, scene, populatedOfficeTeams(previous.snapshots), Date.now(),newTeams), ...officeWorkEvents(previous.scene,scene,Date.now())]
+      arrivalTrips.current=addOfficeArrivals(arrivalTrips.current,observed.filter(e=>!daily.current!.guests.has(e.actorKey)),previous.scene,scene,motionClock.current,lift.current!)
       const events=observed.filter(event=>event.kind!=='arrived'&&(event.kind==='left'||!arrivalTrips.current.has(event.actorKey)))
       setArrivalTick(n=>n+1)
       if (events.some(event => event.kind === 'left')) {
         if (!held.current) holdLayout(previous.scene)
       }
       const pendingBefore = new Map(queue.current.map(item => [item.event.id, item.before]))
-      const merged = mergeOfficeEvents(queue.current.map(item => item.event), events, Date.now(), event =>
+      const merged = mergeOfficeEvents(queue.current.map(item => daily.current!.guests.has(item.event.actorKey)||Boolean(item.event.parentKey&&daily.current!.guests.has(item.event.parentKey))?{...item.event,at:Date.now()}:item.event), events, Date.now(), event =>
         (event.kind!=='left'||!scene.actors.some(a=>a.key===event.actorKey&&!a.hidden))&&createVisualTrip(event, pendingBefore.get(event.id) ?? previous.scene, scene, 0)!==null)
       const old = new Map(queue.current.map(item => [item.event.id, item]))
       queue.current = merged.map(event => old.get(event.id) ?? { event, before: previous.scene })
@@ -218,9 +248,14 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     const ratio = Math.max(1, Math.min(4, Math.ceil((element.clientWidth || input.scene.width) * (window.devicePixelRatio || 1) / input.scene.width * 4) / 4))
     const w = Math.round(input.scene.width * ratio), h = Math.round(input.scene.height * ratio)
     if (element.width !== w || element.height !== h) { element.width = w; element.height = h }
-    const overrides=new Map([...leisureVisual.current].map(([key,value])=>[key,value.actor]))
+    const overrides=new Map([...leadOrigins.current,...[...leisureVisual.current].map(([key,value])=>[key,value.actor] as const)])
+    for(const actor of daily.current!.actors(input.scene,motionClock.current))overrides.set(actor.key,actor)
     if(movement)overrides.set(movement.actor.key,movement.actor)
-    const actors=officeActorsWithArrivals(input.scene,arrivalTrips.current,motionClock.current).map(actor=>overrides.get(actor.key)??(arrivalTrips.current.has(actor.key)?actor:officeActorAtWorkPlace(input.scene,actor,workPlaces.current.get(actor.key))))
+    const actors=officeActorsWithArrivals(input.scene,arrivalTrips.current,motionClock.current).map(actor=>{
+      const override=overrides.get(actor.key)
+      return override?{...override,agent:actor.agent,task:actor.task}:(arrivalTrips.current.has(actor.key)?actor:officeActorAtWorkPlace(input.scene,actor,workPlaces.current.get(actor.key)))
+    })
+    for(const actor of daily.current!.actors(input.scene,motionClock.current))if(!actors.some(a=>a.key===actor.key))actors.push(actor)
     if(movement&&!actors.some(actor=>actor.key===movement.actor.key))actors.push(movement.actor)
     context.setTransform(ratio,0,0,ratio,0,0)
     const skyElement=skyCanvas.current, skyContext=skyElement?.getContext('2d')
@@ -236,17 +271,18 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     if(skyElement&&skyContext){
       if(skyElement.width!==w||skyElement.height!==Math.round(surfaceHeight*ratio)){skyElement.width=w;skyElement.height=Math.round(surfaceHeight*ratio)}
       skyContext.setTransform(ratio,0,0,ratio,0,0)
-      drawOfficeDaylight(skyContext,input.scene,new Date(),input.enabled?elapsed.current:0)
+      drawOfficeDaylight(skyContext,input.scene,new Date(input.wallNow),input.enabled?elapsed.current:0)
     }
     const greeting = greet.current && greet.current.until > elapsed.current ? greet.current.key : null
     const publicFloors=input.scene.floors.filter(f=>!f.annexOf)
     const publicIds=new Set(publicFloors.filter(f=>!f.constructing).map(f=>f.id))
     const doorFloor=input.scene.floors.find(f=>f.annexOf&&movement&&f.sessionId===movement.actor.sessionId&&(()=>{const p=officeInteriorDoor(input.scene,f.id);return p&&Math.abs(p.x-movement.actor.x)<20*input.scene.width/450&&Math.abs(p.y-movement.actor.y)<35*input.scene.width/450})())
-    const options={ time: elapsed.current, date: new Date(), now: Date.now(), live: input.live,
+    const options={ time: elapsed.current, date: new Date(input.wallNow), now: input.wallNow, dailyArt:daily.current!.art(new Date(input.wallNow),input.scene,motionClock.current), live: input.live,
+      exchange:officeWorkExchange(active.current,{...input.scene,actors},motionClock.current),
       motion: input.enabled, pets: input.pets, petEvent: input.petEvent, selectedKey: input.selectedKey,
-      openDoorFloorId:input.peekId??doorFloor?.id??null,architectureArt:input.architectureArt,liftSurfaceOpen:false,lift:liftVisual,
+      openDoorFloorId:input.peekId??doorFloor?.id??null,architectureArt:input.architectureArt,roomArt:input.roomArt,liftSurfaceOpen:false,lift:liftVisual,
       objectCue:objectCue.current&&objectCue.current.until>elapsed.current?objectCue.current:null,
-      leisureKeys:new Set([...leisureTrips.current.keys(),...arrivalTrips.current.keys()]),
+      leisureKeys:new Set([...leisureTrips.current.keys(),...arrivalTrips.current.keys(),...daily.current!.guests.keys()]),
       tripKey: input.enabled ? active.current?.actorKey ?? null : null, greetKey: input.enabled ? greeting : null }
     const offsets = drawOfficeFrame(context, { ...input.scene, actors:actors.filter(a=>publicIds.has(a.floorId)) },options)
     const annex=input.scene.floors.find(f=>f.id===input.peekId&&f.annexOf),peek=peekCanvas.current,peekContext=peek?.getContext('2d')
@@ -282,6 +318,18 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     if (!enabled || (!active.current&&!queue.current.length)) paint(null)
   }, [visualScene, now, enabled, live, selectedKey, petEvent, peekId,architectureArt])
   useEffect(()=>{if(architectureArt)paint(lastPainted.current)},[architectureArt])
+  const roomPaintKey=JSON.stringify([visualScene.width,visualScene.height,...visualScene.floors.filter(f=>f.kind==='team').map(f=>[f.id,f.sessionId,f.title,f.room,f.y,f.height,f.constructing])])
+  useEffect(()=>{
+    const element=roomCanvas.current,context=element?.getContext('2d')
+    if(!element||!context)return
+    const ratio=Math.max(1,Math.min(3,window.devicePixelRatio||1))
+    const width=Math.round(visualScene.width*ratio),height=Math.round(visualScene.height*ratio)
+    if(element.width!==width)element.width=width
+    if(element.height!==height)element.height=height
+    context.setTransform(ratio,0,0,ratio,0,0);context.clearRect(0,0,visualScene.width,visualScene.height)
+    for(const floor of visualScene.floors)drawOfficeRoomDesign(context,visualScene,floor,roomArt)
+    paint(lastPainted.current)
+  },[roomPaintKey,roomArt])
   useEffect(()=>{if(peekId)paint(lastPainted.current)},[peekId])
   useEffect(()=>{if(peekId&&!scene.floors.some(f=>f.id===peekId))setPeekId(null)},[scene,peekId])
   useEffect(() => {
@@ -306,6 +354,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
       if(arrivalTrips.current.size&&[...arrivalTrips.current.values()].some(trip=>growing.has(trip.actor.floorId))){
         for(const [key,trip] of arrivalTrips.current)arrivalTrips.current.set(key,{...trip,startedAt:trip.startedAt+delta,endsAt:trip.endsAt+delta})
         shiftOfficeLiftTime(lift.current!,delta)
+        daily.current!.shiftMotion(delta)
         if(active.current?.segments.some(s=>s.liftPhase))active.current={...active.current,startedAt:active.current.startedAt+delta,endsAt:active.current.endsAt+delta}
       }
       if (time - lastPaint < interval) return
@@ -318,33 +367,69 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
       }
       if(motionClock.current>=nextSeasonalAt.current){
         nextSeasonalAt.current=motionClock.current+45_000
-        const available={...input.scene,actors:input.scene.actors.filter(a=>a.key!==active.current?.actorKey&&!leisureTrips.current.has(a.key)&&!arrivalTrips.current.has(a.key)&&a.agent.status!=='failed')}
+        const available={...input.scene,actors:input.scene.actors.filter(a=>a.key!==active.current?.actorKey&&!leisureTrips.current.has(a.key)&&!arrivalTrips.current.has(a.key)&&!daily.current!.guests.has(a.key)&&a.agent.status!=='failed')}
         const rooms=input.scene.floors.filter(f=>f.kind==='break')
         for(let i=0;i<rooms.length;i++){
           const floor=rooms[(seasonalCursor.current+i)%rooms.length]
-          const object=officeSeasonalObjects(floor,input.scene.width,new Date())[0]
+          const object=officeSeasonalObjects(floor,input.scene.width,new Date(input.wallNow))[0]
           const person=object&&nearestLeisureActor(available,floor,object)
           if(person){const trip=createOfficeLeisureTrip(input.scene,person.key,object,motionClock.current);if(trip){leisureTrips.current.set(person.key,{trip,kind:object.kind});seasonalCursor.current++;break}}
         }
       }
-      queue.current = queue.current.filter(pending => (pending.event.kind==='left'||Date.now() - pending.event.at <= 15_000)&&(pending.event.kind==='left'||!arrivalTrips.current.has(pending.event.actorKey))&&(pending.event.kind!=='left'||!input.sourceScene.actors.some(a=>a.key===pending.event.actorKey&&!a.hidden)))
+      queue.current = queue.current.filter(pending => (daily.current!.guests.has(pending.event.actorKey)||Boolean(pending.event.parentKey&&daily.current!.guests.has(pending.event.parentKey))||pending.event.kind==='left'||Date.now() - pending.event.at <= 15_000)&&(pending.event.kind==='left'||!arrivalTrips.current.has(pending.event.actorKey))&&(pending.event.kind!=='left'||!input.sourceScene.actors.some(a=>a.key===pending.event.actorKey&&!a.hidden)))
+      const dailyBefore={count:daily.current!.guests.size,open:daily.current!.canteenOpen}
+      const busyKeys=new Set([...arrivalTrips.current.keys(),...leisureTrips.current.keys(),...queue.current.flatMap(p=>[p.event.actorKey,...(p.event.parentKey?[p.event.parentKey]:[])]),...(active.current?[active.current.actorKey]:[])])
+      const realQueue=queue.current.some(p=>!daily.current!.guests.has(p.event.actorKey)&&(!p.event.parentKey||!daily.current!.guests.has(p.event.parentKey)))
+      daily.current!.step({source:input.sourceScene,scene:input.scene,date:new Date(input.wallNow),at:motionClock.current,lift:lift.current!,busyKeys,blocked:Boolean(active.current||arrivalTrips.current.size||realQueue),preemptQueuedTravel:Boolean(arrivalTrips.current.size||active.current?.segments.some(s=>s.liftPhase)||queue.current.some(p=>p.event.kind==='left'&&!daily.current!.guests.has(p.event.actorKey))),onLiftCancelled:keys=>{
+        for(const key of keys){
+          const prior=arrivalTrips.current.get(key)??(active.current?.actorKey===key?active.current:null)
+          if(!prior)continue
+          const frame=officeTripFrame(prior,motionClock.current)
+          const before={...input.scene,actors:input.scene.actors.map(a=>a.key===key?{...a,...frame.point,floorId:frame.floorId??a.floorId}:a)}
+          const rebuilt=createOfficeTrip(prior.event,before,input.scene,motionClock.current)
+          const trip=rebuilt?reserveOfficeLiftTrip(lift.current!,rebuilt,input.scene,motionClock.current):null
+          if(arrivalTrips.current.has(key)){if(trip)arrivalTrips.current.set(key,trip);else arrivalTrips.current.delete(key)}
+          else active.current=trip
+        }
+      }})
+      if(dailyBefore.count!==daily.current!.guests.size||dailyBefore.open!==daily.current!.canteenOpen)setDailyVersion(n=>n+1)
+      for(const [key,origin] of daily.current!.completedOrigins)if(leadOrigins.current.has(key))leadOrigins.current.set(key,origin)
+      const privateWalker=daily.current!.actors(input.scene,motionClock.current).find(a=>{
+        const trip=daily.current!.guests.get(a.key)?.trip
+        return trip&&motionClock.current>=trip.startedAt&&!officeTripFrame(trip,motionClock.current).done&&a.pose?.walk&&input.scene.floors.some(f=>f.id===a.floorId&&f.annexOf)
+      })
+      if(autoPeek.current&&(!privateWalker||privateWalker.key!==autoPeek.current.key||privateWalker.floorId!==autoPeek.current.floorId)){
+        if(input.peekId===autoPeek.current.floorId)setPeekId(null)
+        autoPeek.current=null
+      }
+      if(privateWalker&&!input.peekId&&!autoPeek.current){
+        const id=daily.current!.guests.get(privateWalker.key)?.trip?.event.id
+        if(id&&!autoPeeked.current.has(id)){
+          autoPeeked.current.add(id);if(autoPeeked.current.size>64)autoPeeked.current.delete(autoPeeked.current.values().next().value!)
+          autoPeek.current={key:privateWalker.key,floorId:privateWalker.floorId};setPeekId(privateWalker.floorId)
+        }
+      }
+      const ledger=JSON.stringify(daily.current!.ledger)
+      if(ledger!==persistedDaily.current){persistedDaily.current=ledger;try{localStorage.setItem(OFFICE_DAILY_STORAGE,ledger)}catch{}}
+      queue.current=queue.current.map(p=>(daily.current!.completedOrigins.has(p.event.actorKey)||Boolean(p.event.parentKey&&daily.current!.completedOrigins.has(p.event.parentKey)))?{...p,event:{...p.event,at:Date.now()}}:p)
       if (held.current && !active.current && !queue.current.some(pending => pending.event.kind === 'left')) {
         holdLayout(null); setMoving(null); return
       }
       if (!active.current&&!arrivalTrips.current.size) {
         while (queue.current.length) {
-          const index = held.current ? queue.current.findIndex(item => item.event.kind === 'left') : 0
+          const index = queue.current.findIndex(item=>!daily.current!.guests.has(item.event.actorKey)&&(!item.event.parentKey||!daily.current!.guests.has(item.event.parentKey))&&(!held.current||item.event.kind==='left'))
           if (index < 0) break
           const pending = queue.current.splice(index, 1)[0]
           if (pending.event.kind!=='left'&&Date.now() - pending.event.at > 15_000) continue
           const trip=createVisualTrip(pending.event,pending.before,input.scene,motionClock.current)
-          if (trip) { active.current = trip.segments.some(s=>s.liftPhase)?reserveOfficeLiftTrip(lift.current!,trip,input.scene,motionClock.current):trip; break }
+          if(!trip)leadOrigins.current.delete(pending.event.actorKey)
+          if (trip) { daily.current!.completedOrigins.delete(trip.actorKey);active.current = trip.segments.some(s=>s.liftPhase)?reserveOfficeLiftTrip(lift.current!,trip,input.scene,motionClock.current):trip; break }
         }
       }
       let movement: Moving | null = null
       if(!active.current&&!held.current&&!arrivalTrips.current.size&&motionClock.current>=nextWorkAt.current){
         nextWorkAt.current=motionClock.current+5000
-        const work=officeWorkPulse(input.scene,workCursor.current++,Date.now())
+        const work=officeWorkPulse({...input.scene,actors:input.scene.actors.filter(a=>!daily.current!.guests.has(a.key))},workCursor.current++,Date.now())
         if(work)active.current=createVisualTrip(work,input.scene,input.scene,motionClock.current)
       }
       if (active.current) {
@@ -369,7 +454,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
       }
       for(const [key,entry] of leisureTrips.current){
         const actor=input.scene.actors.find(a=>a.key===key)
-        if(!actor||actor.hidden||actor.zone!=='lounge'){leisureTrips.current.delete(key);leisureVisual.current.delete(key);continue}
+        if(!actor||actor.hidden||actor.zone!=='lounge'||daily.current!.guests.has(key)){leisureTrips.current.delete(key);leisureVisual.current.delete(key);continue}
         const dx=actor.x-entry.trip.actor.x,dy=actor.y-entry.trip.actor.y
         if(dx||dy){entry.trip={...entry.trip,actor,segments:entry.trip.segments.map(s=>({...s,from:{x:s.from.x+dx,y:s.from.y+dy},to:{x:s.to.x+dx,y:s.to.y+dy}}))}}
         const frame=officeTripFrame(entry.trip,motionClock.current)
@@ -378,6 +463,9 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
       }
       const keepWork=new Set([...input.scene.actors.filter(a=>a.zone==='desk').map(a=>a.key),...queue.current.map(p=>p.event.actorKey),...(active.current?[active.current.actorKey]:[])])
       for(const key of workPlaces.current.keys())if(!keepWork.has(key))workPlaces.current.delete(key)
+      const originKeys=officePendingOriginKeys(queue.current.map(p=>p.event),active.current?.actorKey)
+      for(const key of leadOrigins.current.keys())if(!originKeys.has(key))leadOrigins.current.delete(key)
+      for(const key of daily.current!.completedOrigins.keys())if(!originKeys.has(key))daily.current!.completedOrigins.delete(key)
       restoreOfficeLiftCall(lift.current!,input.target,motionClock.current)
       paint(movement)
       if (time - lastLabels >= 80) { setMoving(movement);setRestMoving([...leisureVisual.current.values()]);setArrivalTick(n=>n+1);lastLabels = time }
@@ -396,7 +484,9 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     }
     return room
   }, [visualScene,moving,visualTick])
-  const restByKey=new Map(restMoving.map(m=>[m.actor.key,m.actor]))
+  const restByKey=new Map([...leadOrigins.current,...restMoving.map(m=>[m.actor.key,m.actor] as const)])
+  if(enabled&&baseline.current?.enabled&&baseline.current.scene!==scene)for(const change of officeLeadRestTransitions(baseline.current.scene,scene))if(!restByKey.has(change.actorKey))restByKey.set(change.actorKey,officeActorAtWorkPlace(baseline.current.scene,change.from,workPlaces.current.get(change.actorKey)))
+  for(const actor of daily.current!.actors(visualScene,motionClock.current))restByKey.set(actor.key,actor)
   // Project pending evidence during render too, before the effect commits it, so a new name tag
   // never gets one browser frame at its canonical desk while its body waits outside.
   let displayedArrivals=arrivalTrips.current
@@ -406,14 +496,18 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     const newTeams=new Set(priorDisplay.snapshots.length?snapshots.filter(s=>!priorIds.has(s.sessionId)).map(s=>s.sessionId):[])
     displayedArrivals=addOfficeArrivals(displayedArrivals,officePresenceEvents(priorDisplay.scene,scene,populatedOfficeTeams(priorDisplay.snapshots),Date.now(),newTeams),priorDisplay.scene,scene,motionClock.current,structuredClone(lift.current!))
   }
-  const allDisplayed=officeActorsWithArrivals(visualScene,displayedArrivals,motionClock.current).map(actor=>moving?.actor.key===actor.key?moving.actor:restByKey.get(actor.key)??(displayedArrivals.has(actor.key)?actor:officeActorAtWorkPlace(visualScene,actor,workPlaces.current.get(actor.key))))
+  const allDisplayed=officeActorsWithArrivals(visualScene,displayedArrivals,motionClock.current).map(actor=>{
+    const override=moving?.actor.key===actor.key?moving.actor:restByKey.get(actor.key)
+    return override?{...override,agent:actor.agent,task:actor.task}:(displayedArrivals.has(actor.key)?actor:officeActorAtWorkPlace(visualScene,actor,workPlaces.current.get(actor.key)))
+  })
+  for(const actor of daily.current!.actors(visualScene,motionClock.current))if(!allDisplayed.some(a=>a.key===actor.key))allDisplayed.push(actor)
   if(moving&&!allDisplayed.some(a=>a.key===moving.actor.key))allDisplayed.push(moving.actor)
   const publicFloors=visualScene.floors.filter(f=>!f.annexOf)
   const publicIds=new Set(publicFloors.filter(f=>!f.constructing).map(f=>f.id))
   const displayed=allDisplayed.filter(a=>publicIds.has(a.floorId))
   const peekFloor=visualScene.floors.find(f=>f.id===peekId&&f.annexOf)
   const visitObject=(floor:OfficeScene['floors'][number],object:{kind:OfficeLeisureAction;label:string;x:number;y:number})=>{
-    const playable={...current.current.scene,actors:current.current.scene.actors.filter(a=>a.key!==active.current?.actorKey&&!arrivalTrips.current.has(a.key))}
+    const playable={...current.current.scene,actors:current.current.scene.actors.filter(a=>a.key!==active.current?.actorKey&&!arrivalTrips.current.has(a.key)&&!daily.current!.guests.has(a.key))}
     const person=nearestLeisureActor(playable,floor,object)
     if(!person)return
     if(current.current.enabled){const trip=createOfficeLeisureTrip(current.current.scene,person.key,object,motionClock.current,leisureVisual.current.get(person.key)?.actor);if(trip)leisureTrips.current.set(person.key,{trip,kind:object.kind})}
@@ -427,12 +521,13 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const working = snapshots.reduce((sum, team) => sum + team.agents.filter(agent => isWorking(agent.status)).length, 0)
   const needsYou = snapshots.reduce((sum, team) => sum + team.agents.filter(agent => agent.status.startsWith('waiting_')).length, 0)
   const lounge = visualScene.floors.find(floor => floor.kind === 'lounge')
-  const captionMovement=moving??restMoving[0]??null
+  const dailyActor=daily.current!.actors(visualScene,motionClock.current)[0]
+  const captionMovement=moving??restMoving[0]??(dailyActor?{actor:dailyActor,caption:dailyActor.activity,elevatorY:null}:null)
   const inspectedFloor=stationSelection?scene.floors.find(f=>f.kind==='team'&&f.sessionId===stationSelection.sessionId):null
   const stationPeople=inspectedFloor&&stationSelection?officeStationUsers(scene,inspectedFloor,stationSelection.kind):[]
 
   return (
-    <section className="of-view" data-motion={enabled} data-season={sky.season} data-holiday={sky.holiday??undefined} aria-label="Agent Office">
+    <section className="of-view" data-motion={enabled} data-daily-guests={daily.current!.guests.size} data-canteen-open={daily.current!.canteenOpen} data-season={sky.season} data-holiday={sky.holiday??undefined} aria-label="Agent Office">
       <div className="of-toolbar">
         <span className="of-counts">{working} working{needsYou > 0 && <strong className="of-waiting"> · {needsYou} need you</strong>}</span>
         <span className="of-link" data-tone={connection?.tone ?? (live ? 'ok' : 'warn')} title={connection?.detail} role="status">{connection?.label ?? (live ? 'Connected' : 'Reconnecting')}</span>
@@ -453,7 +548,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
             {/* Covers the old painted pit; the moving car has its own cutaway above it. */}
             <div aria-hidden="true" data-season={sky.season} className="of-hatch-closed" style={{height:`${(lounge?.height??0)/visualScene.height*100}%`,filter:`brightness(${.32+.68*daylight.light}) saturate(${.7+.3*daylight.light})`}}/>
             <span className="of-season-label" title={`${sky.label} · Simulated weather · ${seasonalActivity.label}`} style={{top:`${(lounge?.height??0)*.86/visualScene.height*100}%`}}>{sky.label} · {seasonalActivity.label}</span>
-            {visualScene.floors.filter(f=>f.kind==='team').map(floor=><div key={`tint-${floor.id}`} aria-hidden="true" className="of-room-tint" style={{top:`${(floor.y+(floor.height??0)*.20)/visualScene.height*100}%`,height:`${(floor.height??0)*.41/visualScene.height*100}%`,background:['#427b75','#79609a','#657d49','#a46342'][officeRoomSeed(floor.sessionId??floor.id)%4]}} />)}
+            <canvas ref={roomCanvas} aria-hidden="true" style={{zIndex:0,pointerEvents:'none',height:'100%'}} />
             {visualScene.floors.filter(f=>f.kind==='team'&&!f.constructing).flatMap(floor=>officeStations(floor,visualScene.width).map(station=>{
               const users=officeStationUsers(scene,floor,station.kind)
               return <button key={`${floor.id}-${station.kind}`} type="button" className="of-workbench" data-kind={station.kind} data-active={users.length>0}
@@ -513,7 +608,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
               return <button type="button" className="of-annex-door" data-transit={transit} key={`door-${floor.id}`} aria-label={`Open break room, ${parent.title}, ${count} resting`} aria-expanded={peekId===floor.id}
                 tabIndex={peekId===floor.id?-1:0}
                 style={{left:`${bounds.x/visualScene.width*100}%`,top:`${bounds.y/visualScene.height*100}%`,width:`${bounds.width/visualScene.width*100}%`,height:`${bounds.height/visualScene.height*100}%`}}
-                onClick={event=>{lastDoor.current=event.currentTarget;setPeekId(floor.id)}}><span>☕ {count}{transit?' ↳':''}</span></button>
+                onClick={event=>{lastDoor.current=event.currentTarget;autoPeek.current=null;setPeekId(floor.id)}}><span>☕ {count}{transit?' ↳':''}</span></button>
             })}
             {publicFloors.filter(f=>f.kind==='team'&&!f.constructing&&(f.waiting??0)>0).map(floor=><div key={`beacon-${floor.id}`} className="of-alert-beacon" role="status" aria-label={`Waiting for your answer, ${floor.title}`} title={`${floor.waiting} waiting for your answer`}
               style={{left:'70%',top:`${(floor.y+(floor.height??0)*.18)/visualScene.height*100}%`}}><i/><b/></div>)}
@@ -531,7 +626,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
               const ai=[actor.runtimeName, actor.agent.model].filter(Boolean).join(' · ')
               const team=actor.team ?? visualScene.floors.find(floor=>floor.id===actor.floorId)
               const bubble=waiting ? '!' : actor.agent.status==='failed' ? '×' : /edit|write|file_change/.test(activity) ? '</>' : /search|read/.test(activity) ? '⌕' : /command|tool|shell/.test(activity) ? '>_' : '…'
-              return <button key={actor.key} ref={agentRef(actor.key)} data-zone={actor.zone} type="button" className="of-agent" data-lift-travel={officeInsideLift(visualScene,actor)&&officeLiftFrame(lift.current!,motionClock.current).moving} data-status={actor.agent.status} data-selected={selectedKey===actor.key} data-edge={actor.x>visualScene.width*.55?'end':'start'}
+              return <button key={actor.key} ref={agentRef(actor.key)} data-daily-phase={daily.current!.guests.get(actor.key)?.phase} data-daily-destination={daily.current!.guests.get(actor.key)?.destination} data-floor-id={actor.floorId} data-zone={actor.zone} type="button" className="of-agent" data-lift-travel={officeInsideLift(visualScene,actor)&&officeLiftFrame(lift.current!,motionClock.current).moving} data-status={actor.agent.status} data-selected={selectedKey===actor.key} data-edge={actor.x>visualScene.width*.55?'end':'start'}
                 tabIndex={peekFloor?.sessionId===actor.sessionId?-1:0}
                 aria-pressed={selectedKey===actor.key} aria-label={`${actor.agent.name}, ${role}, ${ai}${team ? `, team ${team.title}` : ''}, ${actor.activity}${actor.party ? ", celebrating in the party garden" : actor.zone === 'lounge' ? ", resting in the break room" : ''}`}
                 style={{left:`${(actor.x-22)/visualScene.width*100}%`,top:`${(actor.y-72)/visualScene.height*100}%`,width:`${44/visualScene.width*100}%`,height:`${75/visualScene.height*100}%`,opacity:actor.pose?.opacity}}
@@ -550,7 +645,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
                 </span>
               </button>
             })}
-            {peekFloor&&<OfficeBreakPeek floor={peekFloor} width={visualScene.width} buildingHeight={visualScene.height} actors={allDisplayed.filter(a=>a.floorId===peekFloor.id)} canvasRef={peekCanvas} now={now} selectedKey={selectedKey}
+            {peekFloor&&<OfficeBreakPeek floor={peekFloor} focusOnOpen={!autoPeek.current} width={visualScene.width} buildingHeight={visualScene.height} actors={allDisplayed.filter(a=>a.floorId===peekFloor.id)} canvasRef={peekCanvas} now={now} selectedKey={selectedKey}
               onClose={closePeek} onSelect={onSelect} onOpenTeam={onOpenTeam} onObject={object=>visitObject(peekFloor,object)} agentRef={agentRef}/>}
             {moving?.station && <div className="of-work-station" aria-hidden="true" style={{left:`${moving.actor.x/visualScene.width*100}%`,top:`${(moving.actor.y-82)/visualScene.height*100}%`}}>{OFFICE_STATION_LABELS[moving.station]}</div>}
           </div>
