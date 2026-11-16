@@ -32,6 +32,8 @@ export interface OfficeLifeFrame {
   typing: boolean
 }
 export interface OfficeLifeContext {
+  /** Rendered rest stays with its object; meaningful travel belongs to real trips. */
+  anchoredRest?:boolean
   objectAction?: OfficeLeisureAction
   /** Scene-unit vector to the paired neighbour. */
   partnerDx?: number
@@ -77,7 +79,7 @@ const RESTING = new Set(['idle', 'done', 'cancelled'])
 const CHATTY = new Set(['running', 'thinking'])
 export const officeLifeCanChat = (actor: OfficeActor) => actor.zone === 'lounge' ? RESTING.has(actor.agent.status) : CHATTY.has(actor.agent.status)
 
-export function officeLife(actor: OfficeActor, time: number, context: OfficeLifeContext = {}): OfficeLifeFrame {
+function officeLifeFrame(actor: OfficeActor, time: number, context: OfficeLifeContext = {}): OfficeLifeFrame {
   const status = actor.agent.status
   const still = frame({ typing: status === 'running' && actor.zone === 'desk' })
   if (context.tripActive || actor.pose?.walk || actor.pose?.climb) return still
@@ -157,6 +159,12 @@ export function officeLife(actor: OfficeActor, time: number, context: OfficeLife
     }
     default: return still
   }
+}
+
+export function officeLife(actor:OfficeActor,time:number,context:OfficeLifeContext={}):OfficeLifeFrame {
+  const frame=officeLifeFrame(actor,time,context)
+  if(!context.anchoredRest||actor.zone!=='lounge')return frame
+  return {...frame,dx:0,walk:false,stand:Boolean(actor.stand||frame.objectAction==='water'||frame.objectAction==='music')}
 }
 
 export interface OfficeLifePair { partnerKey: string; partnerDx: number; pairSeed: number }

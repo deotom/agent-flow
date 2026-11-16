@@ -17,6 +17,7 @@ export interface OfficeDailyRuntimeGuest extends Omit<OfficeDailyInvitation,'kin
  phase:OfficeDailyPhase; home:OfficeActor; physical:OfficeActor; trip:OfficeTrip|null; until:number
  returnNeeded:boolean; indoorNeeded:boolean
  gardenSeatNeeded?:number
+ restStartedAt?:number
 }
 export interface OfficeDailyRuntimeInput {
  source:OfficeScene; scene:OfficeScene; date:Date; at:number; lift:OfficeLiftState
@@ -64,6 +65,8 @@ export class OfficeDailyRuntime {
    const eating=g.phase==='eating'&&!g.returnNeeded
    const sharing=g.outing?.sharingUntil!==undefined&&at<g.outing.sharingUntil
    const action=g.outing?.action
+   const smooth=(value:number)=>{const k=Math.max(0,Math.min(1,value));return k*k*(3-2*k)}
+   const seatBlend=eating?Math.min(smooth((at-(g.restStartedAt??at))/350),smooth((g.until-at)/350)):0
    const restPose=action==='stretch'?{sit:false,mug:false,stretch:Math.max(0,Math.sin(at/1000*Math.PI/4))}:
     action==='stargaze'?{sit:true,mug:false,lookUp:true,turn:Math.sin(at/5000)*.15}:
     {sit:true,objectAction:action==='snack'||g.kind==='lunch'?'snack' as const:'coffee' as const,mug:action!=='snack'&&g.kind!=='lunch'}
@@ -71,7 +74,7 @@ export class OfficeDailyRuntime {
    return {...canonical,...g.physical,...(frame?frame.point:{}),floorId:frame?.floorId??g.physical.floorId,
     agent:canonical.agent,task:canonical.task,hidden:false,zone:g.returnNeeded?canonical.zone:'lounge',party:false,stand:Boolean(walking||waiting||eating&&action==='stretch'),
     activity:sharing?(g.outing?.sharingWith?'is sharing snacks with a teammate':'is putting the snacks away'):eating?(g.outing?outingActivity:g.kind==='lunch'?'is enjoying lunch':g.kind==='coffee'?'is taking a coffee break':'is having afternoon tea'):g.trip?.caption??(g.returnNeeded?'is returning':'is waiting for a short break'),
-    pose:sharing?{sit:true,hand:true,mug:false,objectAction:'snack'}:walking?{...frame.pose,...(action==='drink'?{mug:true}:{})}:waiting?{walk:false,sit:false}:eating?restPose:{sit:false,mug:false}}
+    pose:sharing?{sit:true,hand:false,offer:.6,mug:false,objectAction:'snack'}:walking?{...frame.pose,...(action==='drink'?{mug:true}:{})}:waiting?{walk:false,sit:false}:eating?{...restPose,seatBlend}:{sit:false,mug:false}}
   })
  }
 
@@ -162,7 +165,7 @@ export class OfficeDailyRuntime {
       }
       this.completedOrigins.set(g.actorKey,g.physical);this.guests.delete(g.actorKey);continue
      }
-    }else{g.phase='eating';if(g.until===0)g.until=at+(g.outing?.dwellMs??(g.kind==='lunch'?60_000+(hash(g.actorKey)%61)*1000:18_000));g.trip=null}
+    }else{g.phase='eating';g.restStartedAt=at;if(g.until===0)g.until=at+(g.outing?.dwellMs??(g.kind==='lunch'?60_000+(hash(g.actorKey)%61)*1000:18_000));g.trip=null}
    }
    if(g.phase==='eating'&&at>=g.until)g.returnNeeded=true
    if(input.blocked&&!g.returnNeeded&&!g.indoorNeeded&&g.gardenSeatNeeded===undefined)continue

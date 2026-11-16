@@ -22,6 +22,28 @@ export function officeCanResumeTrip(trip: OfficeTrip | null, scene: OfficeScene)
 const point = (value: OfficePoint): OfficePoint => ({ x: value.x, y: value.y })
 const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value))
 
+/** Only ordinary, connected walking legs share a moving boundary. Lift clocks stay linear. */
+function continuousWalk(before: OfficeTripSegment | undefined, after: OfficeTripSegment | undefined): boolean {
+  return Boolean(before && after && before.kind === 'walk' && after.kind === 'walk' && !before.liftPhase && !after.liftPhase &&
+    before.floorId === after.floorId && before.to.x === after.from.x && before.to.y === after.from.y)
+}
+
+function walkProgress(segments: readonly OfficeTripSegment[], index: number, ratio: number): { ratio: number; speed: number } {
+  const segment = segments[index]
+  if (segment.kind !== 'walk' || segment.liftPhase) return { ratio, speed: 1 }
+  const start = continuousWalk(segments[index - 1], segment) ? 1 : 0
+  const end = continuousWalk(segment, segments[index + 1]) ? 1 : 0
+  // Cubic Hermite endpoints have either a stopped or a passing-through derivative.
+  const cubic = start + end - 2, quadratic = 3 - 2 * start - end
+  return { ratio: clamp(((cubic * ratio + quadratic) * ratio + start) * ratio, 0, 1), speed: Math.max(0, (3 * cubic * ratio + 2 * quadratic) * ratio + start) }
+}
+
+function holdSeatBlend(segment: OfficeTripSegment, elapsed: number): number {
+  if (segment.kind !== 'hold' || segment.liftPhase || segment.duration < 1000) return 0
+  const ratio = clamp(Math.min(elapsed, segment.duration - elapsed) / 350, 0, 1)
+  return ratio * ratio * (3 - 2 * ratio)
+}
+
 /** Shared physical navigation for lifecycle and cosmetic journeys. It does not reserve the lift. */
 export function createOfficeTravelPath(sourceScene:OfficeScene,next:OfficeScene,from:OfficePoint,fromFloor:string) {
   const nav=officeNavigation(next),liftX=nav.shaftX
@@ -132,16 +154,24 @@ export function officeTripFrame(trip: OfficeTrip, now: number): OfficeTripFrame 
   const done = now >= trip.endsAt
   const last = trip.segments.at(-1)!
   if(done)return {point:point(last.to),pose:last.opacity?{opacity:last.opacity[1]}:{},elevatorY:null,done:true,floorId:last.floorId}
-  for (const segment of trip.segments) {
+  const scale = Number.isFinite(trip.rungPitch) && trip.rungPitch > 0 ? trip.rungPitch / 18 : 1
+  let walked = 0, previousFace: -1 | 1 = 1
+  for (let index = 0; index < trip.segments.length; index++) {
+    const segment = trip.segments[index]
+    const distance = segment.kind === 'walk' ? Math.hypot(segment.to.x - segment.from.x, segment.to.y - segment.from.y) : 0
     if (elapsed < segment.duration) {
       const ratio = clamp(elapsed / segment.duration, 0, 1)
-      const position = { x: segment.from.x + (segment.to.x - segment.from.x) * ratio, y: segment.from.y + (segment.to.y - segment.from.y) * ratio }
+      const progress = walkProgress(trip.segments, index, ratio)
+      const position = { x: segment.from.x + (segment.to.x - segment.from.x) * progress.ratio, y: segment.from.y + (segment.to.y - segment.from.y) * progress.ratio }
+      const face = !segment.liftPhase && segment.kind === 'hold' && segment.to.x === segment.from.x ? previousFace : segment.to.x < segment.from.x ? -1 : 1
       return { point: position, done: false, floorId:segment.floorId, elevatorY: segment.kind === 'ride' ? position.y : null,
-        pose: { inLift:Boolean(segment.liftPhase&&Math.abs(position.x-trip.shaftX)<10*trip.rungPitch/18),opacity:segment.opacity?segment.opacity[0]+(segment.opacity[1]-segment.opacity[0])*ratio:undefined,climb: false,climbStep:position.y/trip.rungPitch,walk: segment.kind === 'walk', face:segment.to.x<segment.from.x?-1:1, sit: false, carry: trip.event.kind === 'sent' || trip.event.kind === 'assigned',
+        pose: { inLift:Boolean(segment.liftPhase&&Math.abs(position.x-trip.shaftX)<10*trip.rungPitch/18),opacity:segment.opacity?segment.opacity[0]+(segment.opacity[1]-segment.opacity[0])*ratio:undefined,climb: false,climbStep:position.y/trip.rungPitch,walk: segment.kind === 'walk', walkWeight:clamp(distance / segment.duration * 1000 / (75 * scale) * progress.speed, 0, 1), gait:(walked + distance * progress.ratio) / (22 * scale) * Math.PI * 2, seatBlend:holdSeatBlend(segment, elapsed), face, sit: false, carry: trip.event.kind === 'sent' || trip.event.kind === 'assigned',
           objectAction:segment.kind==='hold'&&trip.event.kind==='activity'&&trip.event.station==='research'?'book':undefined,
           typing:segment.kind==='hold'&&trip.event.kind==='activity'&&(trip.event.station==='build'||trip.event.station==='terminal'),
           hand:segment.kind==='hold'&&(trip.event.kind==='received'||(trip.event.kind==='activity'&&(trip.event.station==='planning'||trip.event.station==='quality'))) } }
     }
+    walked += distance
+    if (segment.kind === 'walk' && segment.to.x !== segment.from.x) previousFace = segment.to.x < segment.from.x ? -1 : 1
     elapsed -= segment.duration
   }
   return { point: point(last.to), pose: last.opacity?{opacity:last.opacity[1]}:{}, elevatorY: null, done, floorId:last.floorId }

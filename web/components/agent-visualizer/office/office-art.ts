@@ -9,6 +9,9 @@ import {drawOfficeDailyArt} from './office-daily-art'
 import {drawOfficeCommunications} from './office-communication-art'
 import {officeRestConversations} from '../../../lib/office-communication'
 import {drawOfficeOutingArt} from './office-outing-art'
+import {officeHandContacts} from '../../../lib/office-contacts'
+import {officeSharedRest} from '../../../lib/office-shared-rest'
+import {skyWeather} from '../../../lib/office-sky'
 import type { OfficeActor, OfficeAppearance, OfficeDrawnOffset, OfficePaintOptions, OfficePose, OfficeScene, OfficeLeisureAction } from '../../../lib/office-types'
 import { officeLife, officeLifeCanChat, officeLifePairs, officeSeed, type OfficeLifePair, type OfficeMood } from '../../../lib/office-life'
 
@@ -93,49 +96,53 @@ function drawOfficeHead(c:Ctx,a:OfficeAppearance,back:boolean,doze:boolean){
   if(gear==='earrings'){oval(c,-13,-35,3,4,'#edc76c');oval(c,19,-35,2,3,'#edc76c')}
   if(gear==='scarf'){round(c,-14,-33,29,6,'#edc477',3);round(c,7,-32,6,17,'#edc477',2)}
 }
-function drawLeisureProp(c:Ctx,kind:OfficeLeisureAction,rx:number,ry:number,time:number){
+function drawLeisureProp(c:Ctx,kind:OfficeLeisureAction,hands:ReturnType<typeof officeHandContacts>,time:number){
+ const {x:rx,y:ry}=hands.right
  if(kind==='book'){
+  c.save();c.translate(hands.shared.x-1,hands.shared.y+22)
   round(c,-11,-28,25,15,'#edddab',2);c.strokeStyle='#a28b62';c.lineWidth=1;c.beginPath();c.moveTo(2,-27);c.lineTo(2,-14)
   for(const y of [-24,-21,-18]){c.moveTo(-8,y);c.lineTo(-1,y);c.moveTo(5,y);c.lineTo(11,y)}c.stroke()
+  c.restore()
  }else if(kind==='game'){
+  c.save();c.translate(hands.shared.x-1,hands.shared.y+22)
   round(c,-12,-26,25,10,'#364856',4);c.strokeStyle='#c6d7d9';c.lineWidth=1.4;c.beginPath();c.moveTo(-9,-21);c.lineTo(-3,-21);c.moveTo(-6,-24);c.lineTo(-6,-18);c.stroke();oval(c,7,-23,1.6,1.6,'#cce0a4',false);oval(c,9,-19,1.6,1.6,'#edc47e',false)
+  c.restore()
  }else if(kind==='water'){
   round(c,rx-6,ry+1,13,11,'#65a79f',3);oval(c,rx-9,ry+5,4,4,'#85bbb0');c.beginPath();c.moveTo(rx+5,ry+4);c.lineTo(rx+16,ry+1);c.lineTo(rx+18,ry+4);c.strokeStyle='#8ac4b9';c.lineWidth=3;c.stroke()
   c.fillStyle='#93d4e9';for(let i=0;i<4;i++){const d=(time*12+i*3)%12;c.fillRect(rx+17+i,ry+5+d,1,2)}
  }else if(kind==='music'){
   oval(c,rx+4,ry+1,8,8,'#edc576');oval(c,rx+4,ry+1,5,5,'#b78b54');for(let i=0;i<4;i++)oval(c,rx+4+Math.cos(i*Math.PI/2)*7,ry+1+Math.sin(i*Math.PI/2)*7,1.5,1.5,'#e9e3cf',false)
  }else if(kind==='snack'){
-  oval(c,3,-18,13,3,'#eee1be');for(const x of [-3,4,10])oval(c,x,-21,3,3,'#b97d43');oval(c,rx-1,ry-2,3,3,'#c99658');c.fillStyle='#6c4a2f';c.fillRect(4,-22,1,1)
+  const plate=hands.plate
+  oval(c,plate.x,plate.y,13,3,'#eee1be');for(const x of [-6,1,7])oval(c,plate.x+x,plate.y-3,3,3,'#b97d43');oval(c,rx+3,ry-3,3,3,'#c99658');c.fillStyle='#6c4a2f';c.fillRect(plate.x+1,plate.y-4,1,1)
  }
 }
 /** Original layered chibi human; local origin is the seat/feet. */
 export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time:number,p:OfficeAvatarPose={}) {
   c.save();c.translate(x,y)
   const m=idleMotion(time,p),stretch=p.stretch??0
+  const weight=p.walk?Math.max(0,Math.min(1,p.walkWeight??1)):0,gait=p.gait??time*7
+  const seated=p.sit?Math.max(0,Math.min(1,p.seatBlend??1)):0
+  const settleOffset=p.seatBlend===undefined?0:seated*2
   oval(c,0,1,15,3,'#3d241c30',false) // Shadow stays on the floor during hops.
-  c.translate(0,(p.walk?Math.sin(time*9)*1.4:0)-(p.hop??0))
+  const bob=(p.walk?Math.abs(Math.sin(gait))*1.4*weight:0)-(p.hop??0)
+  c.translate(0,bob)
   if(p.face===-1)c.scale(-1,1)
   if(p.lean)c.rotate(-p.lean)
-  const bench=p.sit&&(p.mug||p.objectAction),back=p.climb||(p.sit&&!bench),raised=p.hand||p.wave||p.climb||p.objectAction==='music'
+  const bench=p.sit&&(p.mug||p.objectAction),back=p.climb||(p.sit&&seated>.8&&!bench),raised=p.hand||p.wave||p.climb||p.objectAction==='music'
   // Short legs, soft shoes, torso and arms.
   const climbPhase=(p.climbStep??time*2)*Math.PI
-  const step=p.climb?Math.sin(climbPhase)*4.5:p.walk ? Math.sin(time*7)*3 : 0
-  round(c,-10,bench?-10:-17,8,bench?9:17+step,a.pants);round(c,2,bench?-10:-17,8,bench?9:17-step,a.pants)
+  const step=p.climb?Math.sin(climbPhase)*4.5:p.walk ? Math.sin(gait)*3*weight : 0
+  const bend=bench?seated:0
+  round(c,-10,mix(-17,-10,bend),8,mix(17+step,9,bend),a.pants);round(c,2,mix(-17,-10,bend),8,mix(17-step,9,bend),a.pants)
   oval(c,-7,0+step,6,3,'#e4cfac');oval(c,7,0-step,6,3,'#e4cfac')
-  c.save();c.translate(0,-m.lift)
+  c.save();c.translate(0,-m.lift+settleOffset)
   round(c,-14,-34,28,23,a.shirt,9)
   drawOutfit(c,a,Boolean(p.climb))
-  let lx=mix(-15,-17,stretch),ly=mix(-21+m.left,-66,stretch)
-  let rx=16,ry=-23+m.right-m.sip*12
-  if(p.climb){lx=-17;ly=-43+Math.sin(climbPhase)*9;rx=17;ry=-43-Math.sin(climbPhase)*9}
-  else if(raised){rx=16+m.wave;ry=-48}
-  else if(p.objectAction==='book'||p.objectAction==='game'||p.objectAction==='snack'){lx=-10;ly=-22+m.left;rx=12;ry=-22+m.right-(p.objectAction==='snack'?m.sip*12:0)}
-  else if(p.typing&&!p.sit){lx=-12;ly=-40+m.left;rx=12;ry=-40+m.right}
-  if(p.scratch){rx=10+Math.sin(time*12)*2;ry=-60}
-  rx=mix(rx,17,stretch);ry=mix(ry,-66,stretch)
+  const hands=officeHandContacts({...p,gait},p.scratch?{...m,wave:Math.sin(time*12)*2}:m)
+  const {x:lx,y:ly}=hands.left,{x:rx,y:ry}=hands.right
   oval(c,(-13+lx)/2,(-28+ly)/2,5,9,a.shirt);oval(c,(13+rx)/2+1,(-28+ry)/2,5,9,a.shirt)
   if(p.runtime&&!back)drawShirtLogo(c,p.runtime,1,-20)
-  oval(c,lx,ly,4,4,a.skin);oval(c,rx,ry,4,4,a.skin)
   c.save();c.translate(m.headX,m.headY-(p.lookUp?3:0))
   if(m.tilt){c.translate(0,-30);c.rotate(m.tilt);c.translate(0,30)}
   drawOfficeHead(c,a,Boolean(back),p.doze??false)
@@ -148,17 +155,23 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
   }
   if(p.lead){c.fillStyle='#ffe08b';c.strokeStyle='#80511c';c.lineWidth=1.4;c.beginPath();c.moveTo(-8,-72);c.lineTo(-4,-68);c.lineTo(0,-75);c.lineTo(4,-68);c.lineTo(8,-72);c.lineTo(6,-64);c.lineTo(-6,-64);c.closePath();c.fill();c.stroke()}
   c.restore() // head
-  if((p.mug||p.cup)&&(!p.objectAction||p.objectAction==='coffee')&&!raised&&!p.scratch&&stretch<.3){round(c,rx-7,ry+1,9,10,'#fff0cf',2);oval(c,rx+3,ry+6,3,3,'#ead6ae')}
-  if(p.objectAction&&!p.walk&&!p.climb)drawLeisureProp(c,p.objectAction,rx,ry,time)
+  if((p.mug||p.cup)&&(!p.objectAction||p.objectAction==='coffee')&&!raised&&!p.scratch&&stretch<.3){c.save();c.translate(hands.cup.pivot.x,hands.cup.pivot.y);c.rotate(hands.cup.angle);round(c,-10,-5,9,10,'#fff0cf',2);oval(c,1,0,3,3,'#ead6ae');c.restore()}
+  if(p.objectAction&&!p.walk&&!p.climb){c.save();if(p.objectAction==='book'||p.objectAction==='game'||p.objectAction==='snack')c.globalAlpha*=Math.max(0,Math.min(1,p.seatBlend??1));drawLeisureProp(c,p.objectAction,hands,time);c.restore()}
   if(p.carry){if(p.climb)round(c,-10,-31,20,18,'#967450',4);else{round(c,rx-13,ry+2,20,14,'#c69a58',2);round(c,rx-12,ry,9,4,'#dbc38c',1)}}
+  oval(c,lx,ly,4,4,a.skin);oval(c,rx,ry,4,4,a.skin)
   c.restore() // breathing torso
   if(back&&!p.walk&&!p.climb){
     // Chair back is the foreground layer, matching the empty chairs in the room art.
     round(c,-12,-24,24,21,'#514a3c',6);round(c,-10,-22,20,16,'#625a48',5)
   }
   // At a desk the patch sits on the upper back, just above the chair, like a jersey.
-  if(p.runtime&&back){c.save();c.translate(m.headX*.3,-m.lift);drawShirtLogo(c,p.runtime,0,-22);c.restore()}
+  if(p.runtime&&back){c.save();c.translate(m.headX*.3,-m.lift+settleOffset);drawShirtLogo(c,p.runtime,0,-22);c.restore()}
   c.restore()
+  const contact=(hand:{x:number;y:number})=>{
+    const lean=p.lean??0,hy=hand.y-m.lift+settleOffset
+    return {x:x+(p.face===-1?-1:1)*(Math.cos(lean)*hand.x+Math.sin(lean)*hy),y:y+bob+Math.cos(lean)*hy-Math.sin(lean)*hand.x}
+  }
+  return {left:contact(hands.left),right:contact(hands.right)}
 }
 
 /**
@@ -252,7 +265,12 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
   drawOfficeInteriorDoors(c,scene,o.openDoorFloorId,o.architectureArt)
   const visible=scene.actors.filter(a=>!a.hidden),byKey=new Map(visible.map(a=>[a.key,a]))
   const exchange=o.exchange??null
-  const chats=officeRestConversations(scene,time,new Set([o.tripKey,...(o.leisureKeys??[]),...(exchange?[exchange.senderKey,exchange.receiverKey]:[])].filter((key):key is string=>!!key)))
+  const busyKeys=new Set([o.tripKey,...(o.leisureKeys??[]),...(exchange?[exchange.senderKey,exchange.receiverKey]:[])].filter((key):key is string=>!!key))
+  const weather=skyWeather(o.date)
+  const sharedRest=(o.sharedRest??officeSharedRest(scene,time,busyKeys,{night:officeDaylight(o.date).night,wet:weather==='rain'||weather==='storm',clear:weather==='clear',cutawayFloor:o.cutawayFloor})).filter(pair=>byKey.has(pair.firstKey)&&byKey.has(pair.secondKey))
+  const sharedPoses=new Map(sharedRest.flatMap(pair=>[...pair.poses]))
+  const chats=officeRestConversations(scene,time,new Set([...busyKeys,...sharedPoses.keys()]))
+  const sharedChats=sharedRest.filter(pair=>pair.kind==='chat').map(pair=>Math.floor(pair.progress*4)%2?{speakerKey:pair.secondKey,listenerKey:pair.firstKey}:{speakerKey:pair.firstKey,listenerKey:pair.secondKey})
   const interactions=new Map<string,{face:1|-1;speaking:boolean}>()
   const interact=(speakerKey:string,listenerKey:string)=>{
     const speaker=byKey.get(speakerKey),listener=byKey.get(listenerKey)
@@ -264,15 +282,16 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
   if(exchange&&!exchange.remote)interact(exchange.kind==='received'?exchange.receiverKey:exchange.senderKey,exchange.kind==='received'?exchange.senderKey:exchange.receiverKey)
   const pairs=time?pairsFor(scene.actors):new Map<string,OfficeLifePair>()
   const offsets=new Map<string,OfficeDrawnOffset>()
+  const handFrames=new Map<string,{x:number;y:number}>()
   for(const actor of visible.sort((a,b)=>a.y-b.y)) {
     if(actor.pose?.inLift&&!o.lift)continue
     const moving=Boolean(actor.pose?.walk||actor.pose?.climb||actor.pose?.inLift)
     const interaction=moving?undefined:interactions.get(actor.key)
     const waiting=actor.agent.status.startsWith('waiting_'),failed=actor.agent.status==='failed'
     const pair=pairs.get(actor.key),partner=pair&&byKey.get(pair.partnerKey)
-    const life=officeLife(actor,time,{partnerDx:pair?.partnerDx,pairSeed:pair?.pairSeed,tripActive:actor.key===o.tripKey||o.leisureKeys?.has(actor.key),greet:actor.key===o.greetKey,
+    const life=officeLife(actor,time,{anchoredRest:true,partnerDx:pair?.partnerDx,pairSeed:pair?.pairSeed,tripActive:actor.key===o.tripKey||o.leisureKeys?.has(actor.key)||sharedPoses.has(actor.key),greet:actor.key===o.greetKey,
       objectAction:o.objectCue?.actorKey===actor.key?o.objectCue.kind:undefined,
-      partnerAwake:Boolean(partner&&partner.key!==o.tripKey&&officeLifeCanChat(partner))})
+      partnerAwake:Boolean(partner&&!busyKeys.has(partner.key)&&officeLifeCanChat(partner))})
     // Monitors stay anchored to the desk and always show real status.
     if(actor.monitor&&!moving){
       const m=actor.monitor,w=actor.floorId && scene.floors.find(f=>f.id===actor.floorId)?.room==='room-b-lead'&&actor.agent.role==='lead'?29:19
@@ -283,17 +302,18 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     }
     const t=time?time+phaseOf(actor.key):0
     c.save();c.globalAlpha=(Number.isFinite(c.globalAlpha)?c.globalAlpha:1)*(actor.pose?.opacity??1);c.translate(actor.x+life.dx,actor.y);const carScale=actor.pose?.inLift?(.72+.28*(actor.pose.walk?Math.max(0,Math.min(1,(scene.width*.938-actor.x)/(28*scale))):0)):1;c.scale(scale*carScale,scale*carScale)
-    drawOfficeAvatar(c,actor.appearance,0,0,t,{sit:!moving&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving,hand:o.live&&waiting,
+    const contact=drawOfficeAvatar(c,actor.appearance,0,0,t,{sit:!moving&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving,hand:o.live&&waiting,
       mug:actor.zone==='lounge'&&!moving&&(!life.objectAction||life.objectAction==='coffee'),objectAction:life.objectAction,lead:actor.agent.role==='lead'||actor.pod,cup:life.cup,stretch:life.stretch,lean:life.lean,doze:life.doze,
-      slump:life.slump,scratch:life.scratch,wave:life.wave||interaction?.speaking,turn:interaction?(interaction.speaking ? .25 : -.2):life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose,...(interaction?{face:interaction.face}:{}),climb:false})
+      slump:life.slump,scratch:life.scratch,wave:life.wave||interaction?.speaking,turn:interaction?(interaction.speaking ? .25 : -.2):life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose,...sharedPoses.get(actor.key),...(interaction?{face:interaction.face}:{}),climb:false})
+    handFrames.set(actor.key,{x:actor.x+life.dx+contact.right.x*scale*carScale,y:actor.y+contact.right.y*scale*carScale})
     if(life.mood){c.translate(0,-life.hop);drawMood(c,life.mood,t)}
     c.restore()
     offsets.set(actor.key,{dx:life.dx,dy:-life.hop*scale})
   }
-  drawOfficeCommunications(c,scene,time,exchange,chats)
+  drawOfficeCommunications(c,scene,time,exchange,[...chats,...sharedChats])
   drawOfficeOutingArt(c,scene,time,o.roomArt??null,(o.dailyArt?.guests??[]).flatMap(guest=>{
     const actor=scene.actors.find(a=>a.key===guest.actorKey)
-    return guest.kind==='outing'&&guest.action&&actor?[{actorKey:actor.key,action:guest.action,phase:guest.phase,floorId:actor.floorId,x:actor.x,y:actor.y,night:guest.night??false,collected:guest.collected??false}]:[]
+    return guest.kind==='outing'&&guest.action&&actor?[{actorKey:actor.key,action:guest.action,phase:guest.phase,floorId:actor.floorId,x:actor.x,y:actor.y,night:guest.night??false,collected:guest.collected??false,hand:handFrames.get(actor.key)}]:[]
   }))
   drawOfficeShaft(c,scene,true,o.architectureArt,o.liftSurfaceOpen,o.lift)
   if(time)drawAmbient(c,scene,time,officeAmbient(o.date).night)

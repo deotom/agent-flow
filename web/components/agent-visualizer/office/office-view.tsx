@@ -33,6 +33,8 @@ import {useOfficeArchitectureArt} from './use-office-architecture-art'
 import {officeAgentInfo,officeNextAttention,officePlanningInfo,officeRevealTarget} from '../../../lib/office-interaction'
 import {OfficeInspector} from './office-inspector'
 import {OfficeDiscoveryTip,useOfficeDiscovery} from './office-discovery'
+import {officeSharedRest} from '../../../lib/office-shared-rest'
+import {skyWeather} from '../../../lib/office-sky'
 
 interface OfficeViewProps {
   snapshots: readonly TeamSnapshot[]
@@ -288,12 +290,17 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     const publicFloors=input.scene.floors.filter(f=>!f.annexOf)
     const publicIds=new Set(publicFloors.filter(f=>!f.constructing).map(f=>f.id))
     const doorFloor=input.scene.floors.find(f=>f.annexOf&&movement&&f.sessionId===movement.actor.sessionId&&(()=>{const p=officeInteriorDoor(input.scene,f.id);return p&&Math.abs(p.x-movement.actor.x)<20*input.scene.width/450&&Math.abs(p.y-movement.actor.y)<35*input.scene.width/450})())
+    const exchange=officeWorkExchange(active.current,{...input.scene,actors},motionClock.current)
+    const leisureKeys=new Set([...leisureTrips.current.keys(),...arrivalTrips.current.keys(),...daily.current!.guests.keys()])
+    const socialBusy=new Set([...leisureKeys,...(active.current?[active.current.actorKey]:[]),...(exchange?[exchange.senderKey,exchange.receiverKey]:[])])
+    const weather=skyWeather(new Date(input.wallNow))
+    const sharedRest=officeSharedRest({...input.scene,actors:actors.filter(a=>publicIds.has(a.floorId)||a.floorId===input.peekId)},input.enabled?elapsed.current:0,socialBusy,{night:officeDaylight(new Date(input.wallNow)).night,wet:weather==='rain'||weather==='storm',clear:weather==='clear'})
     const options={ time: elapsed.current, date: new Date(input.wallNow), now: input.wallNow, dailyArt:daily.current!.art(new Date(input.wallNow),input.scene,motionClock.current), live: input.live,
-      exchange:officeWorkExchange(active.current,{...input.scene,actors},motionClock.current),
+      exchange,sharedRest,
       motion: input.enabled, pets: input.pets, petEvent: input.petEvent, selectedKey: input.selectedKey,
       openDoorFloorId:input.peekId??doorFloor?.id??null,architectureArt:input.architectureArt,roomArt:input.roomArt,liftSurfaceOpen:false,lift:liftVisual,
       objectCue:objectCue.current&&objectCue.current.until>elapsed.current?objectCue.current:null,
-      leisureKeys:new Set([...leisureTrips.current.keys(),...arrivalTrips.current.keys(),...daily.current!.guests.keys()]),
+      leisureKeys,
       tripKey: input.enabled ? active.current?.actorKey ?? null : null, greetKey: input.enabled ? greeting : null }
     const offsets = drawOfficeFrame(context, { ...input.scene, actors:actors.filter(a=>publicIds.has(a.floorId)) },options)
     const annex=input.scene.floors.find(f=>f.id===input.peekId&&f.annexOf),peek=peekCanvas.current,peekContext=peek?.getContext('2d')
@@ -302,7 +309,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
       if(peek.width!==w||peek.height!==Math.round(ph*ratio)){peek.width=w;peek.height=Math.round(ph*ratio)}
       peekContext.setTransform(ratio,0,0,ratio,0,0)
       const local={...input.scene,height:ph,floors:[{...annex,y:0}],actors:actors.filter(a=>a.floorId===annex.id).map(a=>({...a,y:a.y-annex.y}))}
-      for(const [key,offset] of drawOfficeFrame(peekContext,local,options))offsets.set(key,offset)
+      for(const [key,offset] of drawOfficeFrame(peekContext,local,{...options,cutawayFloor:annex.id}))offsets.set(key,offset)
     }
     if (!cssScale.current) cssScale.current = (element.clientWidth || input.scene.width) / input.scene.width
     for (const [key, button] of agentRefs.current) {

@@ -44,6 +44,19 @@ it('rain sends an outing home instead of opening a temporary canteen',()=>{
  assert.equal(runtime.canteenOpen,false)
  assert.ok(!runtime.project(scene).floors.some(f=>f.room==='room-canteen'))
 })
+it('settles into the actual rest seat and eases up before departure without booking another car',()=>{
+ const runtime=new OfficeDailyRuntime(),lift=createOfficeLift(scene)
+ runtime.step({...input(runtime,0),lift});runtime.step({...input(runtime,runtime.outingSchedule.nextAt!),lift})
+ const g=[...runtime.guests.values()][0],arrived=Math.max(...[...runtime.guests.values()].map(g=>g.trip!.endsAt))
+ runtime.step({...input(runtime,arrived),lift});g.outing!.action='drink'
+ const poseAt=(at:number)=>runtime.actors(runtime.project(scene),at).find(a=>a.key===g.actorKey)!.pose!
+ assert.equal(poseAt(arrived).seatBlend,0)
+ assert.ok(poseAt(arrived+175).seatBlend!>0&&poseAt(arrived+175).seatBlend!<1)
+ assert.equal(poseAt(arrived+351).seatBlend,1)
+ assert.ok(poseAt(g.until-175).seatBlend!<1)
+ assert.equal(poseAt(g.until).seatBlend,0)
+ assert.equal(poseAt(arrived+175).sit,true)
+})
 it('does not resume an uncollected daytime shopping trip at the closed nighttime cart',()=>{
  const runtime=new OfficeDailyRuntime(),lift=createOfficeLift(scene)
  runtime.step({...input(runtime,0),lift});const due=runtime.outingSchedule.nextAt!

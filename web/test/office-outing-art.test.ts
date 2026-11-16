@@ -37,6 +37,14 @@ it('does not paint a purchase when work or night interrupts the trip before pick
  assert.deepEqual(render([guest({collected:false})]),[])
  assert.deepEqual(render([guest({collected:false,night:true})]),[])
 })
+it('hangs a collected parcel from the rendered palm when the traveler turns or breathes',()=>{
+ const right=render([guest({hand:{x:166,y:144}})]),left=render([guest({hand:{x:134,y:146}})])
+ assert.equal(right.length,1);assert.equal(left.length,1)
+ assert.equal(Number(left[0][5])-Number(right[0][5]),-32)
+ assert.equal(Number(left[0][6])-Number(right[0][6]),2)
+ assert.ok(Math.abs(Number(right[0][5])-166)<10)
+ assert.ok(Number(right[0][6])>=144)
+})
 it('shows the original cart service cue only for an actual daytime garden snack stop',()=>{
  const stop=guest({phase:'eating'}),day=render([stop])
  assert.equal(day.length,1)

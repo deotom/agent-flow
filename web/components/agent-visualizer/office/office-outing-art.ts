@@ -10,6 +10,7 @@ export interface OfficeOutingArtGuest {
  y:number
  night:boolean
  collected:boolean
+ hand?:{x:number;y:number}
 }
 type Ctx=CanvasRenderingContext2D
 
@@ -40,7 +41,9 @@ export function drawOfficeOutingArt(c:Ctx,scene:OfficeScene,time:number,art:Offi
   if(guest.action==='snack'&&guest.collected&&guest.phase==='returning'){
    // Tiny breathing follows motion time; zero is a completely frozen pose.
    const bob=Number.isFinite(time)&&time!==0?Math.sin(time*1.7)*w*.0006:0
-   const x=guest.x+w*.018,y=guest.y-w*.052+bob
+   const hand=guest.hand
+   if(hand&&(!Number.isFinite(hand.x)||!Number.isFinite(hand.y)))continue
+   const x=hand?hand.x-w*.015:guest.x+w*.018,y=hand?hand.y+w*.003:guest.y-w*.052+bob
    if(y>=0&&x+w*.03<=w)detail(c,art,'parcel',x,y,w*.03,w*.029)
   }
   if(guest.action==='snack'&&guest.collected&&guest.phase==='eating'&&!guest.night&&floor.kind==='lounge'&&!cartServed){
