@@ -2,8 +2,16 @@
 const path = require('node:path')
 const fs = require('node:fs')
 const crypto = require('node:crypto')
+const { resolvePackageOutput, auditPackageArtifacts } = require('./artifact-policy.cjs')
 
 async function main() {
+  const repoRoot = path.resolve(__dirname, '..')
+  if (process.argv.includes('--artifact-report')) {
+    console.log(JSON.stringify(auditPackageArtifacts({ repoRoot }), null, 2))
+    return
+  }
+  // Validate before importing the packager or allowing its overwrite behavior.
+  const output = resolvePackageOutput({ repoRoot, output: process.env.AGENT_FLOW_PACKAGE_OUTPUT })
   const { packager } = await import('@electron/packager')
   const version = require('electron/package.json').version
   const zipName = `electron-v${version}-win32-x64.zip`
@@ -16,7 +24,7 @@ async function main() {
   }
   const outputs = await packager({
     dir: __dirname,
-    out: path.resolve(process.env.AGENT_FLOW_PACKAGE_OUTPUT || path.join(__dirname, '../artifacts.local/desktop')),
+    out: output,
     name: 'Agent Flow',
     executableName: 'Agent Flow',
     platform: 'win32',
@@ -25,7 +33,7 @@ async function main() {
     overwrite: true,
     asar: true,
     prune: true,
-    ignore: [/^\/test(?:\/|$)/, /^\/.*\.ts$/, /^\/(build|package)\.cjs$/, /^\/package-lock\.json$/],
+    ignore: [/^\/artifacts\.local(?:\/|$)/, /^\/test(?:\/|$)/, /^\/.*\.ts$/, /^\/(build|package|artifact-policy|install-artifacts)\.cjs$/, /^\/package-lock\.json$/],
     win32metadata: {
       CompanyName: 'Agent Flow',
       FileDescription: 'Agent Flow Desktop',

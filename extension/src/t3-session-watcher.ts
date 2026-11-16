@@ -168,14 +168,26 @@ poll(): void {
         FROM orchestration_v2_projection_provider_threads WHERE thread_id IN (${placeholders})`).all(...selected)
       const requests = db.prepare(`SELECT runtime_request_id, thread_id, node_id, kind, status, created_at, resolved_at
         FROM orchestration_v2_projection_runtime_requests WHERE thread_id IN (${placeholders})`).all(...selected)
-      const nodes = db.prepare(`SELECT node_id, thread_id, parent_node_id, provider_thread_id, started_at, completed_at
-        FROM orchestration_v2_projection_nodes WHERE thread_id IN (${placeholders})`).all(...selected)
-      // Limit to each thread's newest run; never read tool output or transcripts.
-      const items = db.prepare(`SELECT turn_item_id, thread_id, run_id, provider_thread_id, type, status, updated_at,
-        json_object('toolName', json_extract(payload_json, '$.toolName'), 'title', json_extract(payload_json, '$.title')) AS payload_json
+      // Parent lookup only needs referenced nodes, not every historical node.
+      const parentNodeIds = [...new Set(subagents.map(row => row.parent_node_id).filter((id): id is string => typeof id === 'string' && id.length > 0))]
+      const nodes = db.prepare(`SELECT node_id, provider_thread_id
+        FROM orchestration_v2_projection_nodes WHERE thread_id IN (${placeholders})
+        AND node_id IN (${parentNodeIds.map(() => '?').join(',') || 'NULL'})`).all(...selected, ...parentNodeIds)
+      // Materialize the same newest-ordinal run once per thread, rather than
+      // looking it up again for every historical tool item in that thread.
+      const latestRuns = new Map<string, T3Row>()
+      for (const run of runs) {
+        const id = String(run.thread_id), prior = latestRuns.get(id)
+        if (!prior || Number(run.ordinal) > Number(prior.ordinal)) latestRuns.set(id, run)
+      }
+      const latestPairs = [...latestRuns.values()].flatMap(run => [run.thread_id, run.run_id])
+      const items = db.prepare(`WITH latest_runs(thread_id, run_id) AS (
+        VALUES ${[...latestRuns].map(() => '(?,?)').join(',') || '(NULL,NULL)'})
+        SELECT i.turn_item_id, i.thread_id, i.run_id, i.provider_thread_id, i.type, i.status, i.updated_at,
+        json_object('toolName', json_extract(i.payload_json, '$.toolName'), 'title', json_extract(i.payload_json, '$.title')) AS payload_json
         FROM orchestration_v2_projection_turn_items i
-        WHERE thread_id IN (${placeholders}) AND run_id = (SELECT run_id FROM orchestration_v2_projection_runs r WHERE r.thread_id = i.thread_id ORDER BY ordinal DESC LIMIT 1)
-        AND type IN ('command_execution','dynamic_tool','file_change','web_search','mcp_tool_call','compaction')`).all(...selected)
+        JOIN latest_runs latest ON latest.thread_id = i.thread_id AND latest.run_id = i.run_id
+        WHERE i.type IN ('command_execution','dynamic_tool','file_change','web_search','mcp_tool_call','compaction')`).all(...latestPairs)
       db.exec('COMMIT')
       const projection: T3Projection = { projects, threads, subagents, runs, providerThreads, requests, items, nodes }
       const next = new Map(projectT3Teams(projection, this.workspaces).map(team => [team.session.id, team]))

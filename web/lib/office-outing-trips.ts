@@ -17,3 +17,13 @@ export function createOfficeOutingTrip(scene:OfficeScene,actorKey:string,target:
  const segments=[...trip.segments,{from:{x:vendor.x,y:vendor.y},to:{x:vendor.x,y:vendor.y},duration:1400,kind:'hold' as const,floorId:vendor.floorId},...(distance>.01?[{from:{x:vendor.x,y:vendor.y},to:{x:target.x,y:target.y},duration,kind:'walk' as const,floorId:target.floorId}]:[])]
  return {...trip,actor:{...trip.actor,x:target.x,y:target.y,floorId:target.floorId},segments,endsAt:at+segments.reduce((sum,s)=>sum+s.duration,0)}
 }
+
+/** A floor-only service leg: the shared car was released on arrival at the waiting mark. */
+export function createOfficeShopServiceTrip(scene:OfficeScene,actorKey:string,at:number,from:OfficeActor):OfficeTrip|null {
+ const vendor=officeOutingVendorPoint(scene)
+ if(!vendor||from.floorId!==vendor.floorId)return null
+ const trip=createOfficeRoutineTrip(scene,actorKey,vendor,at,'is collecting a snack',from)
+ if(!trip)return null
+ const segments=[...trip.segments.filter(s=>s.duration>0),{from:{x:vendor.x,y:vendor.y},to:{x:vendor.x,y:vendor.y},duration:1400,kind:'hold' as const,floorId:vendor.floorId}]
+ return {...trip,segments,endsAt:at+segments.reduce((sum,s)=>sum+s.duration,0)}
+}

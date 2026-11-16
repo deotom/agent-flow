@@ -1,0 +1,17 @@
+# Natural Office follow-ups
+
+User approved all five proposed improvements after the seasonal/depth/shop work: reliable object/seating contacts, a physical shop queue, entrance wardrobe changes, selectable liveliness, and bounded desktop artifacts. Build on commit 6286b95 and preserve the original painted underground camera and character identity.
+
+## Approach and decisions
+
+Use the existing Canvas/React renderer, pure coordinate helpers and real cosmetic trip runtime. This fits the established scene and keeps source state authoritative. Replacing the camera/art or adding a game/economy would work against the user's chosen style. Routine timing, control placement and helper APIs below are implementation choices by the builder within the approved five-item scope.
+
+1. Contacts: define explicit avatar-local seat/support points and scene prop anchors. Uniform floor depth and contact transforms must agree; sitting must not slide feet or move props off palms. Prefer small actor-local pose adjustments over moving painted furniture or adding a second chair over an existing chair. Enter/leave the seated pose smoothly; source work immediately preempts it.
+2. Shop: one service point plus two bounded waiting marks to its left/front. Real guests wait on the floor, not in the lift. Stable arrival order owns service until the actual pickup hold ends. Cancellation/real work releases reservations. No source agents, purchases or fake messages are created. Preserve daytime dry service and single shared lift.
+3. Wardrobe: preserve identity and hand props. Crossfade indoor/outdoor layers at the entrance with a brief free-hand collar adjustment. Keep clothing stable in the moving cabin; no instant layer switch when floor IDs change. Initial actors use the appropriate outfit immediately. Pause/effects-off freezes transitions with the existing motion clock; transitions prune removed actors.
+4. Atmosphere: persist quiet/normal/lively, default normal. Real work/navigation is unaffected. Normal keeps current outing limits (day2/night1) and cadence (day60–100s/night180–300s). Quiet uses day1/night0, day180–300s; lively keeps day2/night1 but day45–75s/night150–240s. Night remains calmer in every setting. Scheduled meal rules remain authoritative; avoid duplicate activity ownership. Decorative social/object activity follows the same choice. Existing app pause/full/low/off animation settings take priority; preserve the established OS reduced-motion policy for scrolling and discovery outlines.
+5. Artifacts: package into one reusable review candidate by default; preserve canonical installed app and one last-good rollback. Report legacy package inventory/free-space and refuse unsafe/protected destinations. Do not silently delete the historical directories whose cleanup was denied by command policy. No new dependency, per-test package directories or video captures.
+
+## Verification and delivery
+
+Write failing behavior tests before each implementation. Cover seated support/palms/depth continuity, two overlapping shop arrivals and cancellation/work preemption, garment reversal/pause/lift/fresh actor, every atmosphere/day-night profile and invalid stored settings, and safe artifact paths with temporary-directory tests only. Root integrates shared view/art files to avoid conflicts. Run the full suite, TypeScript and desktop build once final. Obtain detailed Claude review before delivery; report native capture limitations honestly. Reuse the candidate, commit locally and reopen canonical profile; no push.

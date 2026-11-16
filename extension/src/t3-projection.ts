@@ -68,8 +68,8 @@ const terminalCancelled = new Set(['cancelled', 'canceled', 'interrupted'])
  * Background commands T3 still tracks after the run that started them ended (T3 shows "Waiting on N commands").
  * Only the kind and the agent's short description are kept, never the command text or its output.
  */
-function backgroundActivities(provider: T3Row | undefined): TeamActivity[] {
-  const list = t3Payload(provider || {}).pendingBackgroundTasks
+function backgroundActivities(provider: T3Row | undefined, payload = t3Payload): TeamActivity[] {
+  const list = payload(provider || {}).pendingBackgroundTasks
   if (!Array.isArray(list)) return []
   return list.slice(0, 5).map((value, index) => {
     const task = object(value)
@@ -93,6 +93,22 @@ export function mapT3Delivery(stateValue: unknown, observedByRunId?: unknown): T
  * conversations stay independent; no native transcript IDs are guessed. */
 /** `workspaces` null means every T3 project on this machine. */
 export function projectT3Teams(data: T3Projection, workspaces: string[] | null, now = Date.now()): T3Team[] {
+  // A poll owns its row snapshot. Reuse parsed payloads inside this projection,
+  // but reread the same row object on the next poll if its payload changed.
+  const payloads = new WeakMap<T3Row, T3Row>()
+  const payloadFor = (row: T3Row): T3Row => {
+    const cached = payloads.get(row)
+    if (cached) return cached
+    const payload = t3Payload(row)
+    payloads.set(row, payload)
+    return payload
+  }
+  const nodesById = new Map<unknown, T3Row>()
+  for (const node of data.nodes ?? []) {
+    const id = node.node_id
+    // Array.find used strict equality: preserve its first row and NaN behavior.
+    if (id === id && !nodesById.has(id)) nodesById.set(id, node)
+  }
   const inScope = (folder: string) => workspaces === null || workspaces.some(w => t3WorkspaceMatches(w, folder))
   const liveProjects = data.projects.filter(row => !row.deleted_at && inScope(text(row.workspace_root)))
   const projects = new Set(liveProjects.map(row => text(row.project_id)))
@@ -101,7 +117,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
   const threads = new Map(data.threads.filter(row => !row.deleted_at).map(row => [text(row.thread_id), row]))
   const parents = new Map<string, string>()
   for (const [id, row] of threads) {
-    const lineage = object(t3Payload(row).lineage)
+    const lineage = object(payloadFor(row).lineage)
     if (lineage.relationshipToParent === 'subagent' && threads.has(text(lineage.parentThreadId))) parents.set(id, text(lineage.parentThreadId))
   }
   for (const row of data.subagents) {
@@ -131,14 +147,29 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
     const nodeForThread = new Map(members.map(([id]) => [id, `t3-agent:${id}`]))
     // Native provider subagents may not have their own app thread.
     for (const task of taskRows) if (!threads.has(text(task.child_thread_id))) nodeForThread.set(`task:${text(task.subagent_id)}`, `t3-task:${text(task.subagent_id)}`)
+    const tasksByProvider = new Map<unknown, [T3Row, T3Row?]>()
+    for (const task of taskRows) {
+      const provider = task.provider_thread_id
+      if (!provider) continue
+      const pair = tasksByProvider.get(provider)
+      if (!pair) tasksByProvider.set(provider, [task])
+      else if (pair[0] !== task && !pair[1]) pair[1] = task
+    }
+    const taskParents = new WeakMap<T3Row, string | undefined>()
     const taskParent = (task: T3Row): string | undefined => {
-      const node = data.nodes?.find(n => n.node_id === task.parent_node_id)
-      const parentTask = taskRows.find(t => t !== task && node?.provider_thread_id && t.provider_thread_id === node.provider_thread_id)
-      if (parentTask) return nodeForThread.get(text(parentTask.child_thread_id)) || nodeForThread.get(`task:${text(parentTask.subagent_id)}`)
-      return nodeForThread.get(text(task.thread_id))
+      if (taskParents.has(task)) return taskParents.get(task)
+      const node = nodesById.get(task.parent_node_id)
+      const pair = node?.provider_thread_id ? tasksByProvider.get(node.provider_thread_id) : undefined
+      // Duplicate providers retain Array.find order, excluding this exact task.
+      const parentTask = pair?.[0] === task ? pair[1] : pair?.[0]
+      const parent = parentTask
+        ? nodeForThread.get(text(parentTask.child_thread_id)) || nodeForThread.get(`task:${text(parentTask.subagent_id)}`)
+        : nodeForThread.get(text(task.thread_id))
+      taskParents.set(task, parent)
+      return parent
     }
     for (const [id, row] of members) {
-      const payload = t3Payload(row)
+      const payload = payloadFor(row)
       const runs = data.runs.filter(run => run.thread_id === id).sort((a, b) => Number(b.ordinal) - Number(a.ordinal))
       // A queued or steered message can create a newer run that ends "cancelled" while the
       // previous run is still working, so a still-running run wins over a newer finished one.
@@ -149,7 +180,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
         && !taskRows.some(t => t.provider_thread_id && t.provider_thread_id === item.provider_thread_id && !threads.has(text(t.child_thread_id))))
       const tools = items.filter(item => toolTypes.has(text(item.type)))
       const pending = tools.filter(item => running(item.status) && (!latest || running(latest.status))).map(item => {
-        const p = t3Payload(item)
+        const p = payloadFor(item)
         return { callId: text(item.turn_item_id), tool: text(p.toolName) || text(item.type), args: text(p.title) }
       })
       // T3 records native context compaction as a turn item; surface it instead of a generic "Thinking".
@@ -158,29 +189,29 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
       const openRequest = data.requests.filter(request => request.thread_id === id && ['pending', 'open', 'requested'].includes(text(request.status)))
         .sort((a, b) => (optionalTimestamp(b.created_at) ?? 0) - (optionalTimestamp(a.created_at) ?? 0))[0]
       const status = task?.status || latest?.status
-      const model = text(object(payload.modelSelection).model) || text(object(t3Payload(latest || {}).modelSelection).model) || text(task && t3Payload(task).model) || undefined
+      const model = text(object(payload.modelSelection).model) || text(object(payloadFor(latest || {}).modelSelection).model) || text(task && payloadFor(task).model) || undefined
       // Background commands keep the agent busy on the canvas after its run ended.
-      const background = backgroundActivities(provider)
+      const background = backgroundActivities(provider, payloadFor)
       const baseState = blocked ? 'waiting_permission' : pending.length ? 'tool_calling' : running(status) ? 'thinking'
         : ['failed', 'error'].includes(text(status)) ? 'error' : id !== rootId && ['completed', 'cancelled', 'interrupted'].includes(text(status)) ? 'complete' : 'idle'
       const state = background.length && (baseState === 'idle' || baseState === 'complete') ? 'thinking' : baseState
       const parentId = parents.get(id)
-      const providerPayload = t3Payload(provider || {})
+      const providerPayload = payloadFor(provider || {})
       const contextUsage = object(providerPayload.contextUsage)
       const usedTokens = Number(contextUsage.usedTokens), maxTokens = Number(contextUsage.maxTokens)
       // Only counters T3 reported reach the graph gauge; absent counters stay 0 (no gauge).
       const reported = usedTokens > 0 && maxTokens > 0
-      agents.push({ id: nodeForThread.get(id), name: text(task && t3Payload(task).title) || text(row.title),
+      agents.push({ id: nodeForThread.get(id), name: text(task && payloadFor(task).title) || text(row.title),
         parentId: task ? taskParent(task) : parentId ? nodeForThread.get(parentId) : null, isMain: id === rootId,
         runtime: runtime(provider?.driver, provider?.provider, row.default_provider), model, state,
         spawnTime: relative(row.created_at), timeAlive: Math.max(0, (now - timestamp(row.created_at)) / 1000),
         tools: pending, currentTool: pending.at(-1)?.tool, toolCalls: tools.length,
         tokensUsed: reported ? usedTokens : 0, tokensMax: reported ? maxTokens : 0,
-        task: text(task && t3Payload(task).prompt), compacting: compactions.length > 0,
+        task: text(task && payloadFor(task).prompt), compacting: compactions.length > 0,
       })
-      const requestKind = text(openRequest?.kind) || text(t3Payload(openRequest || {}).kind)
+      const requestKind = text(openRequest?.kind) || text(payloadFor(openRequest || {}).kind)
       const activities: TeamActivity[] = [...compactions, ...tools.filter(item => running(item.status) && (!latest || running(latest.status)))].map(item => {
-        const itemPayload = t3Payload(item)
+        const itemPayload = payloadFor(item)
         return {
           id: text(item.turn_item_id), type: text(item.type), toolName: text(itemPayload.toolName) || null,
           title: text(itemPayload.title) || null, startedAt: optionalTimestamp(itemPayload.startedAt),
@@ -194,9 +225,9 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
       const shownStatus: TeamAgentRow['status'] = background.length && (baseStatus === 'idle' || baseStatus === 'done') ? 'background' : baseStatus
       teamAgents.push({
         id: nodeForThread.get(id)!, parentId: task ? taskParent(task) ?? null : parentId ? nodeForThread.get(parentId) ?? null : null,
-        role: id === rootId ? 'lead' : 'worker', name: text(task && t3Payload(task).title) || text(row.title),
+        role: id === rootId ? 'lead' : 'worker', name: text(task && payloadFor(task).title) || text(row.title),
         runtime: teamRuntime(provider?.driver, provider?.provider, row.default_provider) ?? null, model: model ?? null,
-        status: shownStatus, task: capped(task && t3Payload(task).prompt), activities: shownStatus === 'background' ? background : activities,
+        status: shownStatus, task: capped(task && payloadFor(task).prompt), activities: shownStatus === 'background' ? background : activities,
         requestKind: openRequest ? requestKind || null : null,
         context: usedTokens > 0 && maxTokens > 0 ? { used: usedTokens, max: maxTokens } : null,
         toolCallCount: tools.length, hasThread: true,
@@ -207,25 +238,25 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
     }
     for (const task of taskRows) {
       if (threads.has(text(task.child_thread_id))) continue
-      const p = t3Payload(task)
+      const p = payloadFor(task)
       const items = data.items.filter(item => task.provider_thread_id && item.provider_thread_id === task.provider_thread_id && toolTypes.has(text(item.type)))
       const tools = items.filter(item => running(item.status) && running(task.status)).map(item => ({
-        callId: text(item.turn_item_id), tool: text(t3Payload(item).toolName) || text(item.type), args: text(t3Payload(item).title),
+        callId: text(item.turn_item_id), tool: text(payloadFor(item).toolName) || text(item.type), args: text(payloadFor(item).title),
       }))
       const provider = data.providerThreads.find(row => row.provider_thread_id === task.provider_thread_id)
-      const contextUsage = object(t3Payload(provider || {}).contextUsage)
+      const contextUsage = object(payloadFor(provider || {}).contextUsage)
       const usedTokens = Number(contextUsage.usedTokens), maxTokens = Number(contextUsage.maxTokens)
       const reported = usedTokens > 0 && maxTokens > 0
       agents.push({ id: nodeForThread.get(`task:${text(task.subagent_id)}`), name: text(p.title) || 'Subagent',
         parentId: taskParent(task), isMain: false, runtime: runtime(task.driver, task.provider),
-        model: text(p.model) || undefined, state: tools.length ? 'tool_calling' : running(task.status) || backgroundActivities(provider).length ? 'thinking' : task.status === 'failed' ? 'error' : 'complete',
+        model: text(p.model) || undefined, state: tools.length ? 'tool_calling' : running(task.status) || backgroundActivities(provider, payloadFor).length ? 'thinking' : task.status === 'failed' ? 'error' : 'complete',
         task: text(p.prompt), spawnTime: relative(task.started_at), tools, currentTool: tools.at(-1)?.tool,
         tokensUsed: reported ? usedTokens : 0, tokensMax: reported ? maxTokens : 0, toolCalls: items.length })
       const openRequest = data.requests.filter(request => request.thread_id === task.thread_id && request.node_id === task.parent_node_id
         && ['pending', 'open', 'requested'].includes(text(request.status)))[0]
-      const requestKind = text(openRequest?.kind) || text(t3Payload(openRequest || {}).kind)
+      const requestKind = text(openRequest?.kind) || text(payloadFor(openRequest || {}).kind)
       const activities: TeamActivity[] = items.filter(item => running(item.status) && running(task.status)).map(item => {
-        const itemPayload = t3Payload(item)
+        const itemPayload = payloadFor(item)
         return { id: text(item.turn_item_id), type: text(item.type), toolName: text(itemPayload.toolName) || null,
           title: text(itemPayload.title) || null, startedAt: optionalTimestamp(itemPayload.startedAt) }
       })
@@ -234,7 +265,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
         ? (/approval|permission|confirm|decision/i.test(requestKind) ? 'waiting_approval' : 'waiting_input')
         : activities.length ? 'running' : running(statusValue) ? 'thinking'
         : terminalFailure.has(statusValue) ? 'failed' : terminalCancelled.has(statusValue) ? 'cancelled' : 'done'
-      const background = backgroundActivities(provider)
+      const background = backgroundActivities(provider, payloadFor)
       const teamStatus: TeamAgentRow['status'] = background.length && baseStatus === 'done' ? 'background' : baseStatus
       teamAgents.push({ id: nodeForThread.get(`task:${text(task.subagent_id)}`)!, parentId: taskParent(task) ?? null,
         role: 'worker', name: text(p.title) || 'Subagent', runtime: teamRuntime(task.driver, task.provider) ?? null,
@@ -245,7 +276,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
         updatedAt: optionalTimestamp(task.updated_at), completedAt: optionalTimestamp(task.completed_at) })
     }
     const delegations = taskRows.map(task => {
-      const p = t3Payload(task), delivery = object(p.completionDelivery)
+      const p = payloadFor(task), delivery = object(p.completionDelivery)
       const deliveryState = text(task.completion_delivery_state) || text(delivery.state)
       const stage = ['acknowledged', 'observed'].includes(deliveryState) || delivery.observedByRunId ? 'received'
         : deliveryState === 'delivered' ? 'returned' : task.status === 'completed' ? 'completed'
@@ -259,7 +290,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
     const session: SessionInfo = { id: `t3:${rootId}`, label: `T3 · ${text(root.title) || 'Untitled team'}`,
       status: active ? 'active' : 'completed', startTime: start, lastActivityTime: updated }
     const teamTasks: TeamTaskRow[] = taskRows.map(task => {
-      const p = t3Payload(task), delivery = object(p.completionDelivery), state = text(task.status)
+      const p = payloadFor(task), delivery = object(p.completionDelivery), state = text(task.status)
       const childId = nodeForThread.get(text(task.child_thread_id)) || nodeForThread.get(`task:${text(task.subagent_id)}`)!
       const status: TeamTaskRow['status'] = terminalFailure.has(state) ? 'failed' : terminalCancelled.has(state) ? 'cancelled'
         : terminalSuccess.has(state) ? 'done' : 'working'

@@ -10,6 +10,18 @@ function scene(count=6):OfficeScene {
  return {width:450,height:650,floors:[{id:'garden',kind:'lounge',sessionId:null,title:'Garden',subtitle:'',color:'#fff',y:0,height:250,actorKeys:[]},{id:'team',kind:'team',sessionId:'s',title:'Work',subtitle:'',color:'#fff',y:225,height:250,actorKeys:[]},{id:'private',kind:'break',annexOf:'team',sessionId:'s',title:'Rest',subtitle:'',color:'#fff',y:225,height:250,actorKeys:actors.map(a=>a.key)}],actors,quietTeams:[],totalAgents:count,finishedCount:count}
 }
 function init(d=date(),s=scene()){return planOfficeRestOutings({date:d,at:0,scene:s,state:emptyOfficeOutingSchedule(),guests:[],blocked:false,weather:'clear'})}
+test('applies selected atmosphere to actual admissions and cadence while keeping nighttime calmer',()=>{
+ for(const mode of ['quiet','normal','lively'] as const)for(const night of [false,true]){
+  const input={date:date(night?23:14),scene:scene(),guests:[],blocked:false,weather:'clear' as const,liveliness:mode}
+  const first=planOfficeRestOutings({...input,at:0,state:emptyOfficeOutingSchedule()})
+  const due=planOfficeRestOutings({...input,at:first.state.nextAt!,state:first.state})
+  assert.equal(due.invitations.length,mode==='quiet'?(night?0:1):night?1:2)
+  if(due.invitations.length){
+   const gap=due.state.nextAt!-first.state.nextAt!,range=mode==='quiet'?[180000,300000]:mode==='lively'?(night?[150000,240000]:[45000,75000]):night?[180000,300000]:[60000,100000]
+   assert.ok(gap>=range[0]&&gap<=range[1])
+  }
+ }
+})
 test('day and night initial delay, cadence, cohort and dwell are bounded and deterministic',()=>{
  for(const night of [false,true]){const d=date(night?21:14),first=init(d),before=JSON.stringify(first.state)
   assert.deepEqual(first.invitations,[]);assert.ok(first.state.nextAt! >=(night?45000:20000)&&first.state.nextAt! <=(night?75000:40000))

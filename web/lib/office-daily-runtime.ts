@@ -7,9 +7,12 @@ import {cancelOfficeLiftTrips,reserveOfficeLiftTrip,type OfficeLiftState} from '
 import {officeNavigation} from './office-navigation'
 import {skyWeather,type Weather} from './office-sky'
 import {emptyOfficeOutingSchedule,planOfficeRestOutings,markOfficeRestOutingAdmission,type OfficeOutingAction} from './office-rest-outings'
-import {createOfficeOutingTrip,officeOutingVendorPoint} from './office-outing-trips'
+import {createOfficeOutingTrip,createOfficeShopServiceTrip,officeOutingVendorPoint} from './office-outing-trips'
 import {officeDaylight} from './office-daylight'
 import {officeVendorPickupProgress,officeVendorPickupFinished} from './office-vendor'
+
+import {officeShopQueue,officeShopWaitingPoints} from './office-shop-queue'
+import type {OfficeLiveliness} from './office-liveliness'
 
 export type OfficeDailyPhase='outbound'|'eating'|'relocating'|'returning'
 export interface OfficeDailyRuntimeGuest extends Omit<OfficeDailyInvitation,'kind'> {
@@ -19,10 +22,11 @@ export interface OfficeDailyRuntimeGuest extends Omit<OfficeDailyInvitation,'kin
  returnNeeded:boolean; indoorNeeded:boolean
  gardenSeatNeeded?:number
  restStartedAt?:number
+ shop?:{stage:'arriving'|'waiting'|'serving'|'seating';slot?:number;order:number;arrivedAt:number|null}
 }
 export interface OfficeDailyRuntimeInput {
  source:OfficeScene; scene:OfficeScene; date:Date; at:number; lift:OfficeLiftState
- blocked:boolean; preemptQueuedTravel?:boolean; busyKeys:ReadonlySet<string>; weather?:Weather; onLiftCancelled?:(keys:readonly string[])=>void
+ blocked:boolean; preemptQueuedTravel?:boolean; busyKeys:ReadonlySet<string>; weather?:Weather; liveliness?:OfficeLiveliness; onLiftCancelled?:(keys:readonly string[])=>void
 }
 export const OFFICE_DAILY_STORAGE='agent-flow-office-daily-v1'
 
@@ -34,6 +38,11 @@ export class OfficeDailyRuntime {
  canteenOpen=false
  outingSchedule=emptyOfficeOutingSchedule()
  private retained:OfficeScene|null=null
+ private shopSequence=0
+
+ shopQueue(scene:OfficeScene){
+  return officeShopQueue(scene,[...this.guests.values()].flatMap(g=>g.shop&&!g.returnNeeded&&!g.indoorNeeded&&g.shop.stage!=='seating'?[{actorKey:g.actorKey,order:g.shop.order,arrivedAt:g.shop.arrivedAt,serving:g.shop.stage==='serving',slot:g.shop.slot}]:[]))
+ }
  constructor(ledger:unknown=emptyOfficeDailyLedger()){this.ledger=readOfficeDailyLedger(ledger)}
 
  /** Keep occupied geometry while source rooms disappear or newcomers append below it. */
@@ -74,14 +83,14 @@ export class OfficeDailyRuntime {
    const outingActivity=action==='snack'?'is enjoying a snack':action==='drink'?'is enjoying a warm drink':action==='stretch'?'is stretching their legs':'is watching the stars'
    return {...canonical,...g.physical,...(frame?frame.point:{}),floorId:frame?.floorId??g.physical.floorId,
     agent:canonical.agent,task:canonical.task,hidden:false,zone:g.returnNeeded?canonical.zone:'lounge',party:false,stand:Boolean(walking||waiting||eating&&action==='stretch'),
-    activity:sharing?(g.outing?.sharingWith?'is sharing snacks with a teammate':'is putting the snacks away'):eating?(g.outing?outingActivity:g.kind==='lunch'?'is enjoying lunch':g.kind==='coffee'?'is taking a coffee break':'is having afternoon tea'):g.trip?.caption??(g.returnNeeded?'is returning':'is waiting for a short break'),
+    activity:sharing?(g.outing?.sharingWith?'is sharing snacks with a teammate':'is putting the snacks away'):eating?(g.outing?outingActivity:g.kind==='lunch'?'is enjoying lunch':g.kind==='coffee'?'is taking a coffee break':'is having afternoon tea'):g.trip?.caption??(g.returnNeeded?'is returning':g.shop?.stage==='waiting'?'is waiting at the shop':'is waiting for a short break'),
     pose:sharing?{sit:true,hand:false,offer:.6,mug:false,objectAction:'snack'}:walking?{...frame.pose,...(action==='drink'?{mug:true}:{})}:waiting?{walk:false,sit:false}:eating?{...restPose,seatBlend}:{sit:false,mug:false}}
   })
  }
 
  art(date:Date,scene:OfficeScene,at:number){
   const window=officeDailyWindow(date),actors=this.actors(scene,at)
-  return {kind:window.kind,delivery:window.delivery,cleanup:window.cleanup,guests:[...this.guests.values()].map(g=>{const actor=actors.find(a=>a.key===g.actorKey)!;return {actorKey:g.actorKey,kind:g.kind,phase:g.phase,floorId:actor.floorId,x:actor.x,y:actor.y,seat:g.seat,action:g.outing?.action,collected:g.outing?.collected,pickupProgress:g.outing?.action==='snack'?(officeVendorPickupProgress(scene,g.trip,at)??undefined):undefined,night:g.outing?g.outing.night||officeDaylight(date).night:undefined}})}
+  return {kind:window.kind,delivery:window.delivery,cleanup:window.cleanup,shopQueue:this.shopQueue(scene),guests:[...this.guests.values()].map(g=>{const actor=actors.find(a=>a.key===g.actorKey)!;return {actorKey:g.actorKey,kind:g.kind,phase:g.phase,floorId:actor.floorId,x:actor.x,y:actor.y,seat:g.seat,action:g.outing?.action,collected:g.outing?.collected,pickupProgress:g.outing?.action==='snack'?(officeVendorPickupProgress(scene,g.trip,at)??undefined):undefined,night:g.outing?g.outing.night||officeDaylight(date).night:undefined}})}
  }
 
  sharingPeer(scene:OfficeScene,at:number,actors:readonly OfficeActor[]=scene.actors):string|null {
@@ -94,7 +103,10 @@ export class OfficeDailyRuntime {
  }
 
  shiftMotion(delta:number):void {
-  for(const guest of this.guests.values())if(guest.trip)guest.trip={...guest.trip,startedAt:guest.trip.startedAt+delta,endsAt:guest.trip.endsAt+delta}
+  for(const guest of this.guests.values()){
+   if(guest.trip)guest.trip={...guest.trip,startedAt:guest.trip.startedAt+delta,endsAt:guest.trip.endsAt+delta}
+   if(guest.shop?.arrivedAt!==undefined&&guest.shop.arrivedAt!==null)guest.shop.arrivedAt+=delta
+  }
  }
 
  private target(scene:OfficeScene,g:OfficeDailyRuntimeGuest):OfficeRoutineTarget|null {
@@ -117,17 +129,18 @@ export class OfficeDailyRuntime {
    const canonical=source.actors.find(a=>a.key===g.actorKey)
    if(!canonical||!officeDailyActorEligible(canonical,source)||(g.kind==='outing'?Boolean(window.kind):window.occurrenceKey!==g.occurrenceKey)||input.busyKeys.has(g.actorKey))g.returnNeeded=true
    if(g.outing?.action==='snack'&&!g.outing.collected&&officeDaylight(date).night)g.returnNeeded=true
+   if(g.returnNeeded)g.shop=undefined
   }
   const gardenGuests=[...this.guests.values()].filter(g=>g.destination==='garden')
   const partySeats=officeGardenOccupiedSeats(source,new Set(this.guests.keys())),reserved=new Set(partySeats)
   for(const g of gardenGuests)if(!partySeats.has(g.gardenSeatNeeded??g.seat))reserved.add(g.gardenSeatNeeded??g.seat)
   for(const g of gardenGuests){
    if(g.returnNeeded||g.phase==='returning')continue
-   if(wet){g.indoorNeeded=true;g.gardenSeatNeeded=undefined;continue}
+   if(wet){g.indoorNeeded=true;g.gardenSeatNeeded=undefined;g.shop=undefined;continue}
    if(!partySeats.has(g.gardenSeatNeeded??g.seat))continue
    const seat=[0,1,2,3].find(s=>!reserved.has(s))
    if(seat===undefined){g.indoorNeeded=true;g.gardenSeatNeeded=undefined}
-   else{reserved.add(seat);g.gardenSeatNeeded=seat}
+   else{reserved.add(seat);if(g.shop&&g.shop.stage!=='seating'){g.seat=seat;g.gardenSeatNeeded=undefined}else g.gardenSeatNeeded=seat}
   }
   for(const g of this.guests.values()){
    if(g.outing?.sharingUntil!==undefined){
@@ -138,7 +151,7 @@ export class OfficeDailyRuntime {
     }
     g.outing.sharingUntil=undefined
    }
-   if(g.trip&&g.phase!=='returning'&&at<g.trip.endsAt&&(g.returnNeeded||g.indoorNeeded||g.gardenSeatNeeded!==undefined||input.preemptQueuedTravel)){
+   if(g.trip&&g.phase!=='returning'&&at<g.trip.endsAt&&(g.returnNeeded||g.indoorNeeded||g.gardenSeatNeeded!==undefined||input.preemptQueuedTravel&&g.trip.segments.some(segment=>segment.liftPhase))){
     let time=g.trip.startedAt,boarding=Infinity,clear=-Infinity
     for(const segment of g.trip.segments){if(segment.liftPhase){boarding=Math.min(boarding,time);clear=time+segment.duration}time+=segment.duration}
     if(at<boarding||at>=clear){
@@ -156,6 +169,14 @@ export class OfficeDailyRuntime {
     const vendor=g.outing?.action==='snack'&&(g.phase==='outbound'||g.phase==='relocating')?officeOutingVendorPoint(geometry):null
     if(vendor&&!wet&&!officeDaylight(date).night&&!g.returnNeeded&&officeVendorPickupFinished(geometry,g.trip,at))g.outing!.collected=true
     if(!frame.done)continue // A passenger clears the shared car before changing plans.
+    if(g.shop?.stage==='arriving'&&!g.returnNeeded&&!g.indoorNeeded){
+     g.shop.arrivedAt=g.trip.endsAt;g.shop.stage='waiting';g.trip=null;continue
+    }
+    if(g.shop?.stage==='serving'&&!g.returnNeeded&&!g.indoorNeeded){
+     g.trip=null
+     if(g.outing?.collected){g.shop.stage='seating';const target=this.target(geometry,g);if(target)this.start(g,geometry,target,at,lift,g.phase,'is taking a snack to the garden seat')}
+     continue
+    }
     if(g.phase==='returning'){
      const latest=geometry.actors.find(a=>a.key===g.actorKey&&!a.hidden)
      if(!latest||(latest.floorId===g.physical.floorId&&Math.hypot(latest.x-g.physical.x,latest.y-g.physical.y)<1)){
@@ -168,8 +189,12 @@ export class OfficeDailyRuntime {
      }
     }else{g.phase='eating';g.restStartedAt=at;if(g.until===0)g.until=at+(g.outing?.dwellMs??(g.kind==='lunch'?60_000+(hash(g.actorKey)%61)*1000:18_000));g.trip=null}
    }
+   if(g.shop?.stage==='waiting'&&!g.returnNeeded&&!g.indoorNeeded)continue
    if(g.phase==='eating'&&at>=g.until)g.returnNeeded=true
-   if(input.blocked&&!g.returnNeeded&&!g.indoorNeeded&&g.gardenSeatNeeded===undefined)continue
+   // A canceled cosmetic arrival waits until real lift travel clears. Rebuilding
+   // it now would only cancel and re-reserve the same trip on the next frame.
+   if(input.preemptQueuedTravel&&!g.trip&&!g.returnNeeded&&!g.indoorNeeded)continue
+   if(input.blocked&&!g.returnNeeded&&!g.indoorNeeded&&g.gardenSeatNeeded===undefined&&!(g.outing?.action==='snack'&&!g.outing.collected&&g.destination==='garden'&&!g.trip))continue
    if(g.returnNeeded){
     const home=geometry.actors.find(a=>a.key===g.actorKey&&!a.hidden)
     const fallback=geometry.floors.some(f=>f.id===g.home.floorId)?g.home:null
@@ -197,6 +222,12 @@ export class OfficeDailyRuntime {
     if(seat!==undefined){g.indoorNeeded=false;g.destination='canteen';g.seat=seat;const target=this.target(geometry,g);if(target)this.start(g,geometry,target,at,lift,'relocating','is bringing lunch indoors')}
    }else if(!g.trip&&g.phase!=='eating'){const target=this.target(geometry,g);if(target)this.start(g,geometry,target,at,lift,g.phase,g.kind==='lunch'?'is collecting lunch':'is getting a drink')}
   }
+  const serviceKey=this.shopQueue(geometry).serviceKey
+  const shopper=serviceKey?this.guests.get(serviceKey):undefined
+  if(shopper?.shop?.stage==='waiting'&&!wet&&!officeDaylight(date).night){
+   const trip=createOfficeShopServiceTrip(geometry,shopper.actorKey,at,shopper.physical)
+   if(trip){shopper.trip=trip;shopper.shop.stage='serving';shopper.shop.slot=undefined}
+  }
   const busy=new Set([...input.busyKeys,...this.guests.keys()])
   const plan=planOfficeDailyEvents({date,scene:source,ledger:this.ledger,busyKeys:busy,guests:[...this.guests.values()].map(g=>({...g,seat:g.gardenSeatNeeded??g.seat})),weather})
   this.ledger=advanceOfficeDailyLedger(plan.ledger,date)
@@ -213,7 +244,7 @@ export class OfficeDailyRuntime {
     this.ledger=markOfficeDailyAttendance(this.ledger,date,invite.kind,g.actorKey)
    }
   }
-  const outings=planOfficeRestOutings({date,at,scene:source,state:this.outingSchedule,busyKeys:busy,guests:[...this.guests.values()].map(g=>({...g,seat:g.gardenSeatNeeded??g.seat})),weather,blocked:input.blocked})
+  const outings=planOfficeRestOutings({date,at,scene:source,state:this.outingSchedule,busyKeys:busy,guests:[...this.guests.values()].map(g=>({...g,seat:g.gardenSeatNeeded??g.seat})),weather,blocked:input.blocked,liveliness:input.liveliness})
   this.outingSchedule=outings.state
   for(const invite of outings.invitations){
    const home=geometry.actors.find(a=>a.key===invite.actorKey&&!a.hidden)
@@ -230,6 +261,16 @@ export class OfficeDailyRuntime {
 
  private start(g:OfficeDailyRuntimeGuest,scene:OfficeScene,target:OfficeRoutineTarget,at:number,lift:OfficeLiftState,phase:OfficeDailyPhase,caption:string){
   const visible={...scene,actors:scene.actors.map(a=>a.key===g.actorKey?{...a,hidden:false}:a)}
+  const needsShop=g.outing?.action==='snack'&&!g.outing.night&&!g.outing.collected&&g.destination==='garden'&&(phase==='outbound'||phase==='relocating')
+  if(needsShop&&(!g.shop||g.shop.stage==='arriving')){
+   const occupied=new Set([...this.guests.values()].flatMap(guest=>guest!==g&&guest.shop?.slot!==undefined&&!guest.returnNeeded&&!guest.indoorNeeded?[guest.shop.slot]:[]))
+   const slot=g.shop?.slot??[0,1].find(index=>!occupied.has(index)),waiting=slot===undefined?undefined:officeShopWaitingPoints(scene)[slot]
+   if(!waiting)return false
+   const arrival=createOfficeRoutineTrip(visible,g.actorKey,waiting,at,'is joining the shop queue',{...g.physical,hidden:false})
+   if(!arrival)return false
+   g.shop={stage:'arriving',slot,order:g.shop?.order??this.shopSequence++,arrivedAt:null}
+   g.trip=reserveOfficeLiftTrip(lift,arrival,scene,at);g.phase=phase;return true
+  }
   const trip=g.outing&&(phase==='outbound'||phase==='relocating'&&g.destination==='garden')&&!g.outing.collected?createOfficeOutingTrip(visible,g.actorKey,target,at,g.outing.action,g.outing.night,{...g.physical,hidden:false}):createOfficeRoutineTrip(visible,g.actorKey,target,at,caption,{...g.physical,hidden:false})
   if(!trip)return false
   g.trip=reserveOfficeLiftTrip(lift,{...trip,caption},scene,at);g.phase=phase

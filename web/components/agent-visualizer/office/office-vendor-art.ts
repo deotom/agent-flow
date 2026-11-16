@@ -4,6 +4,20 @@ import { officeVendorState, type OfficeVendorExchange } from '../../../lib/offic
 import {officeActorDepthScale} from '../../../lib/office-depth'
 
 type Ctx = CanvasRenderingContext2D
+export function drawOfficeShopQueue(c:Ctx,scene:OfficeScene,queue:import('../../../lib/office-types').OfficeDailyVisual['shopQueue']){
+ if(!queue)return
+ const unit=scene.width/450
+ c.save()
+ for(const mark of queue.marks){
+  const floor=scene.floors.find(f=>f.id===mark.floorId)
+  if(!floor||floor.kind!=='lounge')continue
+  c.globalAlpha=mark.actorKey?(mark.arrived?.7:.45):.24
+  c.strokeStyle='#e3cf9f';c.lineWidth=1.2*unit
+  c.beginPath();c.ellipse(mark.x,mark.y,10*unit,3*unit,0,0,Math.PI*2);c.stroke()
+  c.fillStyle='#e3cf9f';c.beginPath();c.ellipse(mark.x-3*unit,mark.y,1.3*unit,1.8*unit,0,0,Math.PI*2);c.ellipse(mark.x+3*unit,mark.y,1.3*unit,1.8*unit,0,0,Math.PI*2);c.fill()
+ }
+ c.restore()
+}
 export interface OfficeVendorCharacter {
   /** Absolute scene feet origin and multiplier for the existing 76px avatar. */
   x: number

@@ -171,3 +171,77 @@ test('keeps a lead working when a newer queued run was cancelled while the previ
   const after = projectT3Teams(data, ['D:/Project/TH']).find(t => t.session.id === 't3:lead')!
   assert.equal((after.event.payload.team as TeamSnapshot).agents.find(a => a.role === 'lead')!.status, 'cancelled')
 })
+
+test('indexes parent nodes once and resolves each native parent once per projection', () => {
+  const data = fixture()
+  let nodeReads = 0, parentReads = 0
+  data.nodes = Array.from({ length: 2000 }, (_, i) => ({
+    get node_id() { nodeReads++; return `node-${i}` }, provider_thread_id: 'p-worker',
+  }))
+  for (let i = 0; i < 60; i++) data.subagents.push(row({
+    subagent_id: `native-${i}`, thread_id: 'lead', provider_thread_id: `native-provider-${i}`, status: 'completed',
+    parent_node_id: 'node-1999',
+  }))
+  // Count resolution work on the actual source row.
+  for (const task of data.subagents.slice(1)) Object.defineProperty(task, 'parent_node_id', {
+    enumerable: true, get() { parentReads++; return 'node-1999' },
+  })
+  const team = projectT3Teams(data, ['D:/Project/TH']).find(t => t.session.id === 't3:lead')!
+  const native = (team.event.payload.team as TeamSnapshot).agents.filter(a => !a.hasThread)
+  assert.equal(native.length, 60)
+  assert.ok(native.every(a => a.parentId === 't3-agent:worker'))
+  assert.ok(nodeReads <= data.nodes.length + data.subagents.length, `node reads ${nodeReads} must grow with nodes, not tasks times nodes`)
+  assert.equal(parentReads, 60, 'reused graph/team/task output must not resolve the same task parent again')
+})
+
+test('retains first matching nodes and provider task order while excluding the task itself', () => {
+  const data = fixture()
+  data.subagents = [
+    row({ subagent_id: 'self', thread_id: 'lead', provider_thread_id: 'duplicate-provider', parent_node_id: 'shared', status: 'completed' }),
+    row({ subagent_id: 'second', thread_id: 'lead', provider_thread_id: 'duplicate-provider', parent_node_id: 'shared', status: 'completed' }),
+    row({ subagent_id: 'child', thread_id: 'lead', provider_thread_id: 'child-provider', parent_node_id: 'shared', status: 'completed' }),
+    row({ subagent_id: 'missing', thread_id: 'lead', parent_node_id: 'absent', status: 'completed' }),
+    row({ subagent_id: 'empty', thread_id: 'lead', parent_node_id: 'empty-first', status: 'completed' }),
+    row({ subagent_id: 'nan', thread_id: 'lead', parent_node_id: NaN, status: 'completed' }),
+  ]
+  data.nodes = [
+    { node_id: 'shared', provider_thread_id: 'duplicate-provider' },
+    { node_id: 'shared', provider_thread_id: 'child-provider' },
+    { node_id: 'empty-first', provider_thread_id: '' },
+    { node_id: 'empty-first', provider_thread_id: 'duplicate-provider' },
+    { node_id: NaN, provider_thread_id: 'duplicate-provider' },
+  ]
+  const team = projectT3Teams(data, ['D:/Project/TH']).find(t => t.session.id === 't3:lead')!.event.payload.team as TeamSnapshot
+  const parent = (id: string) => team.agents.find(a => a.id === `t3-task:${id}`)!.parentId
+  assert.equal(parent('self'), 't3-task:second')
+  assert.equal(parent('second'), 't3-task:self')
+  assert.equal(parent('child'), 't3-task:self')
+  for (const id of ['missing', 'empty', 'nan']) assert.equal(parent(id), 't3-agent:lead')
+  assert.deepEqual(team.tasks.map(t => t.parentId), ['t3-task:second', 't3-task:self', 't3-task:self', 't3-agent:lead', 't3-agent:lead', 't3-agent:lead'])
+})
+
+test('parses each payload at most once per projection and rereads mutations on the next call', () => {
+  const data = fixture(), reads = new Map<T3Row, number>()
+  data.items.push(row({ turn_item_id: 'native-tool', thread_id: 'lead', run_id: 'r-lead', provider_thread_id: 'native-provider', type: 'dynamic_tool', status: 'running' }, { toolName: 'inspect', title: 'Inspect' }))
+  data.subagents.push(row({ subagent_id: 'native', thread_id: 'lead', provider_thread_id: 'native-provider', status: 'running' }, { title: 'Native', prompt: 'Inspect state' }))
+  data.providerThreads.push(row({ provider_thread_id: 'native-provider', thread_id: 'lead' }, { pendingBackgroundTasks: [{ taskId: 'wait', kind: 'command' }] }))
+  data.runs.push({ run_id: 'malformed', thread_id: 'fork', ordinal: 1, status: 'completed', payload_json: '{bad json' })
+  for (const source of [...data.threads, ...data.subagents, ...data.runs, ...data.items, ...data.providerThreads]) {
+    let value = source.payload_json
+    Object.defineProperty(source, 'payload_json', { enumerable: true, configurable: true,
+      get() { reads.set(source, (reads.get(source) ?? 0) + 1); return value }, set(next) { value = next },
+    })
+  }
+  const first = projectT3Teams(data, ['D:/Project/TH'], 123456)
+  assert.ok([...reads.values()].every(count => count <= 1), `one projection reread payloads ${JSON.stringify([...reads.values()])}`)
+  data.subagents[0].payload_json = JSON.stringify({ title: 'Updated worker', prompt: 'New prompt', result: 'New result', completionDelivery: { state: 'observed' } })
+  reads.clear()
+  const second = projectT3Teams(data, ['D:/Project/TH'], 123456)
+  const team = second.find(t => t.session.id === 't3:lead')!.event.payload.team as TeamSnapshot
+  assert.equal(team.agents.find(a => a.id === 't3-agent:worker')!.name, 'Updated worker')
+  assert.equal(team.tasks[0].task, 'New prompt')
+  assert.equal(team.tasks[0].result, 'New result')
+  assert.equal(team.tasks[0].delivery, 'received')
+  assert.ok([...reads.values()].every(count => count <= 1))
+  assert.notDeepEqual(first, second, 'the cache must not outlive its projection call')
+})

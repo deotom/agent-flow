@@ -37,6 +37,9 @@ import {officeSharedRest} from '../../../lib/office-shared-rest'
 import {skyWeather} from '../../../lib/office-sky'
 import {officeDoorTraffic} from '../../../lib/office-door-traffic'
 import {officeVendorAllowsObject,officeVendorState} from '../../../lib/office-vendor'
+import {officeLiveliness,officeLivelinessPolicy} from '../../../lib/office-liveliness'
+import {officeWardrobeTheme} from '../../../lib/office-wardrobe'
+import {officeWardrobeTransitionFrame,type OfficeWardrobeTransitionState} from '../../../lib/office-wardrobe-transition'
 
 interface OfficeViewProps {
   snapshots: readonly TeamSnapshot[]
@@ -73,6 +76,7 @@ function usePageVisible() {
   return pageVisible
 }
 const PAUSE_STORAGE = 'agent-flow-office-paused'
+const LIVELINESS_STORAGE='agent-flow-office-liveliness-v1'
 const BOARD_MARKS = { waiting: '!', failed: '✗', working: '○', done: '✓' } as const
 const BOARD_STATES = { waiting: 'Needs you', failed: 'Failed', working: 'Working', done: 'Done' } as const
 type Moving = { actor: OfficeActor; caption: string; elevatorY: number | null; station?:OfficeWorkStation }
@@ -94,6 +98,9 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     try { localStorage.setItem(IDENTITY_STORAGE, JSON.stringify([...identities].slice(-10_000))) } catch { /* The in-memory identities still remain stable. */ }
   }, [identities, savedIdentities])
   const [showQuiet, setShowQuiet] = useState(false)
+  const [liveliness,setLiveliness]=useState(()=>{try{return officeLiveliness(localStorage.getItem(LIVELINESS_STORAGE))}catch{return officeLiveliness(null)}})
+  useEffect(()=>{try{localStorage.setItem(LIVELINESS_STORAGE,liveliness)}catch{/* Keep the in-memory choice. */}},[liveliness])
+  const wardrobeStore=useRef<ReadonlyMap<string,OfficeWardrobeTransitionState>>(new Map())
   const [peekId,setPeekId] = useState<string|null>(null)
   const lastDoor=useRef<HTMLButtonElement|null>(null)
   const closePeek=()=>{const closingFocus=document.activeElement;setPeekId(null);requestAnimationFrame(()=>{if(document.activeElement!==document.body&&document.activeElement!==closingFocus)return;if(lastDoor.current?.isConnected)lastDoor.current.focus()})}
@@ -153,7 +160,14 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const baseline = useRef<{ snapshots: readonly TeamSnapshot[]; scene: OfficeScene; enabled: boolean; scope: TeamScope; showQuiet: boolean } | null>(null)
   const motionClock = useRef(0)
   const nextWorkAt = useRef(0)
-  const nextSeasonalAt = useRef(12_000)
+  const objectCadence=officeLivelinessPolicy(liveliness,officeDaylight(new Date(now)).night).objectCadenceMultiplier
+  const priorObjectCadence=useRef(objectCadence)
+  const nextSeasonalAt = useRef(12_000*objectCadence)
+  useEffect(()=>{
+    const remaining=Math.max(0,nextSeasonalAt.current-motionClock.current)
+    nextSeasonalAt.current=motionClock.current+remaining*objectCadence/priorObjectCadence.current
+    priorObjectCadence.current=objectCadence
+  },[objectCadence])
   const seasonalCursor = useRef(0)
   const workCursor = useRef(0)
   const elapsed = useRef(0)
@@ -176,9 +190,9 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const greet = useRef<{ key: string; until: number } | null>(null)
   const greetCooldown = useRef(new Map<string, number>())
   const [inspectedKey, setInspectedKey] = useState<string | null>(null)
-  const current = useRef({ scene: visualScene,target:layoutTarget,sourceScene:scene, selectedKey, pets, petEvent, enabled, live, peekId,architectureArt,roomArt,wallNow:now })
+  const current = useRef({ scene: visualScene,target:layoutTarget,sourceScene:scene, selectedKey, pets, petEvent, enabled, live, peekId,architectureArt,roomArt,liveliness,wallNow:now })
   const doorTrips=()=>[active.current,...arrivalTrips.current.values(),...[...daily.current!.guests.values()].map(guest=>guest.trip)]
-  current.current = { scene: visualScene,target:layoutTarget,sourceScene:scene, selectedKey, pets, petEvent, enabled, live, peekId,architectureArt,roomArt,wallNow:now }
+  current.current = { scene: visualScene,target:layoutTarget,sourceScene:scene, selectedKey, pets, petEvent, enabled, live, peekId,architectureArt,roomArt,liveliness,wallNow:now }
   const createVisualTrip=(event:OfficeEvent,before:OfficeScene,next:OfficeScene,at:number)=>{
     const prior=officeSceneAtWorkPlaces(before,workPlaces.current),present=officeSceneAtWorkPlaces(next,workPlaces.current)
     const person=present.actors.find(a=>a.key===event.actorKey)
@@ -295,9 +309,20 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     const leisureKeys=new Set([...leisureTrips.current.keys(),...arrivalTrips.current.keys(),...daily.current!.guests.keys()])
     const socialBusy=new Set([...leisureKeys,...(active.current?[active.current.actorKey]:[]),...(exchange?[exchange.senderKey,exchange.receiverKey]:[])])
     const weather=skyWeather(new Date(input.wallNow))
-    const sharedRest=officeSharedRest({...input.scene,actors:actors.filter(a=>publicIds.has(a.floorId)||a.floorId===input.peekId)},input.enabled?elapsed.current:0,socialBusy,{night:officeDaylight(new Date(input.wallNow)).night,wet:weather==='rain'||weather==='storm',clear:weather==='clear'})
+    const policy=officeLivelinessPolicy(input.liveliness,officeDaylight(new Date(input.wallNow)).night)
+    const wardrobeTheme=officeWardrobeTheme(new Date(input.wallNow)),unit=input.scene.width/450
+    const wardrobe=officeWardrobeTransitionFrame(wardrobeStore.current,actors.map(actor=>{
+      const floor=input.scene.floors.find(f=>f.id===actor.floorId)
+      const doorway=floor?.annexOf?officeInteriorDoor(input.scene,floor.id):officeLanding(input.scene,actor.floorId)
+      const action=actor.pose?.objectAction??actor.objectAction
+      return {key:actor.key,theme:wardrobeTheme,slot:actor.appearance.slot,outdoor:floor?.kind==='lounge',inLift:actor.pose?.inLift,hidden:actor.hidden||(actor.pose?.opacity??1)<.8,
+        atEntrance:Boolean(doorway&&Math.abs(actor.x-doorway.x)<35*unit&&Math.abs(actor.y-doorway.y)<35*unit),
+        freeHand:!isWorking(actor.agent.status)&&!actor.pose?.typing&&!actor.pose?.hand&&!actor.pose?.carry&&!actor.pose?.climb&&!actor.pose?.stretch&&!['book','game','snack'].includes(action??'')}
+    }),motionClock.current)
+    wardrobeStore.current=wardrobe.store
+    const sharedRest=officeSharedRest({...input.scene,actors:actors.filter(a=>publicIds.has(a.floorId)||a.floorId===input.peekId)},input.enabled?elapsed.current/policy.socialCadenceMultiplier:0,socialBusy,{night:policy.night,wet:weather==='rain'||weather==='storm',clear:weather==='clear'})
     const options={ time: elapsed.current, date: new Date(input.wallNow), now: input.wallNow, dailyArt:daily.current!.art(new Date(input.wallNow),input.scene,motionClock.current), live: input.live,
-      exchange,sharedRest,
+      exchange,sharedRest,wardrobeLooks:wardrobe.looks,socialCadenceMultiplier:policy.socialCadenceMultiplier,
       motion: input.enabled, pets: input.pets, petEvent: input.petEvent, selectedKey: input.selectedKey,
       openDoorFloorId:input.peekId,transitDoorIds,architectureArt:input.architectureArt,roomArt:input.roomArt,liftSurfaceOpen:false,lift:liftVisual,
       objectCue:objectCue.current&&objectCue.current.until>elapsed.current?objectCue.current:null,
@@ -386,7 +411,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
         for(const trip of arrivals.completed)greetArrival(trip,input.scene)
       }
       if(motionClock.current>=nextSeasonalAt.current){
-        nextSeasonalAt.current=motionClock.current+45_000
+        nextSeasonalAt.current=motionClock.current+45_000*officeLivelinessPolicy(input.liveliness,officeDaylight(new Date(input.wallNow)).night).objectCadenceMultiplier
         const available={...input.scene,actors:input.scene.actors.filter(a=>a.key!==active.current?.actorKey&&!leisureTrips.current.has(a.key)&&!arrivalTrips.current.has(a.key)&&!daily.current!.guests.has(a.key)&&a.agent.status!=='failed')}
         const rooms=input.scene.floors.filter(f=>f.kind==='break')
         for(let i=0;i<rooms.length;i++){
@@ -400,7 +425,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
       const dailyBefore={count:daily.current!.guests.size,open:daily.current!.canteenOpen}
       const busyKeys=new Set([...arrivalTrips.current.keys(),...leisureTrips.current.keys(),...queue.current.flatMap(p=>[p.event.actorKey,...(p.event.parentKey?[p.event.parentKey]:[])]),...(active.current?[active.current.actorKey]:[])])
       const realQueue=queue.current.some(p=>!daily.current!.guests.has(p.event.actorKey)&&(!p.event.parentKey||!daily.current!.guests.has(p.event.parentKey)))
-      daily.current!.step({source:input.sourceScene,scene:input.scene,date:new Date(input.wallNow),at:motionClock.current,lift:lift.current!,busyKeys,blocked:Boolean(active.current||arrivalTrips.current.size||realQueue),preemptQueuedTravel:Boolean(arrivalTrips.current.size||active.current?.segments.some(s=>s.liftPhase)||queue.current.some(p=>p.event.kind==='left'&&!daily.current!.guests.has(p.event.actorKey))),onLiftCancelled:keys=>{
+      daily.current!.step({source:input.sourceScene,scene:input.scene,date:new Date(input.wallNow),at:motionClock.current,liveliness:input.liveliness,lift:lift.current!,busyKeys,blocked:Boolean(active.current||arrivalTrips.current.size||realQueue),preemptQueuedTravel:Boolean(arrivalTrips.current.size||active.current?.segments.some(s=>s.liftPhase)||queue.current.some(p=>p.event.kind==='left'&&!daily.current!.guests.has(p.event.actorKey))),onLiftCancelled:keys=>{
         for(const key of keys){
           const prior=arrivalTrips.current.get(key)??(active.current?.actorKey===key?active.current:null)
           if(!prior)continue
@@ -593,7 +618,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   }
 
   return (
-    <section className="of-view" data-motion={enabled} data-discover={discovery.open} data-daily-guests={daily.current!.guests.size} data-canteen-open={daily.current!.canteenOpen} data-season={sky.season} data-holiday={sky.holiday??undefined} aria-label="Agent Office">
+    <section className="of-view" data-motion={enabled} data-liveliness={liveliness} data-discover={discovery.open} data-daily-guests={daily.current!.guests.size} data-canteen-open={daily.current!.canteenOpen} data-season={sky.season} data-holiday={sky.holiday??undefined} aria-label="Agent Office">
       <div className="of-toolbar">
         <span className="of-counts">{working} working{needsYou > 0 && <button type="button" className="of-attention" aria-label="Go to next agent who needs you" title="ไปหาคนถัดไปที่รอคุณ" onClick={nextAttention}>{needsYou} need you ↗</button>}</span>
         <span className="of-link" data-tone={connection?.tone ?? (live ? 'ok' : 'warn')} title={connection?.detail} role="status">{connection?.label ?? (live ? 'Connected' : 'Reconnecting')}</span>
@@ -607,6 +632,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
 
       </div>
 
+      <div className="of-atmosphere"><label>บรรยากาศ <select aria-label="Office atmosphere" value={liveliness} onChange={event=>setLiveliness(officeLiveliness(event.target.value))}><option value="quiet">สงบ</option><option value="normal">ปกติ</option><option value="lively">คึกคัก</option></select></label><small>{daylight.night?'กลางคืน · ลดกิจกรรมลง':'กิจกรรมพักระหว่างวัน'}</small></div>
       <div className="of-scroll" ref={viewport} tabIndex={-1} style={{paddingBottom:inspectedFloor&&stationSelection||selectedInfo?inspectorHeight:0,boxSizing:'border-box'}}>
         {snapshots.length === 0 ? <p className="of-empty">Your teams will appear here.</p> : (
           <div className="of-building" style={{ width:'100%', maxWidth:900, aspectRatio:`${visualScene.width} / ${visualScene.height}` } as CSSProperties}>

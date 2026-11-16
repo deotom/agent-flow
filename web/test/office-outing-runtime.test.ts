@@ -8,6 +8,16 @@ import {officeOutingVendorPoint} from '../lib/office-outing-trips'
 import type {OfficeActor,OfficeScene} from '../lib/office-types'
 const person=(key:string):OfficeActor=>({key,sessionId:'s',parentKey:'lead',floorId:'private',x:90+(key==='b'?90:0),y:390,zone:'lounge',task:null,appearance:officeAppearance(0),activity:'Resting',runtimeName:'Codex',agent:{id:key,parentId:'lead',role:'worker',name:key,runtime:'codex',model:null,status:'done',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1,updatedAt:1,completedAt:1}})
 const scene:OfficeScene={width:450,height:650,totalAgents:2,finishedCount:2,quietTeams:[],actors:[person('a'),person('b')],floors:[{id:'garden',kind:'lounge',sessionId:null,title:'Garden',subtitle:'',color:'',actorKeys:[],y:0,height:253},{id:'team',kind:'team',sessionId:'s',title:'Office',subtitle:'',color:'',actorKeys:[],y:228,height:253},{id:'private',kind:'break',annexOf:'team',sessionId:'s',title:'Rest',subtitle:'',color:'',actorKeys:['a','b'],y:228,height:253}]}
+function settle(runtime:OfficeDailyRuntime,lift:ReturnType<typeof createOfficeLift>,at:number,source=scene){
+ for(let i=0;i<30;i++){
+  runtime.step({...input(runtime,at,source),lift})
+  const pending=[...runtime.guests.values()].filter(g=>g.phase!=='eating'&&!g.returnNeeded)
+  if(!pending.length)return at
+  const ends=pending.flatMap(g=>g.trip&&g.trip.endsAt>at?[g.trip.endsAt]:[])
+  at=ends.length?Math.min(...ends):at+1
+ }
+ assert.fail('admitted outing did not settle after real arrival, queue, pickup and seat walks')
+}
 const date=(night=false)=>new Date(2026,10,15,night?23:14,20)
 const input=(runtime:OfficeDailyRuntime,at:number,source=scene,night=false,weather:'clear'|'rain'='clear')=>({source,scene:runtime.project(source),date:date(night),at,weather,blocked:false,busyKeys:new Set<string>()})
 it('admits daytime outings after the initial delay, uses one lift and never writes outing attendance into the daily ledger',()=>{
@@ -16,7 +26,7 @@ it('admits daytime outings after the initial delay, uses one lift and never writ
  const due=runtime.outingSchedule.nextAt!;assert.ok(due>=20000&&due<=40000)
  runtime.step({...input(runtime,due),lift});assert.equal(runtime.guests.size,2)
  const guests=[...runtime.guests.values()];assert.ok(guests.every(g=>g.kind==='outing'))
- const end=Math.max(...guests.map(g=>g.trip!.endsAt));runtime.step({...input(runtime,end),lift})
+ const end=settle(runtime,lift,Math.min(...guests.map(g=>g.trip!.endsAt)))
  assert.ok(guests.every(g=>g.phase==='eating'))
  advanceOfficeLift(lift,end);assert.equal(lift.reservations.length,0,'the car is free throughout the break')
  assert.ok(runtime.ledger.days.every(d=>d.coffee.length+d.lunch.length+d.tea.length===0))
@@ -47,8 +57,8 @@ it('rain sends an outing home instead of opening a temporary canteen',()=>{
 it('settles into the actual rest seat and eases up before departure without booking another car',()=>{
  const runtime=new OfficeDailyRuntime(),lift=createOfficeLift(scene)
  runtime.step({...input(runtime,0),lift});runtime.step({...input(runtime,runtime.outingSchedule.nextAt!),lift})
- const g=[...runtime.guests.values()][0],arrived=Math.max(...[...runtime.guests.values()].map(g=>g.trip!.endsAt))
- runtime.step({...input(runtime,arrived),lift});g.outing!.action='drink'
+ const g=[...runtime.guests.values()][0];settle(runtime,lift,Math.min(...[...runtime.guests.values()].map(g=>g.trip!.endsAt)));const arrived=g.restStartedAt!
+ g.outing!.action='drink'
  const poseAt=(at:number)=>runtime.actors(runtime.project(scene),at).find(a=>a.key===g.actorKey)!.pose!
  assert.equal(poseAt(arrived).seatBlend,0)
  assert.ok(poseAt(arrived+175).seatBlend!>0&&poseAt(arrived+175).seatBlend!<1)
@@ -71,7 +81,7 @@ it('briefly shares a collected snack at home, then releases the visitor without 
  const source={...scene,actors:[...scene.actors,person('z-friend')]}
  const runtime=new OfficeDailyRuntime(),lift=createOfficeLift(source)
  runtime.step({...input(runtime,0,source),lift});runtime.step({...input(runtime,runtime.outingSchedule.nextAt!,source),lift})
- const g=[...runtime.guests.values()][0],end=Math.max(...[...runtime.guests.values()].map(g=>g.trip!.endsAt))
+ const g=[...runtime.guests.values()][0],end=settle(runtime,lift,Math.min(...[...runtime.guests.values()].map(g=>g.trip!.endsAt)),source)
  runtime.step({...input(runtime,end,source),lift});g.outing!.action='snack';g.outing!.collected=true
  runtime.step({...input(runtime,g.until,source),lift});const homeAt=g.trip!.endsAt
  runtime.step({...input(runtime,homeAt,source),lift})
@@ -99,11 +109,16 @@ it('still collects the snack when a party takes the reserved seat before the car
  runtime.step({...input(runtime,0),lift});const due=runtime.outingSchedule.nextAt!
  runtime.step({...input(runtime,due),lift})
  const g=[...runtime.guests.values()][0];g.outing!.action='snack';g.outing!.collected=false
- const [x,y]=OFFICE_DAILY_SEATS[g.seat]
+ const reservedSeat=g.seat,[x,y]=OFFICE_DAILY_SEATS[reservedSeat]
  const party={...person('party'),floorId:'garden',x:x*scene.width,y:y*253,party:true}
  const source={...scene,actors:[...scene.actors,party]}
  runtime.step({...input(runtime,due+1,source),lift})
- assert.equal(g.phase,'relocating')
+ assert.notEqual(g.seat,reservedSeat,'occupied picnic seat is reassigned independently of the shop arrival')
+ let clock=due+1
+ for(let i=0;i<20&&g.shop?.stage!=='serving';i++){
+  const ends=[...runtime.guests.values()].flatMap(guest=>guest.trip&&guest.trip.endsAt>clock?[guest.trip.endsAt]:[])
+  clock=ends.length?Math.min(...ends):clock+1;runtime.step({...input(runtime,clock,source),lift})
+ }
  const vendor=officeOutingVendorPoint(runtime.project(source))!
  const pickup=g.trip!.segments.findIndex(s=>s.kind==='hold'&&s.duration===1400&&s.floorId===vendor.floorId&&Math.hypot(s.to.x-vendor.x,s.to.y-vendor.y)<1)
  assert.ok(pickup>=0,'the relocated journey retains the actual cart stop')
