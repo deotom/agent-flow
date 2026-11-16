@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { TeamSnapshot } from '../../../lib/team-types'
-import { isWorking, type TeamScope, type ConnectionView } from '../../../lib/team-model'
+import { isWorking, STATUS_LABEL, type TeamScope, type ConnectionView } from '../../../lib/team-model'
 import type { AnimationMode } from '../../../lib/viewer-preferences'
 import type { OfficeActor, OfficeEvent, OfficePet, OfficeScene, OfficeWorkStation, OfficeLeisureAction } from '../../../lib/office-types'
 import { assignOfficeIdentities, buildOfficeScene, currentOfficeBoard, officeEvents, officeKey, officeTeamOrder, officeTeamQuiet } from '../../../lib/office-model'
@@ -30,6 +30,9 @@ import {OfficeDailyRuntime,OFFICE_DAILY_STORAGE} from '../../../lib/office-daily
 import {useOfficeRoomArt} from './use-office-room-art'
 import {drawOfficeRoomDesign} from './office-room-design-art'
 import {useOfficeArchitectureArt} from './use-office-architecture-art'
+import {officeAgentInfo,officeNextAttention,officePlanningInfo,officeRevealTarget} from '../../../lib/office-interaction'
+import {OfficeInspector} from './office-inspector'
+import {OfficeDiscoveryTip,useOfficeDiscovery} from './office-discovery'
 
 interface OfficeViewProps {
   snapshots: readonly TeamSnapshot[]
@@ -91,13 +94,19 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const lastDoor=useRef<HTMLButtonElement|null>(null)
   const closePeek=()=>{const automatic=Boolean(autoPeek.current);autoPeek.current=null;setPeekId(null);if(!automatic)requestAnimationFrame(()=>{if(lastDoor.current?.isConnected)lastDoor.current.focus()})}
   const [stationSelection,setStationSelection]=useState<{sessionId:string;kind:OfficeWorkStation}|null>(null)
+  const [inspectorHeight,setInspectorHeight]=useState(0)
   // The user's own pause choice persists across launches.
   const [paused, setPaused] = useState(() => { try { return localStorage.getItem(PAUSE_STORAGE) === 'true' } catch { return false } })
   useEffect(() => { try { localStorage.setItem(PAUSE_STORAGE, String(paused)) } catch { /* In-memory selection remains available. */ } }, [paused])
   const pets: OfficePet[] = []
   const petEvent = null
   const pageVisible = usePageVisible()
+  const discovery=useOfficeDiscovery(visible&&pageVisible)
+  useEffect(()=>{if(selectedKey||stationSelection)discovery.dismiss()},[selectedKey,stationSelection,discovery.dismiss])
   const viewport = useRef<HTMLDivElement>(null)
+  const inspectorTrigger=useRef<HTMLElement|null>(null)
+  const focusInspector=useRef(false)
+  const attentionCursor=useRef<string|null>(null)
   const sceneWidth = 450
   // Project from committed history, so speculative renders cannot start or expire parties.
   const partyLog = useRef(emptyOfficePartyHistory())
@@ -527,13 +536,73 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const captionMovement=moving??restMoving[0]??(dailyActor?{actor:dailyActor,caption:dailyActor.activity,elevatorY:null}:null)
   const inspectedFloor=stationSelection?scene.floors.find(f=>f.kind==='team'&&f.sessionId===stationSelection.sessionId):null
   const stationPeople=inspectedFloor&&stationSelection?officeStationUsers(scene,inspectedFloor,stationSelection.kind):[]
+  const selectedInfo=officeAgentInfo(snapshots,selectedKey)
+  const selectedActor=allDisplayed.find(actor=>actor.key===selectedKey)
+  const selectedBoard=inspectedFloor?.sessionId&&stationSelection?.kind==='planning'?officePlanningInfo(snapshots,inspectedFloor.sessionId):null
+  const rememberTrigger=()=>{const element=document.activeElement;inspectorTrigger.current=element instanceof HTMLElement&&element!==document.body?element:null;focusInspector.current=true;discovery.dismiss()}
+  const inspectorFocused=()=>{focusInspector.current=false}
+  const closeInspector=()=>{
+    const closingFocus=document.activeElement
+    if(stationSelection)setStationSelection(null)
+    else if(selectedInfo)onSelect(selectedInfo.team.sessionId,selectedInfo.agent.id)
+    requestAnimationFrame(()=>{
+      // A newer door/panel interaction owns focus; never replay the old close over it.
+      if(document.activeElement!==document.body&&document.activeElement!==closingFocus)return
+      if(inspectorTrigger.current?.isConnected)inspectorTrigger.current.focus();else viewport.current?.focus()
+    })
+  }
+  const inspectAgent=(sessionId:string,agentId:string)=>{
+    rememberTrigger();setStationSelection(null)
+    if(officeKey(sessionId,agentId)!==selectedKey)onSelect(sessionId,agentId)
+  }
+  const inspectStation=(sessionId:string,kind:OfficeWorkStation)=>{
+    rememberTrigger()
+    if(selectedInfo)onSelect(selectedInfo.team.sessionId,selectedInfo.agent.id)
+    setStationSelection({sessionId,kind})
+  }
+  const revealAgent=(key:string)=>{
+    const target=officeRevealTarget({...visualScene,actors:allDisplayed},key)
+    if(!target)return false
+    autoPeek.current=null;setPeekId(target.peekId)
+    if(target.peekId)lastDoor.current=[...(viewport.current?.querySelectorAll<HTMLButtonElement>('.of-annex-door')??[])].find(button=>button.dataset.annexId===target.peekId)??null
+    // Let the selected panel measure its clearance before revealing a low floor.
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      const view=viewport.current
+      if(!view?.isConnected)return
+      const building=view.querySelector<HTMLElement>('.of-building'),scale=(building?.clientWidth??view.clientWidth)/visualScene.width
+      const panel=view.parentElement?.querySelector<HTMLElement>('.of-inspector')
+      const uncovered=panel?Math.max(80,Math.min(view.clientHeight,panel.getBoundingClientRect().top-view.getBoundingClientRect().top-12)):view.clientHeight
+      const reduce=window.matchMedia?.('(prefers-reduced-motion: reduce)').matches??false
+      view.scrollTo({top:Math.max(0,target.y*scale-uncovered*.5),behavior:enabled&&!reduce?'smooth':'instant'})
+    }))
+    return true
+  }
+  const locateSelected=()=>{
+    if(!selectedInfo||!selectedKey)return
+    discovery.dismiss()
+    if(!revealAgent(selectedKey))onOpenTeam(selectedInfo.team.sessionId,selectedInfo.agent.id)
+  }
+  const nextAttention=()=>{
+    const target=officeNextAttention(snapshots,attentionCursor.current)
+    if(!target)return
+    attentionCursor.current=target.key
+    if(revealAgent(target.key))inspectAgent(target.sessionId,target.agentId)
+    else onOpenTeam(target.sessionId,target.agentId)
+  }
+  const showTips=()=>{
+    setStationSelection(null)
+    if(selectedInfo)onSelect(selectedInfo.team.sessionId,selectedInfo.agent.id)
+    discovery.show()
+  }
 
   return (
-    <section className="of-view" data-motion={enabled} data-daily-guests={daily.current!.guests.size} data-canteen-open={daily.current!.canteenOpen} data-season={sky.season} data-holiday={sky.holiday??undefined} aria-label="Agent Office">
+    <section className="of-view" data-motion={enabled} data-discover={discovery.open} data-daily-guests={daily.current!.guests.size} data-canteen-open={daily.current!.canteenOpen} data-season={sky.season} data-holiday={sky.holiday??undefined} aria-label="Agent Office">
       <div className="of-toolbar">
-        <span className="of-counts">{working} working{needsYou > 0 && <strong className="of-waiting"> · {needsYou} need you</strong>}</span>
+        <span className="of-counts">{working} working{needsYou > 0 && <button type="button" className="of-attention" aria-label="Go to next agent who needs you" title="ไปหาคนถัดไปที่รอคุณ" onClick={nextAttention}>{needsYou} need you ↗</button>}</span>
         <span className="of-link" data-tone={connection?.tone ?? (live ? 'ok' : 'warn')} title={connection?.detail} role="status">{connection?.label ?? (live ? 'Connected' : 'Reconnecting')}</span>
         <time dateTime={new Date(now).toISOString()} title={`${ambient.name} · ${sky.label} · simulated weather · local time`}><span aria-hidden="true">{officeSkyIcon(sky)}</span> {new Date(now).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}</time>
+        {selectedInfo&&<button type="button" aria-label="Locate selected agent" title="ไปหาคนที่เลือก" onClick={locateSelected}>⌖</button>}
+        <button type="button" aria-label="Show Office tips" title="วิธีใช้ Office" aria-expanded={discovery.open} onClick={showTips}>?</button>
         <button type="button" aria-label={paused ? 'Resume Office motion' : 'Pause Office motion'} aria-pressed={paused} disabled={animationMode === 'off'}
           onClick={() => setPaused(value => !value)}
           title={animationMode === 'off' ? 'Effects off in Animation settings' : paused ? 'Resume Office motion' : 'Pause Office motion'}>
@@ -541,7 +610,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
 
       </div>
 
-      <div className="of-scroll" ref={viewport}>
+      <div className="of-scroll" ref={viewport} tabIndex={-1} style={{paddingBottom:inspectedFloor&&stationSelection||selectedInfo?inspectorHeight:0,boxSizing:'border-box'}}>
         {snapshots.length === 0 ? <p className="of-empty">Your teams will appear here.</p> : (
           <div className="of-building" style={{ width:'100%', maxWidth:900, aspectRatio:`${visualScene.width} / ${visualScene.height}` } as CSSProperties}>
             <canvas ref={skyCanvas} aria-hidden="true" style={{height:`${(visualScene.floors.find(f=>f.kind==='lounge')?.height??0)/visualScene.height*100}%`,zIndex:0}} />
@@ -556,7 +625,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
               return <button key={`${floor.id}-${station.kind}`} type="button" className="of-workbench" data-kind={station.kind} data-active={users.length>0}
                 aria-label={`${OFFICE_STATION_NAMES[station.kind]}, ${floor.title}, ${users.length} working`}
                 tabIndex={peekFloor?.sessionId===floor.sessionId?-1:0}
-                onClick={()=>floor.sessionId&&setStationSelection({sessionId:floor.sessionId,kind:station.kind})}
+                onClick={()=>floor.sessionId&&inspectStation(floor.sessionId,station.kind)}
                 style={{left:`${(station.x-station.width/2)/visualScene.width*100}%`,top:`${(station.y-station.height*.88)/visualScene.height*100}%`,width:`${station.width/visualScene.width*100}%`,height:`${station.height/visualScene.height*100}%`,'--station-accent':floor.color} as CSSProperties}>
                 <span>{OFFICE_STATION_NAMES[station.kind]}{users.length>0&&<b> · {users.length}</b>}</span>
                 {users.length>0&&<i aria-hidden="true"/>}
@@ -580,7 +649,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
                 </div>
                 <ul aria-hidden="true">{board.items.map((item, index) => <li key={index} data-state={item.state}><b>{BOARD_MARKS[item.state]}</b>{item.label}</li>)}</ul>
                 </div>
-                <button type="button" className="of-board-hit" tabIndex={peekFloor?.sessionId===floor.sessionId?-1:0} aria-label={`Inspect planning board, ${floor.title}`} onClick={()=>floor.sessionId&&setStationSelection({sessionId:floor.sessionId,kind:'planning'})}/>
+                <button type="button" className="of-board-hit" tabIndex={peekFloor?.sessionId===floor.sessionId?-1:0} aria-label={`Inspect planning board, ${floor.title}`} onClick={()=>floor.sessionId&&inspectStation(floor.sessionId,'planning')}/>
               </div>
             })}
             <canvas ref={canvas} role="img" aria-label={`Office with ${displayed.filter(a=>!a.hidden).length} visible agents from ${snapshots.length} T3 teams. Choose an agent for details.`} />
@@ -607,7 +676,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
               if(!door||!bounds||!parent||parent.constructing)return null
               const count=floor.actorKeys.length
               const transit=Boolean(moving&&active.current?.event.kind!=='activity'&&moving.actor.sessionId===floor.sessionId&&(moving.actor.floorId===floor.id||active.current?.actor.floorId===floor.id))
-              return <button type="button" className="of-annex-door" data-transit={transit} key={`door-${floor.id}`} aria-label={`Open break room, ${parent.title}, ${count} resting`} aria-expanded={peekId===floor.id}
+              return <button type="button" className="of-annex-door" data-annex-id={floor.id} data-transit={transit} key={`door-${floor.id}`} aria-label={`Open break room, ${parent.title}, ${count} resting`} aria-expanded={peekId===floor.id}
                 tabIndex={peekId===floor.id?-1:0}
                 style={{left:`${bounds.x/visualScene.width*100}%`,top:`${bounds.y/visualScene.height*100}%`,width:`${bounds.width/visualScene.width*100}%`,height:`${bounds.height/visualScene.height*100}%`}}
                 onClick={event=>{lastDoor.current=event.currentTarget;autoPeek.current=null;setPeekId(floor.id)}}><span>☕ {count}{transit?' ↳':''}</span></button>
@@ -633,13 +702,13 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
                 aria-pressed={selectedKey===actor.key} aria-label={`${actor.agent.name}, ${role}, ${ai}${team ? `, team ${team.title}` : ''}, ${actor.activity}, ${officeActorLocation(actor,visualScene)}`}
                 style={{left:`${(actor.x-22)/visualScene.width*100}%`,top:`${(actor.y-72)/visualScene.height*100}%`,width:`${44/visualScene.width*100}%`,height:`${75/visualScene.height*100}%`,opacity:actor.pose?.opacity}}
                 onMouseEnter={()=>setInspectedKey(actor.key)} onMouseLeave={()=>setInspectedKey(null)} onFocus={()=>setInspectedKey(actor.key)} onBlur={()=>setInspectedKey(null)}
-                onClick={()=>onSelect(actor.sessionId,actor.agent.id)}>
+                onClick={()=>inspectAgent(actor.sessionId,actor.agent.id)}>
                 {actor.zone==='desk' && (!walking || waiting || actor.agent.status==='failed') && <span className="of-bubble" aria-hidden="true">{bubble}</span>}
                 {/* Always-visible name tag: team colour stripe, gold for leads. The AI logo is on the shirt. */}
                 <span className="of-tag" aria-hidden="true" data-lead={role!=='Agent'} data-zone={actor.zone} data-failed={actor.agent.status==='failed'} style={{ '--team': team?.color ?? '#a88b70', maxWidth:`calc(${(tagRoom.get(actor.key) ?? 99) / 44 * 100}% - 4px)` } as CSSProperties}>
                   {actor.agent.status==='failed' && <b className="of-tag-failed">✕</b>}{role!=='Agent' && <b>{role==='Lead' ? '♛' : '♜'}</b>}{actor.agent.name}
                 </span>
-                <span className="of-card" aria-hidden="true" data-visible={inspectedKey===actor.key||selectedKey===actor.key}>
+                <span className="of-card" aria-hidden="true" data-visible={inspectedKey===actor.key&&selectedKey!==actor.key}>
                   <strong>{actor.agent.name}</strong>
                   <span>{role} · {ai}</span>
                   {team && <span className="of-card-team"><i style={{ background:team.color }} />{team.title}</span>}
@@ -648,19 +717,32 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
               </button>
             })}
             {peekFloor&&<OfficeBreakPeek floor={peekFloor} focusOnOpen={!autoPeek.current} width={visualScene.width} buildingHeight={visualScene.height} actors={allDisplayed.filter(a=>a.floorId===peekFloor.id)} canvasRef={peekCanvas} now={now} selectedKey={selectedKey}
-              onClose={closePeek} onSelect={onSelect} onOpenTeam={onOpenTeam} onObject={object=>visitObject(peekFloor,object)} agentRef={agentRef}/>}
+              onClose={closePeek} onSelect={inspectAgent} onOpenTeam={onOpenTeam} onObject={object=>visitObject(peekFloor,object)} agentRef={agentRef}/>}
             {moving?.station && <div className="of-work-station" aria-hidden="true" style={{left:`${moving.actor.x/visualScene.width*100}%`,top:`${(moving.actor.y-82)/visualScene.height*100}%`}}>{OFFICE_STATION_LABELS[moving.station]}</div>}
           </div>
         )}
       </div>
+      <OfficeDiscoveryTip open={discovery.open} onDismiss={discovery.dismiss}/>
       <div className="of-live-caption" role="status" aria-live="polite" title={captionMovement?`${captionMovement.actor.agent.name} ${captionMovement.caption}`:undefined}>
         {captionMovement?<><strong>{captionMovement.actor.agent.name}</strong><span>{captionMovement.caption}</span></>:<span aria-hidden="true">&nbsp;</span>}
       </div>
-      {inspectedFloor&&stationSelection&&<aside className="of-station-panel" aria-label={`${OFFICE_STATION_NAMES[stationSelection.kind]} station details`}>
-        <button type="button" className="of-station-close" aria-label="Close station details" onClick={()=>setStationSelection(null)}>×</button>
-        <strong>{OFFICE_STATION_NAMES[stationSelection.kind]}</strong><small>{inspectedFloor.title}</small>
-        {stationPeople.length?stationPeople.map(actor=><button key={actor.key} type="button" onClick={()=>onSelect(actor.sessionId,actor.agent.id)}><b>{actor.agent.name}</b><span>{actor.activity}</span></button>):<p>No agent is using this station.</p>}
-      </aside>}
+      {inspectedFloor&&stationSelection?<OfficeInspector key={`station-${inspectedFloor.id}-${stationSelection.kind}`} title={OFFICE_STATION_NAMES[stationSelection.kind]} onClose={closeInspector} onHeight={setInspectorHeight} autoFocus={focusInspector.current} onAutoFocus={inspectorFocused}>
+        <p className="of-inspector-team">{inspectedFloor.title}</p>
+        {selectedBoard&&<section aria-label="Full planning board"><h3>{selectedBoard.goal}</h3><p>{selectedBoard.done}/{selectedBoard.total} tasks done</p><ul>{selectedBoard.items.map((item,index)=><li key={index}><b>{BOARD_STATES[item.state]}</b> · {item.label}</li>)}</ul></section>}
+        {stationPeople.length?stationPeople.map(actor=><button key={actor.key} type="button" onClick={()=>inspectAgent(actor.sessionId,actor.agent.id)}><b>{actor.agent.name}</b><span>{actor.activity}</span></button>):<p>No agent is using this station.</p>}
+        <button type="button" onClick={()=>onOpenTeam(inspectedFloor.sessionId!,null)}>เปิดทีมใน Board ↗</button>
+      </OfficeInspector>:selectedInfo&&<OfficeInspector key={`agent-${selectedKey}`} title="รายละเอียดเอเจนต์" onClose={closeInspector} onHeight={setInspectorHeight} autoFocus={focusInspector.current} onAutoFocus={inspectorFocused}>
+        <h3>{selectedInfo.agent.name}</h3><p className="of-inspector-team">{selectedInfo.team.title}</p>
+        <dl><dt>บทบาท</dt><dd>{selectedInfo.agent.role==='lead'?'Lead':'Worker'}</dd><dt>AI / Model</dt><dd>{[selectedActor?.runtimeName??selectedInfo.agent.runtime,selectedInfo.agent.model].filter(Boolean).join(' · ')||'Not reported'}</dd>
+          <dt>สถานะงาน</dt><dd>{!live?'Last known: ':''}{STATUS_LABEL[selectedInfo.agent.status]}</dd>
+          {selectedInfo.agent.requestKind&&<><dt>ชนิดคำขอ</dt><dd>{selectedInfo.agent.requestKind}</dd></>}
+          <dt>งาน</dt><dd>{selectedInfo.task?.name||selectedInfo.assignment||'No task reported'}</dd>
+          {selectedActor&&<><dt>ในฉาก</dt><dd>{selectedActor.activity} · {officeActorLocation(selectedActor,visualScene)}</dd></>}
+        </dl>
+        {selectedInfo.assignment&&selectedInfo.task?.name&&selectedInfo.task.name!==selectedInfo.assignment&&<details><summary>รายละเอียดงานเต็ม</summary><p>{selectedInfo.assignment}</p></details>}
+        {selectedInfo.task?.result&&<details><summary>ผลลัพธ์ล่าสุด</summary><p>{selectedInfo.task.result}</p></details>}
+        <button type="button" onClick={()=>onOpenTeam(selectedInfo.team.sessionId,selectedInfo.agent.id)}>เปิดทีมใน Board ↗</button>
+      </OfficeInspector>}
     </section>
   )
 }

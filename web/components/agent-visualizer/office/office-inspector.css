@@ -1,0 +1,24 @@
+/* Bounded reading surface preserves the scene and leaves the composer outside. */
+.of-view .of-toolbar{gap:4px}
+.of-view .of-link{max-width:74px}
+.of-view .of-counts{display:flex;align-items:center;gap:5px}
+.of-view .of-toolbar .of-attention{width:auto;flex:none;max-width:100px;height:25px;padding:2px 5px;border-color:#bc985d;background:#60472b;color:#ffe0a0;font:inherit;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.of-view .of-inspector{position:absolute;left:9px;right:9px;bottom:36px;max-height:43%;min-height:0;display:flex;flex-direction:column;box-sizing:border-box;border:1px solid #b99a62;border-radius:10px;background:#1c302df5;color:#fff0d6;box-shadow:0 5px 20px #15120a80;z-index:10;font:12px/1.5 "Segoe UI",system-ui,sans-serif;text-align:left}
+.of-inspector>header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex:none;padding:7px 10px;border-bottom:1px solid #b99a6244}
+.of-inspector>header>strong{font-size:11px;color:#e2d0a8}
+.of-view .of-inspector>header>button{width:30px;height:30px;flex:none;padding:0;border:1px solid #99845d;border-radius:6px;background:transparent;color:#ffedc9;font-size:21px;cursor:pointer}
+.of-inspector-content{min-height:0;overflow:auto;padding:9px 12px 12px;scrollbar-width:thin;scrollbar-color:#b99a62 #243b32;overscroll-behavior:contain;overflow-wrap:anywhere;white-space:normal}
+.of-inspector-content h3{font-size:14px;line-height:1.5;margin:0 0 5px;word-break:normal}
+.of-inspector-content p{margin:5px 0;white-space:pre-wrap}
+.of-inspector-team{color:#cccfb2;font-size:11px}
+.of-inspector-content dl{display:grid;grid-template-columns:65px minmax(0,1fr);gap:6px 9px;margin:10px 0}
+.of-inspector-content dt{color:#d0bd96;font-size:11px}
+.of-inspector-content dd{margin:0;min-width:0}
+.of-inspector-content details{margin:9px 0;padding:7px;border:1px solid #81906a66;border-radius:6px}
+.of-inspector-content summary{cursor:pointer;color:#ffe3b0}
+.of-inspector-content ul{margin:8px 0;padding-left:20px}
+.of-inspector-content li{margin:6px 0}
+.of-view .of-inspector-content>button{display:block;box-sizing:border-box;width:100%;margin-top:8px;padding:8px;border:1px solid #828768;border-radius:6px;background:#324c3d;color:#fff2db;text-align:left;font:inherit;cursor:pointer}
+.of-inspector-content>button>b,.of-inspector-content>button>span{display:block}
+.of-inspector-content>button>span{font-size:11px;color:#d5d9c6}
+.of-inspector button:focus-visible,.of-inspector summary:focus-visible{outline:2px solid #ffe3a6;outline-offset:2px}

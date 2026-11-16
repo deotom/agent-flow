@@ -381,7 +381,7 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
 
       {!office && view && <AttentionPanel items={view.attention} onOpen={select} onDismiss={dismiss} limit={widget ? 1 : 3} />}
 
-      <main className="jv-main" data-detail={selectedExists}>
+      <main className="jv-main" data-detail={selectedExists&&!office}>
         {office ? <OfficeView snapshots={officeSnapshots} scope={scope} selectedKey={officeSelection ? officeKey(officeSelection.sessionId, officeSelection.agentId) : null}
           onSelect={(sessionId, agentId) => setOfficeSelection(previous => previous?.sessionId === sessionId && previous.agentId === agentId ? null : { sessionId, agentId })}
           onOpenTeam={(sessionId, agentId) => { selections.current.set(sessionId, agentId); setSelectedAgentId(agentId); onSelectSession(sessionId); onPane('board') }}
@@ -400,9 +400,9 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
             ) : <EmptyState connection={connection} hasSessions={sessions.length > 0} />}
           </div>
         )}
-        {selectedExists && detailSnapshot && <DetailPanel snapshot={detailSnapshot} agentId={detailAgentId!} live={live} now={now}
-          onSelect={office ? id => setOfficeSelection({ sessionId: detailSnapshot.sessionId, agentId: id }) : select}
-          onClose={() => office ? setOfficeSelection(null) : select(null)} />}
+        {!office && selectedExists && detailSnapshot && <DetailPanel snapshot={detailSnapshot} agentId={detailAgentId!} live={live} now={now}
+          onSelect={select}
+          onClose={() => select(null)} />}
       </main>
 
       {promptBar}

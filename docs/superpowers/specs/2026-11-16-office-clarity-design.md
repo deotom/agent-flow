@@ -1,0 +1,10 @@
+# Office clarity and discoverability
+
+User approved the proposed next batch (items1–3) with “ok จัดไป”. Preserve the saturated painted underground scene, current camera, characters, room/lift/motion ownership and quiet-team hiding.
+
+- Readability: selecting a public or private-room agent opens a compact fixed detail panel within Office, with wrapping full name, team, role, runtime/model, true source status/task and current visual activity. No hover-only information. Planning-board inspection exposes full goal and task labels. Explicit Open team action preserves Board navigation.
+- Navigation: the existing needs-you count becomes a button that cycles current visible waiting agents in stable order, selects them and reveals their actual room without automatic camera following. A Locate selected button returns to the current selected actor. Private actors open the matching annex; public actors close the peek. Smooth scrolling only when motion is enabled and OS reduced motion is absent; no scrolling on ordinary snapshot updates. Invisible/history-only actors use an explicit Board fallback, never create physical rooms merely to locate them.
+- Discoverability: a dismissible first-visit nonmodal tip explains agent, board, station and rest-door clicks. A small help button replays it. Brief one-shot highlights reveal interactive objects; pause/effects-off/reduced-motion use static outlines. No persistent glow or sound, no focus theft, no gameplay/progress pressure.
+- Narrow369px layout: fixed panels wrap content and scroll internally; they do not cover the composer or resize/reorder the building. Escape and Close dismiss panels and restore the initiating control where possible. A single detail surface is active at once.
+
+Verification: pure tests for waiting order, selection details and actual-floor navigation; render/native checks for long Thai names, keyboard close/focus, no overflow, private/public navigation, tip dismissal/replay and reduced motion. Claude detailed review before local commit, package and reopen. No push.

@@ -40,6 +40,24 @@ it('keeps cross-session selection and accessible display names without developer
   assert.ok(!/Decorative|Work paths|Greet the|\/root\//.test(html))
   assert.ok(html.includes('of-art-surface')&&html.includes('of-art-bottom'))
 })
+it('offers full selected-agent reading and attention navigation without a full-screen overlay',()=>{
+ const source=team('read','ชื่อหัวหน้าทีมที่ยาวมากและต้องแสดงได้ครบทุกตัวอักษร')
+ source.agents[0].status='waiting_input';source.agents[0].task='รายละเอียดงานทั้งหมดที่ไม่ควรถูกตัดกลางคำ'
+ const html=renderToStaticMarkup(<OfficeView {...props} snapshots={[source]} selectedKey={officeKey('read','lead')}/>)
+ assert.ok(html.includes('class="of-inspector"'))
+ assert.ok(html.includes(source.agents[0].task!))
+ assert.ok(html.includes('aria-label="Go to next agent who needs you"'))
+ assert.ok(html.includes('aria-label="Locate selected agent"'))
+ assert.ok(html.includes('aria-label="Show Office tips"'))
+})
+it('retains request kind and deliberately expandable results with an empty-name task fallback',()=>{
+ const source=team('read','Reader');source.agents[0].status='waiting_input';source.agents[0].requestKind='confirmation';source.agents[0].task='รายละเอียดสำรองเมื่อชื่องานว่าง'
+ source.tasks=[{id:'task',childId:'lead',parentId:'root',name:'',model:null,task:source.agents[0].task,result:'ผลลัพธ์ที่ผู้ใช้ต้องกดขยายอ่าน',status:'done',delivery:'received',startedAt:1,completedAt:2,updatedAt:2}]
+ const html=renderToStaticMarkup(<OfficeView {...props} snapshots={[source]} selectedKey={officeKey('read','lead')}/>)
+ assert.ok(html.includes('ชนิดคำขอ')&&html.includes('confirmation'))
+ assert.ok(html.includes('ผลลัพธ์ล่าสุด')&&html.includes(source.tasks[0].result!))
+ assert.equal(html.split(source.agents[0].task!).length-1,1,'assignment fallback is shown once')
+})
 it('provides an expandable quiet strip and a calm empty view',()=>{
   const quiet=team('a','At home');quiet.agents[0].status='idle'
   const html=renderToStaticMarkup(<OfficeView {...props} snapshots={[quiet]}/>)

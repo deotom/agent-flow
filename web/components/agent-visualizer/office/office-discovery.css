@@ -1,0 +1,11 @@
+.of-view .of-discovery-tip{flex:0 0 auto;display:flex;align-items:flex-start;gap:8px;min-width:0;max-height:132px;overflow:auto;box-sizing:border-box;padding:8px 10px;border-top:1px solid #ab8857;background:#fff0cf;color:#493525;font:11px/1.55 "Segoe UI",system-ui,sans-serif}
+.of-view .of-discovery-tip>div{flex:1;min-width:0;overflow-wrap:anywhere}
+.of-view .of-discovery-tip strong{font-weight:650}
+.of-view .of-discovery-tip p{margin:2px 0 0;color:inherit}
+.of-view .of-discovery-tip>button{flex:0 0 28px;min-width:28px;min-height:28px;padding:0;border:1px solid #a78757;border-radius:5px;background:#f5dfb6;color:#493525;font:20px/26px "Segoe UI",system-ui,sans-serif;cursor:pointer}
+.of-view .of-discovery-tip>button:focus-visible{outline:2px solid #493525;outline-offset:2px}
+.of-view[data-discover="true"] :is(.of-workbench,.of-board-hit,.of-annex-door,.of-object-hit){outline:1px solid #ffe4a8;outline-offset:2px;animation:of-discovery-cue 1.8s ease-out 1}
+.of-view[data-discover="true"] :is(.of-workbench,.of-board-hit,.of-annex-door,.of-object-hit):focus-visible{outline:2px solid #fff6c7;outline-offset:2px}
+@keyframes of-discovery-cue{0%{box-shadow:0 0 0 1px #ffe4a840}40%{box-shadow:0 0 8px 2px #ffe4a880}100%{box-shadow:0 0 0 0 #ffe4a800}}
+.of-view[data-motion="false"][data-discover="true"] :is(.of-workbench,.of-board-hit,.of-annex-door,.of-object-hit){animation:none}
+@media(prefers-reduced-motion:reduce){.of-view[data-discover="true"] :is(.of-workbench,.of-board-hit,.of-annex-door,.of-object-hit){animation:none}}
