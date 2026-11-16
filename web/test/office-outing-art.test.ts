@@ -48,11 +48,18 @@ it('hangs a collected parcel from the rendered palm when the traveler turns or b
 it('shows the original cart service cue only for an actual daytime garden snack stop',()=>{
  const stop=guest({phase:'eating'}),day=render([stop])
  assert.equal(day.length,1)
- assert.equal(render([guest({phase:'outbound'})]).length,0)
- assert.equal(render([guest({phase:'relocating'})]).length,0)
+ assert.equal(render([guest({phase:'outbound',collected:false})]).length,0)
+ assert.equal(render([guest({phase:'relocating',collected:false})]).length,0)
  assert.equal(render([guest({phase:'eating',floorId:'home',y:400})]).length,0)
  assert.equal(render([guest({phase:'eating',night:true})]).length,0)
  assert.equal(render([stop,{...stop,actorKey:'second',x:190}]).length,1,'one shared cart cue, no duplicated stall')
+})
+it('keeps a purchased bag in hand on the way to a seat and suppresses the duplicate during handoff',()=>{
+ for(const phase of ['outbound','relocating','returning'] as const){
+  assert.equal(render([guest({phase,collected:true})]).length,1)
+  assert.equal(render([guest({phase,collected:true,handoff:true})]).length,0)
+  assert.equal(render([guest({phase,collected:false})]).length,0)
+ }
 })
 it('night drinks use a tiny indoor thermos, while stretching and stars add no open shop',()=>{
  assert.equal(render([guest({action:'drink',phase:'eating',night:true,floorId:'home',y:400})]).length,1)

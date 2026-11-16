@@ -4,7 +4,7 @@ import { officeDoorBounds, officeInteriorDoor } from '../../../lib/office-naviga
 type Ctx = CanvasRenderingContext2D
 
 /** The doorway is shared by main-room travel and the private cutaway view. */
-export function drawOfficeInteriorDoors(c: Ctx, scene: OfficeScene, activeDoorFloorId: string | null = null, art?:OfficeArchitectureArt|null) {
+export function drawOfficeInteriorDoors(c: Ctx, scene: OfficeScene, activeDoorFloorId: string | null = null, art?:OfficeArchitectureArt|null,transitDoorIds:ReadonlySet<string>=new Set()) {
   const scale = scene.width / 450
   const doors = scene.floors.filter(floor => floor.annexOf
     ? !scene.floors.some(parent => parent.id === floor.annexOf)
@@ -13,7 +13,7 @@ export function drawOfficeInteriorDoors(c: Ctx, scene: OfficeScene, activeDoorFl
     const height = floor.height ?? 0
     if (floor.constructing || height < 60 * scale) continue
     const annex = scene.floors.find(item => item.annexOf === floor.id)
-    const open = activeDoorFloorId === floor.id || activeDoorFloorId === annex?.id || activeDoorFloorId === floor.annexOf
+    const open = activeDoorFloorId === floor.id || activeDoorFloorId === annex?.id || activeDoorFloorId === floor.annexOf || transitDoorIds.has(floor.id) || !!annex&&transitDoorIds.has(annex.id)
     const point=officeInteriorDoor(scene,floor.id),bounds=officeDoorBounds(scene,floor.id)
     if(!point||!bounds)continue
     c.save()

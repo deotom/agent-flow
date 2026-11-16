@@ -109,6 +109,8 @@ it('still collects the snack when a party takes the reserved seat before the car
  assert.ok(pickup>=0,'the relocated journey retains the actual cart stop')
  const pickupAt=g.trip!.startedAt+g.trip!.segments.slice(0,pickup).reduce((sum,s)=>sum+s.duration,0)+700
  runtime.step({...input(runtime,pickupAt,source),lift})
+ assert.equal(g.outing!.collected,false,'the bag belongs to the clerk until the pickup hold finishes')
+ runtime.step({...input(runtime,pickupAt+701,source),lift})
  assert.equal(g.outing!.collected,true)
 })
 it('finds the next real sharing peer when an earlier returner is only putting snacks away',()=>{

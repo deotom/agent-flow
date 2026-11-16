@@ -9,6 +9,7 @@ import {skyWeather,type Weather} from './office-sky'
 import {emptyOfficeOutingSchedule,planOfficeRestOutings,markOfficeRestOutingAdmission,type OfficeOutingAction} from './office-rest-outings'
 import {createOfficeOutingTrip,officeOutingVendorPoint} from './office-outing-trips'
 import {officeDaylight} from './office-daylight'
+import {officeVendorPickupProgress,officeVendorPickupFinished} from './office-vendor'
 
 export type OfficeDailyPhase='outbound'|'eating'|'relocating'|'returning'
 export interface OfficeDailyRuntimeGuest extends Omit<OfficeDailyInvitation,'kind'> {
@@ -80,7 +81,7 @@ export class OfficeDailyRuntime {
 
  art(date:Date,scene:OfficeScene,at:number){
   const window=officeDailyWindow(date),actors=this.actors(scene,at)
-  return {kind:window.kind,delivery:window.delivery,cleanup:window.cleanup,guests:[...this.guests.values()].map(g=>{const actor=actors.find(a=>a.key===g.actorKey)!;return {actorKey:g.actorKey,kind:g.kind,phase:g.phase,floorId:actor.floorId,x:actor.x,y:actor.y,seat:g.seat,action:g.outing?.action,collected:g.outing?.collected,night:g.outing?g.outing.night||officeDaylight(date).night:undefined}})}
+  return {kind:window.kind,delivery:window.delivery,cleanup:window.cleanup,guests:[...this.guests.values()].map(g=>{const actor=actors.find(a=>a.key===g.actorKey)!;return {actorKey:g.actorKey,kind:g.kind,phase:g.phase,floorId:actor.floorId,x:actor.x,y:actor.y,seat:g.seat,action:g.outing?.action,collected:g.outing?.collected,pickupProgress:g.outing?.action==='snack'?(officeVendorPickupProgress(scene,g.trip,at)??undefined):undefined,night:g.outing?g.outing.night||officeDaylight(date).night:undefined}})}
  }
 
  sharingPeer(scene:OfficeScene,at:number,actors:readonly OfficeActor[]=scene.actors):string|null {
@@ -153,7 +154,7 @@ export class OfficeDailyRuntime {
     const frame=officeTripFrame(g.trip,at)
     g.physical={...g.physical,...frame.point,floorId:frame.floorId??g.physical.floorId,pose:frame.pose}
     const vendor=g.outing?.action==='snack'&&(g.phase==='outbound'||g.phase==='relocating')?officeOutingVendorPoint(geometry):null
-    if(vendor&&frame.floorId===vendor.floorId&&!frame.pose.inLift&&Math.hypot(frame.point.x-vendor.x,frame.point.y-vendor.y)<2*source.width/450)g.outing!.collected=true
+    if(vendor&&!wet&&!officeDaylight(date).night&&!g.returnNeeded&&officeVendorPickupFinished(geometry,g.trip,at))g.outing!.collected=true
     if(!frame.done)continue // A passenger clears the shared car before changing plans.
     if(g.phase==='returning'){
      const latest=geometry.actors.find(a=>a.key===g.actorKey&&!a.hidden)

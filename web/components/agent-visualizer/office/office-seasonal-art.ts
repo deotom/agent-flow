@@ -79,6 +79,22 @@ const palettes:Record<Holiday,readonly string[]>={
   'loy-krathong':['#d4a257','#be7650','#b7b77a'],halloween:['#c88843','#80708f','#abac67'],
   christmas:['#ad605d','#80a080','#d0b76f'],valentine:['#c87e98','#e9b3ac','#c5a4aa'],
 }
+const roomSeasonColors:Record<Season,readonly [string,string]>={
+  hot:['#b38a43','#478c83'],rainy:['#4d8590','#806780'],cool:['#aa794f','#688278'],
+}
+/** Thin edge details leave the project's wall paint, board and stations readable. */
+function seasonalRoomTrim(c:Ctx,width:number,y:number,height:number,season:Season,variant:number){
+  const colors=roomSeasonColors[season],left=width*.045,right=width*.85,top=y+height*.18
+  box(c,left,top,right-left,Math.max(1,height*.012),colors[variant%2])
+  // Short hanging fabric tabs sit at the wall edges, outside the central board.
+  for(const x of [left+width*.008,right-width*.022]){
+    const w=width*.014,h=height*.1
+    shape(c,[[x,top+3],[x+w,top+3],[x+w,top+h],[x+w/2,top+h-3],[x,top+h]],colors[(variant+1)%2])
+    if(season==='hot')line(c,[[x+1,top+6],[x+w-1,top+10]],'#d4b66b',1)
+    else if(season==='rainy')line(c,[[x+w/2,top+6],[x+w/2,top+h-5]],'#9db7ae',1)
+    else for(let i=0;i<3;i++)line(c,[[x+1,top+6+i*4],[x+w-1,top+7+i*4]],'#cead76',1)
+  }
+}
 function garland(c:Ctx,width:number,holiday:Holiday,variant:number,time:number){
   line(c,[[0,0],[width*.25,5],[width*.5,7],[width*.75,5],[width,0]],'#746245',.8)
   const colors=palettes[holiday]
@@ -95,8 +111,9 @@ export function drawOfficeSeasonalRooms(c:Ctx,scene:OfficeScene,date:Date,time:n
   const sky=officeSky(date),scale=scene.width/450
   for(const floor of rooms){
     const height=floor.height!,breakRoom=floor.kind==='break'
-    const variant=[...floor.id].reduce((sum,char)=>sum+char.charCodeAt(0),0)%3
+    const variant=[...(floor.annexOf??floor.id)].reduce((sum,char)=>sum+char.charCodeAt(0),0)%3
     c.save();c.beginPath();c.rect(scene.width*.025,floor.y+height*.17,scene.width*.85,height*(breakRoom?.64:.38));c.clip()
+    seasonalRoomTrim(c,scene.width,floor.y,height,sky.season,variant)
     // Wall shelves remain above agent routes and to either side of the planning board.
     c.save();c.translate(scene.width*(breakRoom?.12:.085),floor.y+height*(breakRoom?.74:.44));c.scale(scale,scale)
     shelf(c)

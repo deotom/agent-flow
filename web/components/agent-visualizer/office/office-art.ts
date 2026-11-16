@@ -8,10 +8,16 @@ import { drawOfficeInteriorDoors } from './office-door-art'
 import {drawOfficeDailyArt} from './office-daily-art'
 import {drawOfficeCommunications} from './office-communication-art'
 import {officeRestConversations} from '../../../lib/office-communication'
-import {drawOfficeOutingArt} from './office-outing-art'
+import {drawOfficeOutingArt,drawOfficeOutingParcel} from './office-outing-art'
 import {officeHandContacts} from '../../../lib/office-contacts'
 import {officeSharedRest} from '../../../lib/office-shared-rest'
 import {skyWeather} from '../../../lib/office-sky'
+import {officeAppearance} from '../../../lib/office-model'
+import {officeWardrobeTheme,officeWardrobeFor,type OfficeWardrobeLook} from '../../../lib/office-wardrobe'
+import {drawOfficeWardrobe} from './office-wardrobe-art'
+import {drawOfficeVendor} from './office-vendor-art'
+import {officeActorRenderScale} from '../../../lib/office-depth'
+import {officeVendorExchange} from '../../../lib/office-vendor'
 import type { OfficeActor, OfficeAppearance, OfficeDrawnOffset, OfficePaintOptions, OfficePose, OfficeScene, OfficeLeisureAction } from '../../../lib/office-types'
 import { officeLife, officeLifeCanChat, officeLifePairs, officeSeed, type OfficeLifePair, type OfficeMood } from '../../../lib/office-life'
 
@@ -32,7 +38,8 @@ function oval(c: Ctx, x:number,y:number,rx:number,ry:number,color:string,outline
 function round(c:Ctx,x:number,y:number,w:number,h:number,color:string,r=4){c.beginPath();c.roundRect(x,y,w,h,r);c.fillStyle=color;c.fill();c.strokeStyle='#4b3025';c.lineWidth=1.4;c.stroke()}
 
 /** Life poses layered on the base pose; all optional so callers can stay minimal. */
-export interface OfficeAvatarPose extends OfficePose { objectAction?:OfficeLeisureAction; stretch?: number; lean?: number; doze?: boolean; slump?: boolean; scratch?: boolean; wave?: boolean; turn?: number; cup?: boolean; face?: 1 | -1; hop?: number; runtime?: Runtime | null; party?: boolean }
+export interface OfficeAvatarPose extends OfficePose { wardrobe?:OfficeWardrobeLook;objectAction?:OfficeLeisureAction; stretch?: number; lean?: number; doze?: boolean; slump?: boolean; scratch?: boolean; wave?: boolean; turn?: number; cup?: boolean; face?: 1 | -1; hop?: number; runtime?: Runtime | null; party?: boolean }
+const shopkeeper:OfficeAppearance={...officeAppearance(0),slot:7001,kind:'human',hair:'#4d3329',skin:'#e6b18c',shirt:'#375e54',pants:'#5f4a36',gear:'cap',outfit:'overalls',cut:'crop',face:'round'}
 /** Micro-motion offsets for a pose at a given time; all zero when time is frozen at 0. */
 function idleMotion(time:number,p:OfficeAvatarPose){
   const r={lift:0,headX:0,headY:0,tilt:0,left:0,right:0,wave:0,sip:0}
@@ -139,6 +146,7 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
   c.save();c.translate(0,-m.lift+settleOffset)
   round(c,-14,-34,28,23,a.shirt,9)
   drawOutfit(c,a,Boolean(p.climb))
+  if(p.wardrobe)drawOfficeWardrobe(c,a,p.wardrobe,Boolean(back))
   const hands=officeHandContacts({...p,gait},p.scratch?{...m,wave:Math.sin(time*12)*2}:m)
   const {x:lx,y:ly}=hands.left,{x:rx,y:ry}=hands.right
   oval(c,(-13+lx)/2,(-28+ly)/2,5,9,a.shirt);oval(c,(13+rx)/2+1,(-28+ry)/2,5,9,a.shirt)
@@ -252,6 +260,7 @@ const pairsFor=(actors:readonly OfficeActor[])=>{let p=pairCache.get(actors);if(
 export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Map<string,OfficeDrawnOffset> {
   c.clearRect(0,0,scene.width,scene.height)
   const scale=scene.width/450,time=o.motion?o.time:0
+  const wardrobeTheme=officeWardrobeTheme(o.date),floorsById=new Map(scene.floors.map(floor=>[floor.id,floor]))
   drawOfficeSky(c,scene,time,o.date)
   drawOfficeGarden(c,scene,o.date,time)
   drawOfficeSeasonalRooms(c,{...scene,floors:scene.floors.filter(f=>!f.annexOf||!scene.floors.some(p=>p.id===f.annexOf))},o.date,time)
@@ -261,8 +270,16 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     c.fillStyle=`rgba(31,43,38,${.08+daylight.light*.06})`
     c.beginPath();c.ellipse(scene.width*(.14+daylight.shadow*.07),surface.height*.60,scene.width*(.06+Math.abs(daylight.shadow)*.09),surface.height*.022,daylight.shadow*.12,0,Math.PI*2);c.fill()
   }
+  const vendorExchange=officeVendorExchange(scene,o.date,o.dailyArt)
+  let vendorHand:{x:number;y:number;scale:number}|null=null
+  drawOfficeVendor(c,scene,o.date,time,staff=>{
+    c.save();c.translate(staff.x,staff.y);c.scale(staff.scale,staff.scale)
+    const hands=drawOfficeAvatar(c,shopkeeper,0,0,time,{face:staff.face,offer:staff.offer,wave:staff.pose==='serve',wardrobe:officeWardrobeFor(wardrobeTheme,shopkeeper.slot,true)})
+    vendorHand={x:staff.x+hands.right.x*staff.scale,y:staff.y+hands.right.y*staff.scale,scale:staff.scale}
+    c.restore()
+  },vendorExchange)
   drawOfficeShaft(c,scene,false,o.architectureArt,false,o.lift)
-  drawOfficeInteriorDoors(c,scene,o.openDoorFloorId,o.architectureArt)
+  drawOfficeInteriorDoors(c,scene,o.openDoorFloorId,o.architectureArt,o.transitDoorIds)
   const visible=scene.actors.filter(a=>!a.hidden),byKey=new Map(visible.map(a=>[a.key,a]))
   const exchange=o.exchange??null
   const busyKeys=new Set([o.tripKey,...(o.leisureKeys??[]),...(exchange?[exchange.senderKey,exchange.receiverKey]:[])].filter((key):key is string=>!!key))
@@ -301,19 +318,24 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
       c.fillStyle='#ecf8dc';for(let i=0;i<3;i++)c.fillRect(m.x-w*scale*.35,m.y+(-4+i*3)*scale,(4+((i+scroll)*5)%9)*scale,scale)
     }
     const t=time?time+phaseOf(actor.key):0
-    c.save();c.globalAlpha=(Number.isFinite(c.globalAlpha)?c.globalAlpha:1)*(actor.pose?.opacity??1);c.translate(actor.x+life.dx,actor.y);const carScale=actor.pose?.inLift?(.72+.28*(actor.pose.walk?Math.max(0,Math.min(1,(scene.width*.938-actor.x)/(28*scale))):0)):1;c.scale(scale*carScale,scale*carScale)
-    const contact=drawOfficeAvatar(c,actor.appearance,0,0,t,{sit:!moving&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving,hand:o.live&&waiting,
+    const actorScale=officeActorRenderScale(scene,actor)
+    c.save();c.globalAlpha=(Number.isFinite(c.globalAlpha)?c.globalAlpha:1)*(actor.pose?.opacity??1);c.translate(actor.x+life.dx,actor.y);c.scale(actorScale,actorScale)
+    const contact=drawOfficeAvatar(c,actor.appearance,0,0,t,{wardrobe:officeWardrobeFor(wardrobeTheme,actor.appearance.slot,floorsById.get(actor.floorId)?.kind==='lounge'),sit:!moving&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving,hand:o.live&&waiting,
       mug:actor.zone==='lounge'&&!moving&&(!life.objectAction||life.objectAction==='coffee'),objectAction:life.objectAction,lead:actor.agent.role==='lead'||actor.pod,cup:life.cup,stretch:life.stretch,lean:life.lean,doze:life.doze,
-      slump:life.slump,scratch:life.scratch,wave:life.wave||interaction?.speaking,turn:interaction?(interaction.speaking ? .25 : -.2):life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose,...sharedPoses.get(actor.key),...(interaction?{face:interaction.face}:{}),climb:false})
-    handFrames.set(actor.key,{x:actor.x+life.dx+contact.right.x*scale*carScale,y:actor.y+contact.right.y*scale*carScale})
+      slump:life.slump,scratch:life.scratch,wave:life.wave||interaction?.speaking,turn:interaction?(interaction.speaking ? .25 : -.2):life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose,...sharedPoses.get(actor.key),...(interaction?{face:interaction.face}:{}),...(vendorExchange?.actorKey===actor.key?{face:1 as const,offer:.8,mug:false,hand:false,typing:false,objectAction:undefined,sit:false}:{}),climb:false})
+    handFrames.set(actor.key,{x:actor.x+life.dx+contact.right.x*actorScale,y:actor.y+contact.right.y*actorScale})
     if(life.mood){c.translate(0,-life.hop);drawMood(c,life.mood,t)}
     c.restore()
-    offsets.set(actor.key,{dx:life.dx,dy:-life.hop*scale})
+    offsets.set(actor.key,{dx:life.dx,dy:-life.hop*actorScale,scale:actorScale/scale})
   }
   drawOfficeCommunications(c,scene,time,exchange,[...chats,...sharedChats])
+  if(vendorExchange&&vendorHand&&o.roomArt){
+    const recipient=scene.actors.find(a=>a.key===vendorExchange.actorKey),to=handFrames.get(vendorExchange.actorKey),from=vendorHand as {x:number;y:number;scale:number}
+    if(to&&recipient){const t=Math.max(0,Math.min(1,(vendorExchange.progress-.2)/.6)),p=t*t*(3-2*t),targetScale=officeActorRenderScale(scene,recipient),x=from.x+(to.x-from.x)*p,y=from.y+(to.y-from.y)*p-3*scale*Math.sin(p*Math.PI),width=12*from.scale+(13.5*targetScale-12*from.scale)*p,height=11*from.scale+(13.05*targetScale-11*from.scale)*p;drawOfficeOutingParcel(c,o.roomArt,x-width/2,y+from.scale+(1.35*targetScale-from.scale)*p,width,height)}
+  }
   drawOfficeOutingArt(c,scene,time,o.roomArt??null,(o.dailyArt?.guests??[]).flatMap(guest=>{
     const actor=scene.actors.find(a=>a.key===guest.actorKey)
-    return guest.kind==='outing'&&guest.action&&actor?[{actorKey:actor.key,action:guest.action,phase:guest.phase,floorId:actor.floorId,x:actor.x,y:actor.y,night:guest.night??false,collected:guest.collected??false,hand:handFrames.get(actor.key)}]:[]
+    return guest.kind==='outing'&&guest.action&&actor?[{actorKey:actor.key,action:guest.action,phase:guest.phase,floorId:actor.floorId,x:actor.x,y:actor.y,night:guest.night??false,collected:guest.collected??false,handoff:vendorExchange?.actorKey===actor.key,scale:officeActorRenderScale(scene,actor)/scale,hand:handFrames.get(actor.key)}]:[]
   }))
   drawOfficeShaft(c,scene,true,o.architectureArt,o.liftSurfaceOpen,o.lift)
   if(time)drawAmbient(c,scene,time,officeAmbient(o.date).night)

@@ -97,9 +97,10 @@ export interface OfficeDailyVisual {
   kind?:'coffee'|'lunch'|'tea'|null
   delivery:boolean
   cleanup:boolean
-  guests:readonly {actorKey:string;kind:'coffee'|'lunch'|'tea'|'outing';phase:'outbound'|'eating'|'relocating'|'returning';floorId:string;x:number;y:number;seat:number;action?:import('./office-rest-outings').OfficeOutingAction;night?:boolean;collected?:boolean}[]
+  guests:readonly {actorKey:string;kind:'coffee'|'lunch'|'tea'|'outing';phase:'outbound'|'eating'|'relocating'|'returning';floorId:string;x:number;y:number;seat:number;action?:import('./office-rest-outings').OfficeOutingAction;night?:boolean;collected?:boolean;pickupProgress?:number}[]
 }
 export interface OfficePaintOptions {
+  transitDoorIds?:ReadonlySet<string>
   sharedRest?:readonly import('./office-shared-rest').OfficeSharedRestPair[]
   cutawayFloor?:string
   exchange?:import('./office-communication').OfficeWorkExchange|null
@@ -125,4 +126,4 @@ export interface OfficePaintOptions {
   greetKey?: string | null
 }
 /** Where an actor's body is drawn this frame, relative to its seat (scene units). */
-export interface OfficeDrawnOffset { dx: number; dy: number }
+export interface OfficeDrawnOffset { dx: number; dy: number; scale?:number }

@@ -10,6 +10,8 @@ export interface OfficeOutingArtGuest {
  y:number
  night:boolean
  collected:boolean
+ handoff?:boolean
+ scale?:number
  hand?:{x:number;y:number}
 }
 type Ctx=CanvasRenderingContext2D
@@ -21,6 +23,8 @@ function detail(c:Ctx,art:OfficeRoomArt,part:'parcel'|'thermos',x:number,y:numbe
  const [sx,sy,w,h]=part==='parcel'?[.79,.37,.18,.18]:[.80,.14,.15,.25]
  c.drawImage(art.props,(2+sx)*sw,(1+sy)*sh,w*sw,h*sh,x,y,width,height)
 }
+
+export function drawOfficeOutingParcel(c:Ctx,art:OfficeRoomArt,x:number,y:number,width:number,height:number){detail(c,art,'parcel',x,y,width,height)}
 
 /**
  * Paint after avatars and before the foreground lift/doors. Frames are physical
@@ -38,13 +42,14 @@ export function drawOfficeOutingArt(c:Ctx,scene:OfficeScene,time:number,art:Offi
   // A stale guest or lift passenger must not leave a parcel floating over a car.
   if(!actor||actor.hidden||actor.pose?.inLift||!floor||!Number.isFinite(guest.x)||!Number.isFinite(guest.y))continue
   if(guest.x<w*.04||guest.x>w*.87||guest.y<floor.y||guest.y>floor.y+(floor.height??w*.5625)||guest.y>scene.height)continue
-  if(guest.action==='snack'&&guest.collected&&guest.phase==='returning'){
+  if(guest.action==='snack'&&guest.collected&&guest.phase!=='eating'&&!guest.handoff){
    // Tiny breathing follows motion time; zero is a completely frozen pose.
    const bob=Number.isFinite(time)&&time!==0?Math.sin(time*1.7)*w*.0006:0
    const hand=guest.hand
    if(hand&&(!Number.isFinite(hand.x)||!Number.isFinite(hand.y)))continue
-   const x=hand?hand.x-w*.015:guest.x+w*.018,y=hand?hand.y+w*.003:guest.y-w*.052+bob
-   if(y>=0&&x+w*.03<=w)detail(c,art,'parcel',x,y,w*.03,w*.029)
+   const depth=Number.isFinite(guest.scale)?Math.max(.5,Math.min(1.1,guest.scale!)):1
+   const x=hand?hand.x-w*.015*depth:guest.x+w*.018*depth,y=hand?hand.y+w*.003*depth:guest.y-w*.052*depth+bob
+   if(y>=0&&x+w*.03*depth<=w)detail(c,art,'parcel',x,y,w*.03*depth,w*.029*depth)
   }
   if(guest.action==='snack'&&guest.collected&&guest.phase==='eating'&&!guest.night&&floor.kind==='lounge'&&!cartServed){
    const h=floor.height??w*.5625

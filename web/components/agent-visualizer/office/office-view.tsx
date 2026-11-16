@@ -35,6 +35,8 @@ import {OfficeInspector} from './office-inspector'
 import {OfficeDiscoveryTip,useOfficeDiscovery} from './office-discovery'
 import {officeSharedRest} from '../../../lib/office-shared-rest'
 import {skyWeather} from '../../../lib/office-sky'
+import {officeDoorTraffic} from '../../../lib/office-door-traffic'
+import {officeVendorAllowsObject,officeVendorState} from '../../../lib/office-vendor'
 
 interface OfficeViewProps {
   snapshots: readonly TeamSnapshot[]
@@ -94,7 +96,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const [showQuiet, setShowQuiet] = useState(false)
   const [peekId,setPeekId] = useState<string|null>(null)
   const lastDoor=useRef<HTMLButtonElement|null>(null)
-  const closePeek=()=>{const automatic=Boolean(autoPeek.current);autoPeek.current=null;setPeekId(null);if(!automatic)requestAnimationFrame(()=>{if(lastDoor.current?.isConnected)lastDoor.current.focus()})}
+  const closePeek=()=>{const closingFocus=document.activeElement;setPeekId(null);requestAnimationFrame(()=>{if(document.activeElement!==document.body&&document.activeElement!==closingFocus)return;if(lastDoor.current?.isConnected)lastDoor.current.focus()})}
   const [stationSelection,setStationSelection]=useState<{sessionId:string;kind:OfficeWorkStation}|null>(null)
   const [inspectorHeight,setInspectorHeight]=useState(0)
   // The user's own pause choice persists across launches.
@@ -139,8 +141,6 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const reconnecting = useRef(false)
   const objectCue = useRef<{actorKey:string;kind:OfficeLeisureAction;until:number}|null>(null)
   const leadOrigins=useRef(new Map<string,OfficeActor>())
-  const autoPeek=useRef<{key:string;floorId:string}|null>(null)
-  const autoPeeked=useRef(new Set<string>())
   const leisureTrips = useRef(new Map<string,{trip:OfficeTrip;kind:OfficeLeisureAction}>())
   const leisureVisual = useRef(new Map<string,Moving>())
   const arrivalTrips = useRef(new Map<string,OfficeTrip>())
@@ -177,6 +177,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const greetCooldown = useRef(new Map<string, number>())
   const [inspectedKey, setInspectedKey] = useState<string | null>(null)
   const current = useRef({ scene: visualScene,target:layoutTarget,sourceScene:scene, selectedKey, pets, petEvent, enabled, live, peekId,architectureArt,roomArt,wallNow:now })
+  const doorTrips=()=>[active.current,...arrivalTrips.current.values(),...[...daily.current!.guests.values()].map(guest=>guest.trip)]
   current.current = { scene: visualScene,target:layoutTarget,sourceScene:scene, selectedKey, pets, petEvent, enabled, live, peekId,architectureArt,roomArt,wallNow:now }
   const createVisualTrip=(event:OfficeEvent,before:OfficeScene,next:OfficeScene,at:number)=>{
     const prior=officeSceneAtWorkPlaces(before,workPlaces.current),present=officeSceneAtWorkPlaces(next,workPlaces.current)
@@ -289,7 +290,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     const greeting = greet.current && greet.current.until > elapsed.current ? greet.current.key : sharingPeer
     const publicFloors=input.scene.floors.filter(f=>!f.annexOf)
     const publicIds=new Set(publicFloors.filter(f=>!f.constructing).map(f=>f.id))
-    const doorFloor=input.scene.floors.find(f=>f.annexOf&&movement&&f.sessionId===movement.actor.sessionId&&(()=>{const p=officeInteriorDoor(input.scene,f.id);return p&&Math.abs(p.x-movement.actor.x)<20*input.scene.width/450&&Math.abs(p.y-movement.actor.y)<35*input.scene.width/450})())
+    const transitDoorIds=officeDoorTraffic(input.scene,actors,doorTrips(),motionClock.current)
     const exchange=officeWorkExchange(active.current,{...input.scene,actors},motionClock.current)
     const leisureKeys=new Set([...leisureTrips.current.keys(),...arrivalTrips.current.keys(),...daily.current!.guests.keys()])
     const socialBusy=new Set([...leisureKeys,...(active.current?[active.current.actorKey]:[]),...(exchange?[exchange.senderKey,exchange.receiverKey]:[])])
@@ -298,7 +299,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     const options={ time: elapsed.current, date: new Date(input.wallNow), now: input.wallNow, dailyArt:daily.current!.art(new Date(input.wallNow),input.scene,motionClock.current), live: input.live,
       exchange,sharedRest,
       motion: input.enabled, pets: input.pets, petEvent: input.petEvent, selectedKey: input.selectedKey,
-      openDoorFloorId:input.peekId??doorFloor?.id??null,architectureArt:input.architectureArt,roomArt:input.roomArt,liftSurfaceOpen:false,lift:liftVisual,
+      openDoorFloorId:input.peekId,transitDoorIds,architectureArt:input.architectureArt,roomArt:input.roomArt,liftSurfaceOpen:false,lift:liftVisual,
       objectCue:objectCue.current&&objectCue.current.until>elapsed.current?objectCue.current:null,
       leisureKeys,
       tripKey: input.enabled ? active.current?.actorKey ?? null : null, greetKey: input.enabled ? greeting : null }
@@ -314,7 +315,8 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     if (!cssScale.current) cssScale.current = (element.clientWidth || input.scene.width) / input.scene.width
     for (const [key, button] of agentRefs.current) {
       const offset = offsets.get(key), k = cssScale.current
-      const value = offset && (offset.dx || offset.dy) ? `translate(${(offset.dx * k).toFixed(1)}px,${(offset.dy * k).toFixed(1)}px)` : ''
+      const value = offset ? `translate(${(offset.dx * k).toFixed(1)}px,${(offset.dy * k).toFixed(1)}px) scale(${(offset.scale??1).toFixed(4)})` : ''
+      button.style.transformOrigin='50% 96%'
       if (appliedTransforms.current.get(key) !== value) { button.style.transform = value; appliedTransforms.current.set(key, value) }
     }
   }
@@ -412,21 +414,6 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
       }})
       if(dailyBefore.count!==daily.current!.guests.size||dailyBefore.open!==daily.current!.canteenOpen)setDailyVersion(n=>n+1)
       for(const [key,origin] of daily.current!.completedOrigins)if(leadOrigins.current.has(key))leadOrigins.current.set(key,origin)
-      const privateWalker=daily.current!.actors(input.scene,motionClock.current).find(a=>{
-        const trip=daily.current!.guests.get(a.key)?.trip
-        return trip&&motionClock.current>=trip.startedAt&&!officeTripFrame(trip,motionClock.current).done&&a.pose?.walk&&input.scene.floors.some(f=>f.id===a.floorId&&f.annexOf)
-      })
-      if(autoPeek.current&&(!privateWalker||privateWalker.key!==autoPeek.current.key||privateWalker.floorId!==autoPeek.current.floorId)){
-        if(input.peekId===autoPeek.current.floorId)setPeekId(null)
-        autoPeek.current=null
-      }
-      if(privateWalker&&!input.peekId&&!autoPeek.current){
-        const id=daily.current!.guests.get(privateWalker.key)?.trip?.event.id
-        if(id&&!autoPeeked.current.has(id)){
-          autoPeeked.current.add(id);if(autoPeeked.current.size>64)autoPeeked.current.delete(autoPeeked.current.values().next().value!)
-          autoPeek.current={key:privateWalker.key,floorId:privateWalker.floorId};setPeekId(privateWalker.floorId)
-        }
-      }
       const ledger=JSON.stringify(daily.current!.ledger)
       if(ledger!==persistedDaily.current){persistedDaily.current=ledger;try{localStorage.setItem(OFFICE_DAILY_STORAGE,ledger)}catch{}}
       queue.current=queue.current.map(p=>(daily.current!.completedOrigins.has(p.event.actorKey)||Boolean(p.event.parentKey&&daily.current!.completedOrigins.has(p.event.parentKey)))?{...p,event:{...p.event,at:Date.now()}}:p)
@@ -525,6 +512,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const displayed=allDisplayed.filter(a=>publicIds.has(a.floorId))
   const peekFloor=visualScene.floors.find(f=>f.id===peekId&&f.annexOf)
   const visitObject=(floor:OfficeScene['floors'][number],object:{kind:OfficeLeisureAction;label:string;x:number;y:number})=>{
+    if(!officeVendorAllowsObject(new Date(current.current.wallNow),floor.kind,object.kind))return
     const playable={...current.current.scene,actors:current.current.scene.actors.filter(a=>a.key!==active.current?.actorKey&&!arrivalTrips.current.has(a.key)&&!daily.current!.guests.has(a.key))}
     const person=nearestLeisureActor(playable,floor,object)
     if(!person)return
@@ -536,6 +524,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const sky = officeSky(new Date(now))
   const seasonalActivity = officeSeasonalActivity(new Date(now))
   const daylight = officeDaylight(new Date(now))
+  const vendor=officeVendorState(new Date(now)),vendorLabel=vendor.open?'Garden shop open':vendor.wet&&!vendor.night?'Garden shop sheltered, service paused':'Garden shop closed'
   const working = snapshots.reduce((sum, team) => sum + team.agents.filter(agent => isWorking(agent.status)).length, 0)
   const needsYou = snapshots.reduce((sum, team) => sum + team.agents.filter(agent => agent.status.startsWith('waiting_')).length, 0)
   const lounge = visualScene.floors.find(floor => floor.kind === 'lounge')
@@ -545,6 +534,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const stationPeople=inspectedFloor&&stationSelection?officeStationUsers(scene,inspectedFloor,stationSelection.kind):[]
   const selectedInfo=officeAgentInfo(snapshots,selectedKey)
   const selectedActor=allDisplayed.find(actor=>actor.key===selectedKey)
+  const doorTraffic=officeDoorTraffic(visualScene,allDisplayed,doorTrips(),motionClock.current)
   const selectedBoard=inspectedFloor?.sessionId&&stationSelection?.kind==='planning'?officePlanningInfo(snapshots,inspectedFloor.sessionId):null
   const rememberTrigger=()=>{const element=document.activeElement;inspectorTrigger.current=element instanceof HTMLElement&&element!==document.body?element:null;focusInspector.current=true;discovery.dismiss()}
   const inspectorFocused=()=>{focusInspector.current=false}
@@ -570,7 +560,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const revealAgent=(key:string)=>{
     const target=officeRevealTarget({...visualScene,actors:allDisplayed},key)
     if(!target)return false
-    autoPeek.current=null;setPeekId(target.peekId)
+    setPeekId(target.peekId)
     if(target.peekId)lastDoor.current=[...(viewport.current?.querySelectorAll<HTMLButtonElement>('.of-annex-door')??[])].find(button=>button.dataset.annexId===target.peekId)??null
     // Let the selected panel measure its clearance before revealing a low floor.
     requestAnimationFrame(()=>requestAnimationFrame(()=>{
@@ -659,11 +649,11 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
                 <button type="button" className="of-board-hit" tabIndex={peekFloor?.sessionId===floor.sessionId?-1:0} aria-label={`Inspect planning board, ${floor.title}`} onClick={()=>floor.sessionId&&inspectStation(floor.sessionId,'planning')}/>
               </div>
             })}
-            <canvas ref={canvas} role="img" aria-label={`Office with ${displayed.filter(a=>!a.hidden).length} visible agents from ${snapshots.length} T3 teams. Choose an agent for details.`} />
+            <canvas ref={canvas} role="img" aria-label={`Office with ${displayed.filter(a=>!a.hidden).length} visible agents from ${snapshots.length} T3 teams. Choose an agent for details. ${vendorLabel}.`} />
             <button ref={hatchButton} type="button" className="of-hatch-hit" aria-label="Open garden lift" aria-expanded="false" onClick={()=>{const car=officeLiftFrame(lift.current!,motionClock.current),hatch=officeNavigation(current.current.scene).hatch;if(Math.abs(car.y-hatch.y)<2*current.current.scene.width/450&&car.doorsOpen>.5)closeOfficeLiftGardenDoor(lift.current!,current.current.scene,motionClock.current);else callOfficeLiftToGarden(lift.current!,current.current.scene,motionClock.current);paint(lastPainted.current)}} style={{left:`${(officeNavigation(visualScene).shaftX-28*visualScene.width/450)/visualScene.width*100}%`,width:`${56/450*100}%`,top:`${((officeLanding(visualScene,'lounge')?.y??0)-96*visualScene.width/450)/visualScene.height*100}%`,height:`${100*visualScene.width/450/visualScene.height*100}%`}}/>
             {publicFloors.filter(f=>f.kind==='break'||f.kind==='lounge').flatMap(floor=>{
               if(!visualScene.actors.some(a=>a.floorId===floor.id&&a.zone==='lounge'&&!a.hidden))return []
-              return [...officeLeisureObjects(floor,visualScene.width).map(object=>({...object,label:OFFICE_OBJECT_NAMES[object.kind]})),...officeSeasonalObjects(floor,visualScene.width,new Date(now))].map((object,index)=><button key={`${floor.id}-${object.kind}-${index}`} type="button" className="of-object-hit" aria-label={`${object.label}, ${floor.title}`}
+              return [...officeLeisureObjects(floor,visualScene.width).map(object=>({...object,label:OFFICE_OBJECT_NAMES[object.kind]})),...officeSeasonalObjects(floor,visualScene.width,new Date(now))].map((object,index)=><button key={`${floor.id}-${object.kind}-${index}`} type="button" className="of-object-hit" disabled={!officeVendorAllowsObject(new Date(now),floor.kind,object.kind)} aria-label={`${floor.kind==='lounge'&&object.kind==='coffee'?vendorLabel:object.label}, ${floor.title}`}
                 style={{left:`${(object.x-20)/visualScene.width*100}%`,top:`${(object.y-24)/visualScene.height*100}%`,width:`${40/visualScene.width*100}%`,height:`${34/visualScene.height*100}%`}}
                 onClick={()=>visitObject(floor,object)}><span>{object.label}</span></button>)
             })}
@@ -682,11 +672,11 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
               const door=officeInteriorDoor(visualScene,floor.id),bounds=officeDoorBounds(visualScene,floor.id),parent=visualScene.floors.find(f=>f.id===floor.annexOf)
               if(!door||!bounds||!parent||parent.constructing)return null
               const count=floor.actorKeys.length
-              const transit=Boolean(moving&&active.current?.event.kind!=='activity'&&moving.actor.sessionId===floor.sessionId&&(moving.actor.floorId===floor.id||active.current?.actor.floorId===floor.id))
+              const transit=doorTraffic.has(floor.id)
               return <button type="button" className="of-annex-door" data-annex-id={floor.id} data-transit={transit} key={`door-${floor.id}`} aria-label={`Open break room, ${parent.title}, ${count} resting`} aria-expanded={peekId===floor.id}
                 tabIndex={peekId===floor.id?-1:0}
                 style={{left:`${bounds.x/visualScene.width*100}%`,top:`${bounds.y/visualScene.height*100}%`,width:`${bounds.width/visualScene.width*100}%`,height:`${bounds.height/visualScene.height*100}%`}}
-                onClick={event=>{lastDoor.current=event.currentTarget;autoPeek.current=null;setPeekId(floor.id)}}><span>☕ {count}{transit?' ↳':''}</span></button>
+                onClick={event=>{lastDoor.current=event.currentTarget;setPeekId(floor.id)}}><span>☕ {count}{transit?' ↳':''}</span></button>
             })}
             {publicFloors.filter(f=>f.kind==='team'&&!f.constructing&&(f.waiting??0)>0).map(floor=><div key={`beacon-${floor.id}`} className="of-alert-beacon" role="status" aria-label={`Waiting for your answer, ${floor.title}`} title={`${floor.waiting} waiting for your answer`}
               style={{left:'70%',top:`${(floor.y+(floor.height??0)*.18)/visualScene.height*100}%`}}><i/><b/></div>)}
@@ -723,7 +713,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
                 </span>
               </button>
             })}
-            {peekFloor&&<OfficeBreakPeek floor={peekFloor} focusOnOpen={!autoPeek.current} width={visualScene.width} buildingHeight={visualScene.height} actors={allDisplayed.filter(a=>a.floorId===peekFloor.id)} canvasRef={peekCanvas} now={now} selectedKey={selectedKey}
+            {peekFloor&&<OfficeBreakPeek floor={peekFloor} width={visualScene.width} buildingHeight={visualScene.height} actors={allDisplayed.filter(a=>a.floorId===peekFloor.id)} canvasRef={peekCanvas} now={now} selectedKey={selectedKey}
               onClose={closePeek} onSelect={inspectAgent} onOpenTeam={onOpenTeam} onObject={object=>visitObject(peekFloor,object)} agentRef={agentRef}/>}
             {moving?.station && <div className="of-work-station" aria-hidden="true" style={{left:`${moving.actor.x/visualScene.width*100}%`,top:`${(moving.actor.y-82)/visualScene.height*100}%`}}>{OFFICE_STATION_LABELS[moving.station]}</div>}
           </div>
