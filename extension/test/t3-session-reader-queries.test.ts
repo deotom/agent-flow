@@ -21,17 +21,17 @@ test('reads referenced parent nodes only and resolves latest-run items without a
  CREATE TABLE orchestration_v2_projection_nodes(node_id TEXT PRIMARY KEY,thread_id TEXT,parent_node_id TEXT,provider_thread_id TEXT,started_at TEXT,completed_at TEXT);
  INSERT INTO orchestration_v2_projection_nodes VALUES('wanted','root',NULL,NULL,NULL,NULL);
  CREATE TABLE orchestration_v2_projection_turn_items(turn_item_id TEXT,thread_id TEXT,run_id TEXT,provider_thread_id TEXT,type TEXT,status TEXT,updated_at TEXT,payload_json TEXT);
- INSERT INTO orchestration_v2_projection_turn_items VALUES('old-tool','root','old',NULL,'dynamic_tool','running','2026-11-16','{}'),('new-tool','root','new',NULL,'dynamic_tool','completed','2026-11-16','{}');
+ INSERT INTO orchestration_v2_projection_turn_items VALUES('old-tool','root','old',NULL,'dynamic_tool','running','2026-11-16','{}'),('new-tool','root','new',NULL,'dynamic_tool','completed','2026-11-16','{"toolName":"archived","title":"Unused completed output"}'),('pending-tool','root','new',NULL,'dynamic_tool','running','2026-11-16','{"toolName":"inspect","title":"Current work"}');
  CREATE INDEX item_thread_run ON orchestration_v2_projection_turn_items(thread_id,run_id);
  CREATE INDEX run_thread_ordinal ON orchestration_v2_projection_runs(thread_id,ordinal);`)
  const insert=db.prepare('INSERT INTO orchestration_v2_projection_nodes VALUES(?,?,NULL,NULL,NULL,NULL)')
  db.exec('BEGIN')
  for(let i=0;i<1000;i++)insert.run(`history-${i}`,'root')
  db.exec('COMMIT')
- const observed:{sql:string;args:unknown[];rows:number}[]=[],original=DatabaseSync.prototype.prepare
+ const observed:{sql:string;args:unknown[];rows:number;values:any[]}[]=[],original=DatabaseSync.prototype.prepare
  t.mock.method(DatabaseSync.prototype,'prepare',function(this:unknown,sql:string){
   const statement=original.call(this,sql),all=statement.all.bind(statement)
-  statement.all=(...args:unknown[])=>{const rows=all(...args);observed.push({sql,args,rows:rows.length});return rows}
+  statement.all=(...args:unknown[])=>{const rows=all(...args);observed.push({sql,args,rows:rows.length,values:rows});return rows}
   return statement
  })
  const watcher=new T3SessionWatcher(null,file);t.after(()=>watcher.dispose());watcher.poll()
@@ -39,6 +39,8 @@ test('reads referenced parent nodes only and resolves latest-run items without a
  assert.equal(observed.find(q=>/FROM orchestration_v2_projection_nodes/.test(q.sql))?.rows,1,'unreferenced historical nodes must not enter the projection')
  const itemQuery=observed.find(q=>/FROM orchestration_v2_projection_turn_items i/.test(q.sql))!
  assert.ok(itemQuery)
+ assert.equal(itemQuery.values.find(row=>row.turn_item_id==='new-tool').payload_json,'{}','completed tool payload is not used by the live projection and must not be decoded')
+ assert.deepEqual(JSON.parse(itemQuery.values.find(row=>row.turn_item_id==='pending-tool').payload_json),{toolName:'inspect',title:'Current work'},'active tool details must remain available')
  const plan=original.call(db,'EXPLAIN QUERY PLAN '+itemQuery.sql).all(...itemQuery.args)
  assert.ok(!plan.some((row:{detail:string})=>/CORRELATED/i.test(row.detail)),'latest run is resolved once per thread, not once per tool item')
  const root=watcher.getActiveSessions()[0];assert.equal(root.status,'active','older running run still wins in the projector')

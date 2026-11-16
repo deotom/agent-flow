@@ -124,12 +124,22 @@ describe('connection', () => {
   it('separates an unreadable source from a lost link and from silence', () => {
     assert.equal(connectionView('open', health({ state: 'unavailable', reason: 'T3 database not found.' }), 100_000).label, 'Unavailable')
     assert.equal(connectionView('reconnecting', health(), 100_000).label, 'Reconnecting')
-    assert.equal(connectionView('open', health(), 130_000).label, 'Reconnecting')
+    assert.equal(connectionView('open', health(), 130_000).label, 'Read delayed')
     assert.equal(connectionView('open', null, 0).label, 'Connecting')
   })
   it('stops claiming live activity unless the read is current', () => {
     assert.equal(connectionView('open', health({ state: 'unavailable' }), 100_000).live, false)
     assert.equal(connectionView('reconnecting', health(), 100_000).live, false)
+  })
+  it('warns about delayed data at the same deadline without pretending the open link is reconnecting', () => {
+    assert.equal(connectionView('open',health(),110_000).label,'Connected')
+    const delayed=connectionView('open',health(),110_001)
+    assert.equal(delayed.label,'Read delayed')
+    assert.equal(delayed.tone,'warn')
+    assert.equal(delayed.live,false)
+    assert.match(delayed.detail,/still connected/i)
+    assert.equal(connectionView('open',health({checkedAt:110_001,lastSuccessAt:110_001}),110_002).label,'Connected')
+    assert.equal(connectionView('reconnecting',health({checkedAt:110_001}),110_002).label,'Reconnecting')
   })
   it('words age without judgment', () => {
     assert.equal(ageLabel(null, 10), 'unknown')

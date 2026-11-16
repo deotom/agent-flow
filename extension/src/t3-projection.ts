@@ -109,6 +109,15 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
     // Array.find used strict equality: preserve its first row and NaN behavior.
     if (id === id && !nodesById.has(id)) nodesById.set(id, node)
   }
+  const itemsByThread = new Map<unknown, T3Row[]>(), itemsByProvider = new Map<unknown, T3Row[]>()
+  for (const item of data.items) {
+    for (const [index, id] of [[itemsByThread, item.thread_id], [itemsByProvider, item.provider_thread_id]] as const) {
+      if (id !== id) continue // Preserve strict equality: NaN never matched.
+      const rows = index.get(id)
+      if (rows) rows.push(item)
+      else index.set(id, [item])
+    }
+  }
   const inScope = (folder: string) => workspaces === null || workspaces.some(w => t3WorkspaceMatches(w, folder))
   const liveProjects = data.projects.filter(row => !row.deleted_at && inScope(text(row.workspace_root)))
   const projects = new Set(liveProjects.map(row => text(row.project_id)))
@@ -142,6 +151,8 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
     const start = timestamp(root.created_at)
     const relative = (value: unknown) => Math.max(0, (timestamp(value) - start) / 1000)
     const taskRows = data.subagents.filter(row => memberIds.has(text(row.thread_id)))
+    const nativeProviders = new Set(taskRows.filter(task => task.provider_thread_id && task.provider_thread_id === task.provider_thread_id
+      && !threads.has(text(task.child_thread_id))).map(task => task.provider_thread_id))
     const agents: T3Row[] = []
     const teamAgents: TeamAgentRow[] = []
     const nodeForThread = new Map(members.map(([id]) => [id, `t3-agent:${id}`]))
@@ -176,8 +187,8 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
       const latest = runs.find(run => running(run.status)) ?? runs[0]
       const provider = data.providerThreads.find(p => p.provider_thread_id === (payload.activeProviderThreadId || row.active_provider_thread_id || latest?.provider_thread_id))
       const task = taskRows.filter(t => t.child_thread_id === id).sort((a, b) => timestamp(b.updated_at) - timestamp(a.updated_at))[0]
-      const items = data.items.filter(item => item.thread_id === id && (!latest || item.run_id === latest.run_id)
-        && !taskRows.some(t => t.provider_thread_id && t.provider_thread_id === item.provider_thread_id && !threads.has(text(t.child_thread_id))))
+      const items = (itemsByThread.get(id) ?? []).filter(item => (!latest || item.run_id === latest.run_id)
+        && !nativeProviders.has(item.provider_thread_id))
       const tools = items.filter(item => toolTypes.has(text(item.type)))
       const pending = tools.filter(item => running(item.status) && (!latest || running(latest.status))).map(item => {
         const p = payloadFor(item)
@@ -239,7 +250,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
     for (const task of taskRows) {
       if (threads.has(text(task.child_thread_id))) continue
       const p = payloadFor(task)
-      const items = data.items.filter(item => task.provider_thread_id && item.provider_thread_id === task.provider_thread_id && toolTypes.has(text(item.type)))
+      const items = (task.provider_thread_id ? itemsByProvider.get(task.provider_thread_id) ?? [] : []).filter(item => toolTypes.has(text(item.type)))
       const tools = items.filter(item => running(item.status) && running(task.status)).map(item => ({
         callId: text(item.turn_item_id), tool: text(payloadFor(item).toolName) || text(item.type), args: text(payloadFor(item).title),
       }))

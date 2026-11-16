@@ -181,10 +181,14 @@ poll(): void {
         if (!prior || Number(run.ordinal) > Number(prior.ordinal)) latestRuns.set(id, run)
       }
       const latestPairs = [...latestRuns.values()].flatMap(run => [run.thread_id, run.run_id])
+      // Completed items contribute counts/timestamps only. Decoding their large
+      // historical tool results is unnecessary work on every live read.
       const items = db.prepare(`WITH latest_runs(thread_id, run_id) AS (
         VALUES ${[...latestRuns].map(() => '(?,?)').join(',') || '(NULL,NULL)'})
         SELECT i.turn_item_id, i.thread_id, i.run_id, i.provider_thread_id, i.type, i.status, i.updated_at,
-        json_object('toolName', json_extract(i.payload_json, '$.toolName'), 'title', json_extract(i.payload_json, '$.title')) AS payload_json
+        CASE WHEN i.status IN ('running','starting','queued','pending','in_progress') THEN
+          json_object('toolName', json_extract(i.payload_json, '$.toolName'), 'title', json_extract(i.payload_json, '$.title'))
+          ELSE '{}' END AS payload_json
         FROM orchestration_v2_projection_turn_items i
         JOIN latest_runs latest ON latest.thread_id = i.thread_id AND latest.run_id = i.run_id
         WHERE i.type IN ('command_execution','dynamic_tool','file_change','web_search','mcp_tool_call','compaction')`).all(...latestPairs)

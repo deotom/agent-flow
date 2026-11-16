@@ -235,7 +235,7 @@ export function ageLabel(time: number | null | undefined, now: number): string {
 }
 
 export type ConnectionTone = 'ok' | 'warn' | 'down'
-export interface ConnectionView { label: 'Connected' | 'Connecting' | 'Reconnecting' | 'Unavailable'; tone: ConnectionTone; live: boolean; detail: string }
+export interface ConnectionView { label: 'Connected' | 'Connecting' | 'Reconnecting' | 'Read delayed' | 'Unavailable'; tone: ConnectionTone; live: boolean; detail: string }
 
 /**
  * Reading the source and agent activity are separate questions. A quiet agent on
@@ -248,8 +248,8 @@ export function connectionView(transport: TransportState, health: SourceHealth |
   if (health.state === 'unavailable') return { label: 'Unavailable', tone: 'down', live: false,
     detail: `${health.reason ?? 'T3 data cannot be read.'} Last good read ${ageLabel(health.lastSuccessAt, now)}.` }
   const silence = now - health.checkedAt
-  if (silence > Math.max(10_000, health.pollIntervalMs * 5)) return { label: 'Reconnecting', tone: 'warn', live: false,
-    detail: `No read result for ${Math.round(silence / 1000)}s. Last read ${ageLabel(health.lastSuccessAt, now)}.` }
+  if (silence > Math.max(10_000, health.pollIntervalMs * 5)) return { label: 'Read delayed', tone: 'warn', live: false,
+    detail: `Service is still connected, but T3 data is delayed. No read result for ${Math.round(silence / 1000)}s. Last read ${ageLabel(health.lastSuccessAt, now)}.` }
   return { label: 'Connected', tone: 'ok', live: true,
     detail: `Read-only. Checks T3 every ${Math.round(health.pollIntervalMs / 1000)}s, so short steps between checks are not shown.` }
 }

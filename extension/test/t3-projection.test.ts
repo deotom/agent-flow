@@ -245,3 +245,16 @@ test('parses each payload at most once per projection and rereads mutations on t
   assert.ok([...reads.values()].every(count => count <= 1))
   assert.notDeepEqual(first, second, 'the cache must not outlive its projection call')
 })
+
+test('classifies native provider tools once instead of rescanning every task for every item', () => {
+  const data=fixture(); let providerReads=0
+  for(let i=0;i<80;i++) {
+    const task=row({subagent_id:`native-${i}`,thread_id:'lead',status:'completed',provider_thread_id:`provider-${i}`})
+    Object.defineProperty(task,'provider_thread_id',{enumerable:true,get(){providerReads++;return `provider-${i}`}})
+    data.subagents.push(task)
+  }
+  for(let i=0;i<800;i++) data.items.push(row({turn_item_id:`tool-${i}`,thread_id:'lead',run_id:'r-lead',provider_thread_id:'unowned-provider',type:'dynamic_tool',status:'completed'}))
+  const team=projectT3Teams(data,['D:/Project/TH']).find(t=>t.session.id==='t3:lead')!
+  assert.ok(team.event.payload)
+  assert.ok(providerReads<20_000,`provider membership rescanned tasks ${providerReads} times`)
+})
