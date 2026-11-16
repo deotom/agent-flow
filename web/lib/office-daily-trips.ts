@@ -12,7 +12,7 @@ export function createOfficeRoutineTrip(scene:OfficeScene,actorKey:string,target
   if(!scene.floors.some(floor=>floor.id===source.floorId)||!scene.floors.some(floor=>floor.id===target.floorId))return null
   if(![source.x,source.y,target.x,target.y,now].every(Number.isFinite))return null
   const {segments,travel,leg,nav}=createOfficeTravelPath(scene,scene,source,source.floorId)
-  travel(target,target.floorId)
+  if(source.floorId!==target.floorId||Math.hypot(source.x-target.x,source.y-target.y)>.01)travel(target,target.floorId)
   // A zero-distance journey still has a valid final frame, with no dining dwell.
   if(!segments.length)leg(target,0,'hold')
   const actor={...(current??source),x:target.x,y:target.y,floorId:target.floorId}

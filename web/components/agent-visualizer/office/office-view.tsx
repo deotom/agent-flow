@@ -274,7 +274,8 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
       skyContext.setTransform(ratio,0,0,ratio,0,0)
       drawOfficeDaylight(skyContext,input.scene,new Date(input.wallNow),input.enabled?elapsed.current:0)
     }
-    const greeting = greet.current && greet.current.until > elapsed.current ? greet.current.key : null
+    const sharingPeer=daily.current!.sharingPeer(input.scene,motionClock.current,actors)
+    const greeting = greet.current && greet.current.until > elapsed.current ? greet.current.key : sharingPeer
     const publicFloors=input.scene.floors.filter(f=>!f.annexOf)
     const publicIds=new Set(publicFloors.filter(f=>!f.constructing).map(f=>f.id))
     const doorFloor=input.scene.floors.find(f=>f.annexOf&&movement&&f.sessionId===movement.actor.sessionId&&(()=>{const p=officeInteriorDoor(input.scene,f.id);return p&&Math.abs(p.x-movement.actor.x)<20*input.scene.width/450&&Math.abs(p.y-movement.actor.y)<35*input.scene.width/450})())

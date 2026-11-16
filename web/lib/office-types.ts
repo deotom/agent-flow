@@ -14,7 +14,7 @@ export interface OfficeAppearance {
   face?: 'round' | 'square' | 'oval'
 }
 export interface OfficePoint { x: number; y: number }
-export interface OfficePose { inLift?:boolean; opacity?:number;objectAction?:OfficeLeisureAction;climb?: boolean; climbStep?:number; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean; face?: 1 | -1 }
+export interface OfficePose { inLift?:boolean; opacity?:number;objectAction?:OfficeLeisureAction;climb?: boolean; climbStep?:number; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean; face?: 1 | -1;stretch?:number;turn?:number;lookUp?:boolean }
 export interface OfficeActor extends OfficePoint {
   key: string
   sessionId: string
@@ -97,7 +97,7 @@ export interface OfficeDailyVisual {
   kind?:'coffee'|'lunch'|'tea'|null
   delivery:boolean
   cleanup:boolean
-  guests:readonly {actorKey:string;kind:'coffee'|'lunch'|'tea';phase:'outbound'|'eating'|'relocating'|'returning';floorId:string;x:number;y:number;seat:number}[]
+  guests:readonly {actorKey:string;kind:'coffee'|'lunch'|'tea'|'outing';phase:'outbound'|'eating'|'relocating'|'returning';floorId:string;x:number;y:number;seat:number;action?:import('./office-rest-outings').OfficeOutingAction;night?:boolean;collected?:boolean}[]
 }
 export interface OfficePaintOptions {
   exchange?:import('./office-communication').OfficeWorkExchange|null

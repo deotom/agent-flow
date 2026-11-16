@@ -8,6 +8,7 @@ import { drawOfficeInteriorDoors } from './office-door-art'
 import {drawOfficeDailyArt} from './office-daily-art'
 import {drawOfficeCommunications} from './office-communication-art'
 import {officeRestConversations} from '../../../lib/office-communication'
+import {drawOfficeOutingArt} from './office-outing-art'
 import type { OfficeActor, OfficeAppearance, OfficeDrawnOffset, OfficePaintOptions, OfficePose, OfficeScene, OfficeLeisureAction } from '../../../lib/office-types'
 import { officeLife, officeLifeCanChat, officeLifePairs, officeSeed, type OfficeLifePair, type OfficeMood } from '../../../lib/office-life'
 
@@ -135,7 +136,7 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
   oval(c,(-13+lx)/2,(-28+ly)/2,5,9,a.shirt);oval(c,(13+rx)/2+1,(-28+ry)/2,5,9,a.shirt)
   if(p.runtime&&!back)drawShirtLogo(c,p.runtime,1,-20)
   oval(c,lx,ly,4,4,a.skin);oval(c,rx,ry,4,4,a.skin)
-  c.save();c.translate(m.headX,m.headY)
+  c.save();c.translate(m.headX,m.headY-(p.lookUp?3:0))
   if(m.tilt){c.translate(0,-30);c.rotate(m.tilt);c.translate(0,30)}
   drawOfficeHead(c,a,Boolean(back),p.doze??false)
   if(p.party&&!p.lead){
@@ -290,6 +291,10 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     offsets.set(actor.key,{dx:life.dx,dy:-life.hop*scale})
   }
   drawOfficeCommunications(c,scene,time,exchange,chats)
+  drawOfficeOutingArt(c,scene,time,o.roomArt??null,(o.dailyArt?.guests??[]).flatMap(guest=>{
+    const actor=scene.actors.find(a=>a.key===guest.actorKey)
+    return guest.kind==='outing'&&guest.action&&actor?[{actorKey:actor.key,action:guest.action,phase:guest.phase,floorId:actor.floorId,x:actor.x,y:actor.y,night:guest.night??false,collected:guest.collected??false}]:[]
+  }))
   drawOfficeShaft(c,scene,true,o.architectureArt,o.liftSurfaceOpen,o.lift)
   if(time)drawAmbient(c,scene,time,officeAmbient(o.date).night)
   return offsets

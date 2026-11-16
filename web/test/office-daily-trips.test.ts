@@ -70,6 +70,12 @@ it('keeps same-floor trips on foot and starts an interrupted journey at the supp
  assert.deepEqual(officeTripFrame(trip,0).point,{x:195,y:370})
  assert.ok(trip.segments.every(s=>s.kind==='walk'&&!s.liftPhase&&s.floorId==='private'))
 })
+it('keeps a quiet indoor visit at its current seat instead of taking a pointless door detour',()=>{
+ const trip=createOfficeRoutineTrip(scene,actor.key,{floorId:actor.floorId,x:actor.x,y:actor.y},100,'is taking a quiet break')!
+ assert.equal(trip.endsAt,100)
+ assert.ok(trip.segments.every(s=>s.kind==='hold'&&s.duration===0))
+ assert.deepEqual(officeTripFrame(trip,100).point,{x:actor.x,y:actor.y})
+})
 
 it('rejects invalid geometry and actors but permits an explicit last-known actor for safe departure',()=>{
  const target={floorId:'lounge',x:60,y:100},empty={...scene,actors:[]}
