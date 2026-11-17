@@ -5,7 +5,7 @@ import type {OfficeTrip} from './office-motion'
 
 export function officeOutingVendorPoint(scene:OfficeScene):OfficeRoutineTarget|null {
  const surface=scene.floors.find(f=>f.kind==='lounge')
- return surface?{floorId:surface.id,x:scene.width*.61,y:surface.y+(surface.height??scene.width*.5625)*.70}:null
+ return surface?{floorId:surface.id,x:scene.width*.72,y:surface.y+(surface.height??scene.width*.5625)*.67}:null
 }
 /** Only a daytime snack pickup adds a vendor stop; all navigation still uses the one lift. */
 export function createOfficeOutingTrip(scene:OfficeScene,actorKey:string,target:OfficeRoutineTarget,at:number,action:OfficeOutingAction,night:boolean,from?:OfficeActor):OfficeTrip|null {

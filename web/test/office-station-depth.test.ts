@@ -26,7 +26,7 @@ it('uses actual alternate-view sprites, preserving aspect and grounding every or
  }
 })
 it('interleaves equipment and people by floor depth so a walker can pass behind a bench',()=>{
- const stations=roomStationLayout(floor,450),ordered=stations.toSorted((a,b)=>a.y-b.y),y=(ordered[0].y+ordered[1].y)/2
+ const stations=roomStationLayout(floor,450),ordered=stations.toSorted((a,b)=>a.y-b.y),y=(ordered[0].y+ordered.at(-1)!.y)/2
  const actor={key:'walker',sessionId:'s',floorId:'work',x:110,y,appearance:officeAppearance(0),zone:'desk',agent:{id:'a',status:'running',role:'worker',activities:[]},pose:{walk:true,gait:1,walkWeight:1}} as unknown as OfficeActor
  const scene={width:450,height:253.125,floors:[floor],actors:[actor],quietTeams:[],totalAgents:1,finishedCount:0} as OfficeScene
  const options={time:1,date:new Date(2026,0,1,12),now:1,live:true,motion:true,pets:[],selectedKey:null,roomArt:art} as OfficePaintOptions
@@ -34,6 +34,7 @@ it('interleaves equipment and people by floor depth so a walker can pass behind 
  const person=calls.findIndex(call=>call.op==='translate'&&call.args[0]===actor.x&&call.args[1]===actor.y)
  const benches=calls.map((call,index)=>({call,index})).filter(({call})=>call.op==='drawImage'&&(call.args[0]===art.stations||call.args[0]===art.stationAngles))
  assert.equal(benches.length,4)
- assert.ok(benches[0].index<person&&benches[1].index>person)
+ assert.ok(benches.some(bench=>bench.index<person)&&benches.some(bench=>bench.index>person))
+ for(const [i,bench] of benches.entries())assert.equal(bench.index<person,ordered[i].y<actor.y)
  assert.ok(benches.every(({call})=>call.args.slice(1).every(v=>typeof v!=='number'||Number.isFinite(v))))
 })

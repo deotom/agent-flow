@@ -28,6 +28,13 @@ export interface OfficeVendorExchange {
   progress: number
 }
 
+/** Prepare only for an actual garden visitor, not a reservation still downstairs. */
+export function officeVendorCustomerApproaching(scene:OfficeScene,visual:OfficeDailyVisual|undefined):boolean {
+ const garden=scene.floors.find(f=>f.kind==='lounge')
+ return Boolean(garden&&visual?.guests.some(g=>g.kind==='outing'&&g.action==='snack'&&!g.collected&&g.phase!=='returning'&&g.floorId===garden.id&&
+  scene.actors.some(a=>a.key===g.actorKey&&!a.hidden&&a.floorId===garden.id&&!a.pose?.inLift&&!a.pose?.climb)))
+}
+
 /** Read the existing cart stop without extending the trip or marking a transaction. */
 function pickupWindow(scene:OfficeScene,trip:OfficeTrip|null|undefined):{start:number;end:number}|null {
   const point=officeOutingVendorPoint(scene)

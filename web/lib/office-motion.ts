@@ -4,6 +4,7 @@ import { isWorking, statusText } from './team-model'
 import type { AnimationMode } from './viewer-preferences'
 import { officeWorkTarget, OFFICE_STATION_LABELS } from './office-work'
 import { officeNavigation, officeLanding, officeInteriorDoor, officeAisle } from './office-navigation'
+import {officeGardenRoute} from './office-garden-routes'
 
 export type OfficePane = 'board' | 'graph' | 'office'
 export type OfficeLiftPhase = 'boarding' | 'closing' | 'riding' | 'opening' | 'alighting'
@@ -67,7 +68,7 @@ export function createOfficeTravelPath(sourceScene:OfficeScene,next:OfficeScene,
       const threshold=officeInteriorDoor(next,targetFloor.id)
       if(threshold){travel(threshold,targetFloor.annexOf);leg(cursor,280,'hold',[1,0]);cursorFloor=toFloor;cursorScene=next;leg(cursor,280,'hold',[0,1]);walk({x:to.x,y:threshold.y});walk(to);return}
     }
-    const target=officeAisle(next,toFloor)??{x:liftX-28*nav.scale,y:to.y}
+    const target=targetFloor?.kind==='lounge'?{x:liftX-28*nav.scale,y:nav.hatch.y}:officeAisle(next,toFloor)??{x:liftX-28*nav.scale,y:to.y}
     const targetDoor=officeLanding(next,toFloor)??target
     if(cursorFloor!==toFloor){
       const source=officeAisle(cursorScene,cursorFloor)??{x:liftX-28*nav.scale,y:cursor.y}
@@ -111,15 +112,19 @@ export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: 
   const old = before.actors.find(actor => actor.key === moving.key)
   // A collapsed/relaid floor is no longer a valid place to start an animation.
   if (!presence && !changedRoom && old && !next.floors.some(floor => floor.id === old.floorId)) return null
-  const nav=officeNavigation(next),liftX=nav.shaftX
-  const door=nav.hatch
-  const from = event.kind === 'arrived' && !old ? { x: liftX-60*nav.scale, y: door.y } : point(old ?? moving)
+  const nav=officeNavigation(next)
+  const garden=presence?officeGardenRoute(next,moving.key,event.at):null
+  const entering=event.kind==='arrived'&&!old
+  const from = entering ? garden!.points[0] : point(old ?? moving)
   const home = point(moving)
   const destination = changedRoom ? point(child) : event.kind === 'activity' ? activityTarget??officeWorkTarget(child,next,event.station??'terminal') : event.kind === 'assigned' ? { x: child.x > 65 ? child.x - 18 : child.x + 18, y: child.y }
     : event.kind === 'sent' ? { x: parent!.x > 100 ? parent!.x - 18 : parent!.x + 18, y: parent!.y }
-    : event.kind === 'left' ? { x: liftX-60*nav.scale, y: door.y } : point(moving)
-  const {segments,leg,travel}=createOfficeTravelPath(old?before:next,next,from,event.kind==='arrived'&&!old?'lounge':old?.floorId??moving.floorId)
-  const destinationFloor=event.kind==='left'?'lounge':event.kind==='sent'&&!changedRoom?parent!.floorId:event.kind==='assigned'&&!changedRoom?child.floorId:moving.floorId
+    : event.kind === 'left' ? garden!.points[0] : point(moving)
+  const {segments,leg,travel}=createOfficeTravelPath(old?before:next,next,from,entering?garden!.floorId:old?.floorId??moving.floorId)
+  const destinationFloor=event.kind==='left'?garden!.floorId:event.kind==='sent'&&!changedRoom?parent!.floorId:event.kind==='assigned'&&!changedRoom?child.floorId:moving.floorId
+  const gardenWalk=(points:readonly OfficePoint[])=>{
+    for(let i=1;i<points.length;i++)leg(points[i],Math.max(180,Math.round(Math.hypot(points[i].x-points[i-1].x,points[i].y-points[i-1].y)/(75*nav.scale)*1000)),'walk')
+  }
   const captions: Record<OfficeEvent['kind'], string> = {
     routine:'',
     activity:`is working at the ${OFFICE_STATION_LABELS[event.station??'terminal']}`,
@@ -127,8 +132,11 @@ export function createOfficeTrip(event: OfficeEvent, before: OfficeScene, next: 
   }
   if (event.kind === 'received' && !changedRoom) leg(home, 1800, 'hold')
   else {
-    if (event.kind === 'left') { travel(door,'lounge'); leg(door, 250, 'hold') }
-    travel(destination,destinationFloor)
+    if(entering)gardenWalk(garden!.points)
+    if (event.kind === 'left') {
+      travel(garden!.points.at(-1)!,garden!.floorId)
+      gardenWalk(garden!.points.toReversed())
+    }else travel(destination,destinationFloor)
     leg(destination, event.kind === 'finished' ? 300 : event.kind==='activity'?2200:1400, 'hold')
     if (event.kind !== 'finished' && event.kind!=='activity' && !presence && !changedRoom) travel(home,moving.floorId)
   }

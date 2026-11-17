@@ -1,3 +1,4 @@
+import {officeSelectionGesture} from '../../../lib/office-selection-gesture'
 import { drawRuntimeMark, type Runtime } from '../canvas/runtime-mark'
 import { officeDaylight } from '../../../lib/office-daylight'
 import { drawOfficeShaft } from './office-shaft-art'
@@ -17,7 +18,7 @@ import {officeWardrobeTheme,officeWardrobeFor,type OfficeWardrobeLook} from '../
 import {drawOfficeWardrobe} from './office-wardrobe-art'
 import {drawOfficeVendor,drawOfficeShopQueue,officeVendorAvatarPose} from './office-vendor-art'
 import {officeActorRenderScale} from '../../../lib/office-depth'
-import {officeVendorExchange} from '../../../lib/office-vendor'
+import {officeVendorExchange,officeVendorCustomerApproaching} from '../../../lib/office-vendor'
 import {officeActorSupport,officeSeatFrame} from '../../../lib/office-support'
 import {officeStations} from '../../../lib/office-stations'
 import {drawOfficeStation} from './office-station-art'
@@ -190,7 +191,7 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
    }
   }else{oval(c,(-13+lx)/2,(-28+ly)/2,5,9,a.shirt);oval(c,(13+rx)/2+1,(-28+ry)/2,5,9,a.shirt)}
   if(p.runtime&&!back)drawShirtLogo(c,p.runtime,1,-20)
-  c.save();c.translate(m.headX,m.headY-(p.lookUp?3:0))
+  c.save();c.translate(m.headX+(p.acknowledgment??0)*1.5,m.headY-(p.lookUp?3:0)+(p.acknowledgment??0)*2.5)
   if(m.tilt){c.translate(0,-30);c.rotate(m.tilt);c.translate(0,30)}
   drawOfficeHead(c,a,Boolean(back),p.doze??false)
   if(p.party&&!p.lead){
@@ -319,7 +320,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     const hands=drawOfficeAvatar(c,shopkeeper,0,0,time,{...officeVendorAvatarPose(staff),wave:staff.pose==='serve',wardrobe:officeWardrobeFor(wardrobeTheme,shopkeeper.slot,true)})
     if(!vendorExchange||staff.pose==='handoff')vendorHand={x:staff.x+hands.right.x*staff.scale,y:staff.y+hands.right.y*staff.scale,scale:staff.scale}
     c.restore()
-  },vendorExchange)
+  },vendorExchange,officeVendorCustomerApproaching(scene,o.dailyArt))
   drawOfficeShaft(c,scene,false,o.architectureArt,false,o.lift)
   drawOfficeInteriorDoors(c,scene,o.openDoorFloorId,o.architectureArt,o.transitDoorIds)
   const visible=scene.actors.filter(a=>!a.hidden),byKey=new Map(visible.map(a=>[a.key,a]))
@@ -370,7 +371,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     const avatarPose=officeActorSupport(scene,actor,{stepLength:22*scale/actorScale,wardrobeTransition:o.wardrobeLooks?.get(actor.key),dressing:o.wardrobeLooks?.get(actor.key)?.dressing,wardrobe:officeWardrobeFor(wardrobeTheme,actor.appearance.slot,floorsById.get(actor.floorId)?.kind==='lounge'),sit:!moving&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving,hand:o.live&&waiting,
       mug:actor.zone==='lounge'&&!moving&&(!life.objectAction||life.objectAction==='coffee'),objectAction:life.objectAction,lead:actor.agent.role==='lead'||actor.pod,cup:life.cup,stretch:life.stretch,lean:life.lean,doze:life.doze,
       slump:life.slump,scratch:life.scratch,wave:life.wave||interaction?.speaking,turn:interaction?(interaction.speaking ? .25 : -.2):life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose,...sharedPoses.get(actor.key),...(interaction?{face:interaction.face}:{}),...(vendorExchange?.actorKey===actor.key?{face:1 as const,offer:.8,mug:false,hand:false,typing:false,objectAction:undefined,sit:false}:{}),climb:false},actorScale,{x:actor.x+life.dx,y:actor.y},t,o.live)
-    const contact=drawOfficeAvatar(c,actor.appearance,0,0,t,avatarPose)
+    const contact=drawOfficeAvatar(c,actor.appearance,0,0,t,{...avatarPose,acknowledgment:officeSelectionGesture(actor.key,avatarPose,o.selectionCue,o.time,o.live&&o.motion)})
     handFrames.set(actor.key,{x:actor.x+life.dx+contact.right.x*actorScale,y:actor.y+contact.right.y*actorScale})
     if(life.mood){c.translate(0,-life.hop);drawMood(c,life.mood,t)}
     c.restore()

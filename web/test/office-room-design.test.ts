@@ -24,31 +24,32 @@ it('same-theme projects keep distinct stable decor even when their low hash bits
  assert.ok(other)
  assert.notEqual(first.accent,other.accent)
 })
-it('mission themes lead the station grouping without moving shared station geometry',()=>{
+it('mission themes use distinct stable station compositions',()=>{
  const studio=floor('AgentFlow UX/UI'),operations=floor('quickVendor API'),research=floor('Research specimens'),quality=floor('Quality verification')
  const layouts=[studio,operations,research,quality].map(f=>roomStationLayout(f,450))
  assert.deepEqual(layouts.map(layout=>layout[0].kind),['build','terminal','research','quality'])
- for(const layout of layouts)assert.deepEqual(layout.map(({kind,work,...geometry})=>geometry),layouts[0].map(({kind,work,...geometry})=>geometry))
+ assert.equal(new Set(layouts.map(layout=>JSON.stringify(layout.map(s=>[s.x,s.y,s.facing])))).size,4)
  assert.deepEqual(roomStationLayout({...operations,subtitle:'Reading UI test tool',working:9,actorKeys:['one']},450),layouts[1])
 })
 it('painted themes change wall and floor accents plus distinct secondary wall displays',()=>{
  const art={shell:{width:1000,height:563},props:{width:1536,height:1024},breakRoom:{width:1000,height:563}} as unknown as Parameters<typeof drawOfficeRoomShell>[3]
  const render=(title:string)=>{
   const colors:string[]=[],images:unknown[][]=[]
-  const c={fillStyle:'',drawImage:(...args:unknown[])=>images.push(args),save(){},restore(){},fillRect(this:{fillStyle:string}){colors.push(this.fillStyle)}} as unknown as CanvasRenderingContext2D
+  const state:Record<string,unknown>={fillStyle:'',drawImage:(...args:unknown[])=>images.push(args),fillRect(){}}
+  const c=new Proxy(state,{get(t,k){return t[String(k)]??(()=>{})},set(t,k,v){if(k==='fillStyle')colors.push(String(v));t[String(k)]=v;return true}}) as unknown as CanvasRenderingContext2D
   const f=floor(title),scene={width:450,height:600,floors:[f],actors:[],quietTeams:[],totalAgents:0,finishedCount:0}
   drawOfficeRoomDesign(c,scene,f,art)
   return {colors,images}
  }
  const studio=render('AgentFlow UX/UI'),operations=render('quickVendor API')
- assert.equal(studio.colors.length,2,'wall tint and stained floorboards both use mission accent')
+ assert.equal(studio.colors[0],roomDesignFor(floor('AgentFlow UX/UI')).accent,'wall tint uses mission accent')
  assert.notDeepEqual(studio.colors,operations.colors)
- assert.notDeepEqual(studio.images[4],operations.images[4],'secondary painted wall display changes with mission')
+ assert.notDeepEqual(studio.images[3],operations.images[3],'painted mission panel changes with mission')
  assert.deepEqual(studio,render('AgentFlow UX/UI'))
 })
 it('paints a fixed-height old wall with deeper floorboards, plus bounded matching daily props',()=>{
  const calls:unknown[][]=[]
- const c={drawImage:(...args:unknown[])=>calls.push(args),save(){},restore(){},fillRect(){}} as unknown as CanvasRenderingContext2D
+ const c=new Proxy({drawImage:(...args:unknown[])=>calls.push(args)} as Record<string,unknown>,{get:(t,k)=>t[String(k)]??(()=>{}),set(t,k,v){t[String(k)]=v;return true}}) as unknown as CanvasRenderingContext2D
  const art={shell:{width:1000,height:563},props:{width:1536,height:1024},breakRoom:{width:1000,height:563}} as unknown as Parameters<typeof drawOfficeRoomShell>[3]
  const small=floor(),large=floor('Design studio',337.5)
  const scene={width:450,height:900,floors:[large],actors:[],quietTeams:[],totalAgents:0,finishedCount:0}
@@ -66,7 +67,7 @@ it('large rooms use two real depth rows with perspective-scaled stations and an 
  const a=roomStationLayout(small,w),b=roomStationLayout(large,w)
  assert.ok(new Set(a.map(p=>p.y)).size>=3)
  assert.equal(new Set(b.map(p=>p.y)).size,2)
- assert.ok(a[0].width<b[2].width)
+ assert.ok(a.find(s=>s.depth===0)!.width<b.find(s=>s.depth===1)!.width)
  assert.ok(Math.max(...b.map(p=>p.y))-Math.min(...b.map(p=>p.y))>=w*.16)
  assert.ok(b.every(p=>p.x+p.width/2<w*.80))
  assert.ok(roomActorSpots(large,w).length>=8)

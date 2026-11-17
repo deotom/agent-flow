@@ -14,7 +14,7 @@ export interface OfficeAppearance {
   face?: 'round' | 'square' | 'oval'
 }
 export interface OfficePoint { x: number; y: number }
-export interface OfficePose { workGesture?:import('./office-work-gestures').OfficeWorkGesture;workLift?:number;workBack?:boolean;stepLength?:number;stepDirection?:OfficePoint;dressing?:number;seatBack?:boolean;supportHands?:{left:OfficePoint;right:OfficePoint}; inLift?:boolean; opacity?:number;objectAction?:OfficeLeisureAction;climb?: boolean; climbStep?:number; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean; face?: 1 | -1;stretch?:number;turn?:number;lookUp?:boolean;walkWeight?:number;gait?:number;seatBlend?:number;offer?:number;cupTilt?:number }
+export interface OfficePose { acknowledgment?:number; workGesture?:import('./office-work-gestures').OfficeWorkGesture;workLift?:number;workBack?:boolean;stepLength?:number;stepDirection?:OfficePoint;dressing?:number;seatBack?:boolean;supportHands?:{left:OfficePoint;right:OfficePoint}; inLift?:boolean; opacity?:number;objectAction?:OfficeLeisureAction;climb?: boolean; climbStep?:number; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean; face?: 1 | -1;stretch?:number;turn?:number;lookUp?:boolean;walkWeight?:number;gait?:number;seatBlend?:number;offer?:number;cupTilt?:number }
 export interface OfficeActor extends OfficePoint {
   key: string
   sessionId: string
@@ -101,6 +101,7 @@ export interface OfficeDailyVisual {
   guests:readonly {actorKey:string;kind:'coffee'|'lunch'|'tea'|'outing';phase:'outbound'|'eating'|'relocating'|'returning';floorId:string;x:number;y:number;seat:number;action?:import('./office-rest-outings').OfficeOutingAction;night?:boolean;collected?:boolean;pickupProgress?:number}[]
 }
 export interface OfficePaintOptions {
+  selectionCue?:import('./office-selection-gesture').OfficeSelectionCue|null
   wardrobeLooks?:ReadonlyMap<string,import('./office-wardrobe-transition').OfficeWardrobeTransitionLook>
   socialCadenceMultiplier?:number
   transitDoorIds?:ReadonlySet<string>

@@ -12,6 +12,18 @@ export function drawOfficeShaft(c:CanvasRenderingContext2D,scene:OfficeScene,fro
  }))
  const clipShaft=()=>{c.beginPath();c.rect(n.left,n.top,scene.width-n.left,h);c.rect(x-22*s,n.hatch.y-86*s,44*s,90*s);c.clip()}
  const fill=(color:string,px:number,py:number,w:number,ph:number)=>{c.fillStyle=color;c.fillRect(px,py,w,ph)}
+ const timberLip=(px:number,py:number,width:number,height:number)=>{
+  fill('#926034',px,py,width,height)
+  if(art){
+   const source=art.liftCabin as CanvasImageSource&{naturalWidth?:number;naturalHeight?:number;width?:number;height?:number}
+   const sw=source.naturalWidth??source.width??288,sh=source.naturalHeight??source.height??320
+   // Reuse the painted cornice grain, rather than a new flat-colour material.
+   const cropHeight=sh*.055,cropWidth=Math.min(sw*.76,cropHeight*width/height)
+   c.drawImage(art.liftCabin,(sw-cropWidth)/2,sh*.09,cropWidth,cropHeight,px,py,width,height)
+  }
+  fill('#d4a35d',px,py,width,1.2*s)
+  fill('#503522',px,py+height-s,width,s)
+ }
  c.save()
  if(!front){
   // One timber car moves through a cutaway shaft; cables and earth remain behind it.
@@ -33,30 +45,50 @@ export function drawOfficeShaft(c:CanvasRenderingContext2D,scene:OfficeScene,fro
   fill('#9b7849',x-22*s,car.y-81*s,2*s,83*s);fill('#87643c',x+20*s,car.y-81*s,2*s,83*s)
   c.restore()
   for(const p of stops){
+   // One painted arch, with a visible right-hand thickness and a recessed inner
+   // reveal. No second pair of posts or flat roof competing with its silhouette.
+   c.fillStyle='#21170f40';c.beginPath();c.moveTo(x-27*s,p.y+3*s);c.lineTo(x+29*s,p.y+3*s);c.lineTo(x+34*s,p.y+10*s);c.lineTo(x-22*s,p.y+8*s);c.closePath();c.fill()
+   c.fillStyle='#684328';c.beginPath();c.moveTo(x+23*s,p.y-77*s);c.lineTo(x+27*s,p.y-73*s);c.lineTo(x+27*s,p.y+4*s);c.lineTo(x+23*s,p.y);c.closePath();c.fill()
+   fill('#24190f',x-16*s,p.y-67*s,3*s,67*s)
+   fill('#49301d',x+13*s,p.y-67*s,3*s,67*s)
+   fill('#382416',x-16*s,p.y-76*s,32*s,11*s)
+   fill('#c99452',x-25*s,p.y-72*s,1.4*s,72*s)
+   // The walking plane stays at p.y. Its warm front bevel extends down into
+   // the supporting earth, never up across an agent's feet.
+   timberLip(x-28*s,p.y,56*s,6*s)
+   fill('#2f2016',x-28*s,p.y+6*s,56*s,1.2*s)
    if(p.surface){
-    // A shallow roof, grounded plinth and side posts make a tiny garden pavilion.
-    c.fillStyle='#241c1644';c.beginPath();c.ellipse(x,p.y+7*s,30*s,6*s,0,0,Math.PI*2);c.fill()
-    fill('#705333',x-26*s,p.y-86*s,7*s,88*s);fill('#5a412b',x+19*s,p.y-86*s,7*s,88*s)
-    c.fillStyle='#394f3b';c.beginPath();c.moveTo(x-32*s,p.y-85*s);c.lineTo(x-24*s,p.y-96*s);c.lineTo(x+24*s,p.y-96*s);c.lineTo(x+32*s,p.y-85*s);c.closePath();c.fill()
-    fill('#bba16a',x-32*s,p.y-85*s,64*s,3*s)
-    fill('#6e5c3e',x-28*s,p.y,56*s,5*s);fill('#b98748',x-28*s,p.y,56*s,1.5*s)
-   }
-   if(!p.surface){
-    // The top of the landing meets the sill; its support stays below the floor.
-    fill('#7e5734',n.left-6*s,p.y,52*s,4*s)
-    fill('#ad773c',n.left-6*s,p.y-2*s,52*s,2*s)
-    fill('#493323',n.left-6*s,p.y+4*s,52*s,s)
+    // Small fixed soil/grass overlaps seat the timber in the original garden.
+    fill('#77502d',x-31*s,p.y+3*s,5*s,3*s)
+    c.strokeStyle='#727c3c';c.lineWidth=1.2*s;c.beginPath()
+    for(const side of [-1,1]){const gx=x+side*28*s;c.moveTo(gx,p.y+4*s);c.lineTo(gx-side*2*s,p.y-s);c.moveTo(gx,p.y+4*s);c.lineTo(gx+side*3*s,p.y+1*s)}
+    c.stroke()
    }
    // Keep the painted frame fixed; only the inner leaves slide under its jamb.
    if(art){
-    c.save();c.beginPath();c.rect(x-28*s,p.y-84*s,56*s,84*s);c.rect(x-14*s,p.y-66*s,28*s,66*s);c.clip('evenodd')
-    c.drawImage(art.doorOpen,x-28*s,p.y-84*s,56*s,84*s);c.restore()
+    const leafArt=art.liftCabin as CanvasImageSource&{naturalWidth?:number;naturalHeight?:number;width?:number;height?:number}
+    const leafWidth=leafArt.naturalWidth??leafArt.width??288,leafHeight=leafArt.naturalHeight??leafArt.height??320
+    const corniceHeight=50*(leafHeight*.16)/leafWidth,postHeight=84-corniceHeight
+    const postSourceWidth=leafHeight*.84*9/postHeight
+    // Only the cabin's painted architrave/posts are reused here, never its
+    // lantern/interior. This is stationary architecture, not another car.
+    c.save();c.beginPath();c.rect(x-26*s,p.y-84*s,52*s,84*s);c.rect(x-14*s,p.y-66*s,28*s,66*s);c.clip('evenodd')
+    c.drawImage(art.liftCabin,0,0,leafWidth,leafHeight*.16,x-25*s,p.y-84*s,50*s,corniceHeight*s)
+    c.drawImage(art.liftCabin,0,leafHeight*.16,postSourceWidth,leafHeight*.84,x-25*s,p.y-postHeight*s,9*s,postHeight*s)
+    c.drawImage(art.liftCabin,leafWidth-postSourceWidth,leafHeight*.16,postSourceWidth,leafHeight*.84,x+16*s,p.y-postHeight*s,9*s,postHeight*s)
+    c.restore()
     for(const side of [-1,1]){
-     c.save();c.beginPath();c.rect(side<0?x-15*s:x,p.y-68*s,15*s,66*s);c.clip()
-     c.drawImage(art.doorClosed,x-28*s+side*18*s*p.open,p.y-84*s,56*s,84*s)
+     c.save();c.beginPath();c.rect(side<0?x-14*s:x,p.y-68*s,14*s,68*s);c.clip()
+     // Symmetric timber panels have no hinged-door knob or hinges. Each owns
+     // its source crop, so opening cannot slide an opposite leaf into view.
+     const leafX=x+(side<0?-14:0)*s+side*14*s*p.open
+     const panelHeight=leafHeight*.46,panelWidth=panelHeight*14/68
+     c.drawImage(art.liftCabin,(leafWidth-panelWidth)/2,leafHeight*.32,panelWidth,panelHeight,
+      leafX,p.y-68*s,14*s,68*s)
+     c.strokeStyle='#654022';c.lineWidth=s;c.strokeRect(leafX+.5*s,p.y-67.5*s,13*s,67*s)
+     fill('#cf9e57',leafX+(side<0?11:2)*s,p.y-38*s,s,8*s)
      c.restore()
     }
-    if(p.open<.2){c.fillStyle='#3b3226';c.fillRect(x-6*s,p.y-42*s,12*s,13*s);c.fillStyle='#e0c58b';c.font=`${9*s}px sans-serif`;c.textAlign='center';c.fillText('↕',x,p.y-32*s)}
    }else{
     const panel=18*s*(1-p.open)
     fill('#765234',x-22*s,p.y-82*s,4*s,84*s);fill('#66482f',x+18*s,p.y-82*s,4*s,84*s)
@@ -64,7 +96,8 @@ export function drawOfficeShaft(c:CanvasRenderingContext2D,scene:OfficeScene,fro
     if(panel>.01){fill('#765336',x-18*s,p.y-78*s,panel,78*s);fill('#65462e',x+18*s-panel,p.y-78*s,panel,78*s)}
     if(p.open<.25){c.fillStyle='#d4bb7b';c.font=`${11*s}px sans-serif`;c.textAlign='center';c.fillText('↕',x,p.y-34*s)}
    }
-   fill('#3a3024',x-15*s,p.y-91*s,30*s,8*s)
+   timberLip(x-16*s,p.y-93*s,32*s,9*s)
+   fill('#3a3024',x-14*s,p.y-91*s,28*s,6*s)
    c.fillStyle='#e5c994';c.font=`bold ${5*s}px sans-serif`;c.textAlign='center';c.fillText('LIFT',x,p.y-85*s)
    fill(p.open>0?'#f5d688':'#a59667',x-2*s,p.y-80*s,4*s,2*s)
   }

@@ -35,8 +35,15 @@ export function roomStationLayout(floor:OfficeFloor,width:number):OfficeRoomStat
  // Theme's main bench stays in the first zone; secondary tools vary between projects.
  if(design.variant&1)[order[2],order[3]]=[order[3],order[2]]
  const large=largeRoom(floor,width)
- const positions=large?[[.18,.40],[.50,.40],[.215,.565],[.535,.565]]:[[.12,.366],[.31,.405],[.49,.385],[.64,.432]]
- const facings:OfficeRoomStation['facing'][]=['front','left','right','front']
+ const plans:Record<OfficeRoomTheme,number[][]>={
+  studio:large?[[.17,.40],[.49,.40],[.23,.565],[.55,.565]]:[[.12,.366],[.31,.432],[.49,.366],[.64,.405]],
+  operations:large?[[.18,.40],[.53,.40],[.16,.565],[.49,.565]]:[[.12,.405],[.31,.366],[.49,.432],[.64,.366]],
+  research:large?[[.23,.40],[.54,.40],[.17,.565],[.49,.565]]:[[.12,.432],[.31,.366],[.49,.405],[.64,.366]],
+  quality:large?[[.17,.40],[.49,.40],[.24,.565],[.56,.565]]:[[.12,.366],[.31,.405],[.49,.366],[.64,.432]],
+ }
+ const positions=plans[design.theme]
+ const orientations:Record<OfficeRoomTheme,OfficeRoomStation['facing'][]>={studio:['right','left','front','left'],operations:['front','right','left','front'],research:['right','front','left','front'],quality:['left','right','front','front']}
+ const facings=orientations[design.theme]
  const back=large?.40:.366,front=large?.565:.432
  return order.map((kind,i)=>{
   const [px,py]=positions[i],depth=(py-back)/(front-back),size=width*.18*(.82+.18*depth)

@@ -1,3 +1,4 @@
+import {drawOfficeRoomCurios} from './office-room-curios-art'
 import type {OfficeFloor,OfficeScene} from '../../../lib/office-types'
 import {roomDesignFor,roomLeadRestPoint,type OfficeRoomTheme} from '../../../lib/office-room-design'
 
@@ -38,13 +39,8 @@ export function drawOfficeRoomDesign(c:Ctx,scene:OfficeScene,floor:OfficeFloor,a
  // Distinct painted mission panel; the central live chalkboard stays free.
  const x=w*(.045+(design.variant%3)*.018)
  drawRoomProp(c,art,cells[design.theme],x,floor.y+w*.135,w*.245,w*.215)
- // A second small painted tool display gives each theme a distinct room balance.
- // Cropped fragments are wall-mounted; none duplicate an interactive workbench.
- const source=art.props as CanvasImageSource&{naturalWidth?:number;naturalHeight?:number;width?:number;height?:number}
- const sw=(source.naturalWidth??source.width??1536)/3,sh=(source.naturalHeight??source.height??1024)/2
- const detail:Record<OfficeRoomTheme,readonly[number,number,number,number]>={studio:[.05,.48,.57,.35],operations:[.30,.28,.50,.39],research:[.53,.26,.41,.47],quality:[.09,.62,.73,.27]}
- const [sx,sy,swidth,sheight]=detail[design.theme],cell=cells[design.theme]
- c.drawImage(art.props,(cell%3+sx)*sw,(Math.floor(cell/3)+sy)*sh,sw*swidth,sh*sheight,w*(.65+(design.detail%2)*.018),floor.y+w*(.15+Math.floor(design.detail/2)*.024),w*.145,w*.10)
+ // Stable little keepsakes replace the repeated secondary hardware fragment.
+ drawOfficeRoomCurios(c,scene,floor,art)
  // The chair is wholly inside its workroom, outside work stations and the lift aisle.
  drawRoomProp(c,art,4,lead.x-w*.062,lead.y-w*.115,w*.135,w*.135)
 }

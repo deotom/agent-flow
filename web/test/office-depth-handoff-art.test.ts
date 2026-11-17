@@ -7,7 +7,7 @@ import {drawOfficeVendor} from '../components/agent-visualizer/office/office-ven
 import {officeVendorExchange} from '../lib/office-vendor'
 import type {OfficeActor,OfficePaintOptions,OfficeScene} from '../lib/office-types'
 const scene:OfficeScene={width:450,height:650,actors:[],quietTeams:[],totalAgents:1,finishedCount:1,floors:[{id:'garden',kind:'lounge',sessionId:null,title:'Garden',subtitle:'',color:'#abc',y:0,height:253,actorKeys:['a']}]}
-const actor={key:'a',sessionId:'s',agent:{id:'a',name:'Agent',status:'done',role:'worker',runtime:null,activities:[]},task:null,parentKey:null,appearance:officeAppearance(0),floorId:'garden',zone:'lounge',activity:'collecting snack',runtimeName:'Codex',x:450*.61,y:253*.70,stand:true,pose:{walk:false,sit:false}} as unknown as OfficeActor
+const actor={key:'a',sessionId:'s',agent:{id:'a',name:'Agent',status:'done',role:'worker',runtime:null,activities:[]},task:null,parentKey:null,appearance:officeAppearance(0),floorId:'garden',zone:'lounge',activity:'collecting snack',runtimeName:'Codex',x:450*.72,y:253*.67,stand:true,pose:{walk:false,sit:false}} as unknown as OfficeActor
 function context(){
  const images:unknown[][]=[],scales:number[][]=[],state:Record<string,unknown>={globalAlpha:1}
  const c=new Proxy(state,{get(t,k){if(k in t)return t[String(k)];if(k==='drawImage')return (...args:unknown[])=>images.push(args);if(k==='scale')return (...args:number[])=>scales.push(args);if(k==='measureText')return ()=>({width:20});if(k==='createLinearGradient'||k==='createRadialGradient')return ()=>({addColorStop(){}});return ()=>{}},set(t,k,v){t[String(k)]=v;return true}}) as unknown as CanvasRenderingContext2D

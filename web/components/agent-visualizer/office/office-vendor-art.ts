@@ -1,3 +1,4 @@
+import {officeVendorWalk,type OfficeVendorWalk} from '../../../lib/office-vendor-walk'
 import type { OfficeScene,OfficePose,OfficePoint } from '../../../lib/office-types'
 import type { Season, Weather } from '../../../lib/office-sky'
 import { officeVendorState, type OfficeVendorExchange } from '../../../lib/office-vendor'
@@ -28,6 +29,9 @@ export function drawOfficeShopQueue(c:Ctx,scene:OfficeScene,queue:import('../../
 }
 export interface OfficeVendorCharacter {
   /** Absolute scene feet origin and multiplier for the existing 76px avatar. */
+  walk?:boolean
+  gait?:number
+  stepDirection?:OfficePoint
   x: number
   y: number
   scale: number
@@ -46,18 +50,18 @@ export interface OfficeVendorCharacter {
 
 /** Explicit supported hands do not imply typing or its keyboard-speed head bob. */
 export function officeVendorAvatarPose(staff:OfficeVendorCharacter):OfficePose {
-  return {face:staff.face,offer:staff.offer,supportHands:staff.supportHands,turn:staff.turn}
+  return {walk:staff.walk,gait:staff.gait,stepDirection:staff.stepDirection,face:staff.face,offer:staff.offer,supportHands:staff.supportHands,turn:staff.turn}
 }
 
 // Canvas-local presentation continuity only. No actor, trip or purchase state is written.
-type ChoreMemo={at:number;width:number;last:OfficeVendorCharacter|null;wasHandoff:boolean;blocked?:string;returning?:{at:number;duration:number;previous:OfficeVendorCharacter}}
+type ChoreMemo={motion?:OfficeVendorWalk;at:number;width:number;last:OfficeVendorCharacter|null;wasHandoff:boolean;blocked?:string;returning?:{at:number;duration:number;previous:OfficeVendorCharacter}}
 const choreMemos=new WeakMap<Ctx,ChoreMemo>()
 
 /** The cart is already painted into the garden. Only staff and small stock/sign accents live here.
  * Callback runs inside a saved bounded clip, using absolute coordinates; the caller applies scale.
  * No appearance/model import keeps the decorative NPC independent of actors and reservations.
  */
-export function drawOfficeVendor(c: Ctx, scene: OfficeScene, date: Date, time: number, drawCharacter: (character: OfficeVendorCharacter) => void, exchange: OfficeVendorExchange | null = null): void {
+export function drawOfficeVendor(c: Ctx, scene: OfficeScene, date: Date, time: number, drawCharacter: (character: OfficeVendorCharacter) => void, exchange: OfficeVendorExchange | null = null, customerComing = false): void {
   const garden = scene.floors.find(f => f.kind === 'lounge'), w = scene.width, h = garden?.height ?? 0
   if (!garden || !Number.isFinite(w) || !Number.isFinite(h) || !Number.isFinite(garden.y) || w <= 0 || h <= 0) return
   const state = officeVendorState(date), k = w / 450, gy = garden.y
@@ -83,18 +87,22 @@ export function drawOfficeVendor(c: Ctx, scene: OfficeScene, date: Date, time: n
     const handoff = Boolean(customer && Number.isFinite(exchange?.progress) && exchange!.progress >= 0 && exchange!.progress < 1)
     // Quiet gaps separate grounded chores. These are decorative gestures only;
     // a real pickup always owns the hands, and sheltered staff stay still.
-    const clock=Number.isFinite(time)&&time>0?time%36:0
+    const clock=Number.isFinite(time)&&time>0?time%60:0
     const nominal=clock>=4&&clock<10?'prepare':clock>=14&&clock<20?'tidy':clock>=24&&clock<30?'stock':'idle'
-    const token=`${Math.floor(time/36)}:${nominal}`
+    const token=`${Math.floor(time/60)}:${nominal}`
     const saved=choreMemos.get(c)
     const memo:ChoreMemo=saved&&saved.width===w&&time>=saved.at?saved:{at:time,width:w,last:null,wasHandoff:false}
-    if(handoff){
-      if(!memo.wasHandoff&&memo.last?.shopAction)memo.returning={at:time,duration:Math.min(.24,(1-exchange!.progress)*1.4*.4),previous:memo.last}
+    if(handoff||customerComing){
+      if(!memo.wasHandoff&&memo.last?.shopAction)memo.returning={at:time,duration:handoff?Math.min(.24,(1-exchange!.progress)*1.4*.4):.24,previous:memo.last}
       if(nominal!=='idle')memo.blocked=token
     }
-    const chore=!sheltered&&!handoff&&memo.blocked!==token?nominal:'idle'
+    const priorMotion=memo.motion??null
+    const motion=officeVendorWalk(priorMotion,time,customerComing||handoff,w,h,gy)
+    memo.motion=motion
+    const atHome=Math.hypot(motion.x-w*.705,motion.y-(gy+h*.667))<.01
+    const chore=!sheltered&&!handoff&&!customerComing&&atHome&&!motion.walk&&memo.blocked!==token?nominal:'idle'
     const start=chore==='prepare'?4:chore==='tidy'?14:24
-    const x=w*(sheltered?.778:.705),y=gy+h*(sheltered?.62:.667)
+    const x=sheltered?w*.778:motion.x,y=sheltered?gy+h*.62:motion.y
     const scale=k*(sheltered?.44:officeActorDepthScale(scene,{floorId:garden.id,y}))
     const local=(px:number,py:number):OfficePoint=>({x:(px-x)/scale,y:(py-y)/scale})
     const mix=(a:OfficePoint,b:OfficePoint,t:number):OfficePoint=>{const p=Math.max(0,Math.min(1,t)),e=p*p*(3-2*p);return {x:a.x+(b.x-a.x)*e,y:a.y+(b.y-a.y)*e}}
@@ -111,20 +119,22 @@ export function drawOfficeVendor(c: Ctx, scene: OfficeScene, date: Date, time: n
     const reach=chore==='idle'?0:Math.min(1,progress/.18,(1-progress)/.18)
     let character: OfficeVendorCharacter = {
       x,y,scale,face:1,
+      ...(!sheltered?{walk:motion.walk,gait:motion.distance/(22*scale),stepDirection:{x:motion.dx,y:motion.dy},face:motion.face}:{}),
       serving: state.open, season: state.season, weather: state.weather,
       pose: handoff ? 'handoff' : chore,
       ...(chore!=='idle'?{shopAction:{held,progress,source,destination,prop},turn:.15*reach,supportHands:{left:{x:-15+3*reach,y:-21-6*reach},right:hand}}:{}),
-      ...(handoff ? { face: customer!.x < w*.705 ? -1 as const : 1 as const, offer: .22, recipientKey: exchange!.actorKey } : {}),
+      ...(handoff ? { face: customer!.x < x ? -1 as const : 1 as const, offer: .22, recipientKey: exchange!.actorKey } : {}),
     }
     if(memo.returning){
       const old=memo.returning.previous,a=old.shopAction!,p=Math.max(0,(time-memo.returning.at)/memo.returning.duration)
       if(p<1){
+        memo.motion={...motion,x:old.x,y:old.y,walk:false,at:time}
         const prop=a.held?mix(a.prop,a.source,p/.75):a.source
         const right=a.held&&p<.75?prop:mix(a.held?a.source:old.supportHands!.right,rest,a.held?(p-.75)/.25:p)
         character={...old,offer:undefined,recipientKey:undefined,turn:(old.turn??0)*(1-p),supportHands:{left:mix(old.supportHands!.left,{x:-15,y:-21},p),right},shopAction:{...a,held:a.held&&p<.75,prop}}
       }else memo.returning=undefined
     }
-    if(state.open&&Number.isFinite(time)&&time>0){memo.at=time;memo.last=character;memo.wasHandoff=handoff;choreMemos.set(c,memo)}
+    if(state.open&&Number.isFinite(time)&&time>0){memo.at=time;memo.last=character;memo.wasHandoff=handoff||customerComing;choreMemos.set(c,memo)}
     if(!sheltered){
       // Holder phases keep the same behind-body layer; only a held tool is foreground.
       for(const kind of ['tidy','stock','prepare'] as const){
@@ -135,8 +145,10 @@ export function drawOfficeVendor(c: Ctx, scene: OfficeScene, date: Date, time: n
       }
     }
     c.save(); c.beginPath()
-    c.rect(w * (sheltered ? .745 : .655), gy + h * (sheltered ? .485 : .36), w * (sheltered ? .067 : .135), h * (sheltered ? .112 : .35))
-    c.clip()
+    c.rect(w * (sheltered ? .745 : .625), gy + h * (sheltered ? .485 : .30), w * (sheltered ? .067 : .23), h * (sheltered ? .112 : .48))
+    // The painted cart's lower frontage occludes the clerk as they step behind it.
+    if(!sheltered)c.rect(w*.757,gy+h*.575,w*.077,h*.145)
+    c.clip(sheltered?'nonzero':'evenodd')
     drawCharacter(character)
     // Small cream apron over the uniform; preserves the caller's face, hair and seasonal layer.
     c.save(); c.translate(character.x, character.y); c.scale(character.scale, character.scale)

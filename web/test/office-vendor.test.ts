@@ -147,7 +147,9 @@ it('puts a held tool away continuously before a real handoff and skips mid-chore
  assert.ok(Math.hypot(first.shopAction.prop.x-before.shopAction.prop.x,first.shopAction.prop.y-before.shopAction.prop.y)<1)
  assert.equal(frame(7.4,.28).pose,'handoff')
  assert.equal(frame(8.5,null).pose,'idle','do not resume halfway through the interrupted chore')
- assert.equal(frame(17,null).pose,'tidy','later chore can still start')
+ for(let t=8.54;t<17;t+=.04)frame(t,null)
+ assert.equal(frame(17,null).pose,'tidy','later chore can still start after walking home')
+ assert.equal(frame(17.04,null).face,1,'supported chore hands are not mirrored away from the shelf')
 })
 it('finishes put-away within the remaining pickup window after a delayed frame',()=>{
  const {s,visual}=pickupFixture(),r=recorder()
@@ -209,7 +211,7 @@ import { officeVendorExchange } from '../lib/office-vendor'
 import { officeAppearance } from '../lib/office-model'
 import type { OfficeActor, OfficeDailyVisual } from '../lib/office-types'
 function pickupFixture(width=450){
-  const s=scene(width),x=width*.61,y=20+width*.5625*.70
+  const s=scene(width),x=width*.72,y=20+width*.5625*.67
   const actor:OfficeActor={key:'customer-b',sessionId:'s',agent:{id:'b',name:'B',role:'worker',status:'done'} as OfficeActor['agent'],task:null,parentKey:null,appearance:officeAppearance(0),floorId:'garden',zone:'lounge',activity:'collecting snack',runtimeName:'Codex',x,y,pose:{walk:false,sit:false}}
   s.actors=[actor];s.totalAgents=1;s.finishedCount=1
   const visual:OfficeDailyVisual={delivery:false,cleanup:false,guests:[{actorKey:actor.key,kind:'outing',phase:'outbound',action:'snack',floorId:'garden',x,y,seat:0,night:false,collected:true,pickupProgress:.5}]}
@@ -280,4 +282,12 @@ it('pickup progress follows only the active physical cart hold and never lift/se
     const altered={...trip,segments:trip.segments.map((seg,i)=>i===1?{...seg,...patch}:seg)}
     assert.equal(officeVendorPickupProgress(s,altered,1000),null,JSON.stringify(patch))
   }
+})
+
+it('prepares service only after the snack visitor actually reaches the garden',async()=>{
+ const {officeVendorCustomerApproaching}=await import('../lib/office-vendor')
+ const {s,visual}=pickupFixture();visual.guests[0].collected=false
+ assert.equal(officeVendorCustomerApproaching(s,visual),true)
+ assert.equal(officeVendorCustomerApproaching(s,{...visual,guests:visual.guests.map(g=>({...g,floorId:'team'}))}),false)
+ for(const pose of [{inLift:true},{climb:true}])assert.equal(officeVendorCustomerApproaching({...s,actors:s.actors.map(a=>({...a,pose}))},visual),false)
 })

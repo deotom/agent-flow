@@ -38,13 +38,15 @@ test('garden threshold crossing belongs to the boarding phase before the door cl
  const boarding=trip.segments.find(s=>s.liftPhase==='boarding')!
  assert.equal(boarding.kind,'walk');assert.ok(boarding.from.x<trip.shaftX);assert.equal(boarding.to.x,trip.shaftX)
  const approach=trip.segments.slice(0,trip.segments.indexOf(boarding)).filter(s=>s.kind==='walk')
- assert.ok(approach.every(s=>s.to.x<trip.shaftX))
+ assert.ok(approach.every(s=>s.to.x<trip.shaftX||s.from.y!==boarding.to.y),'a right-edge approach stays on the foreground path until reaching the lift waiting side')
 })
 test('pause shifts the car timeline and compaction retains its final physical position',()=>{
  const {lift,trips}=setup(),trip=[...trips.values()][0],ride=trip.segments.find(s=>s.kind==='ride')!
  const now=trip.startedAt+trip.segments.slice(0,trip.segments.indexOf(ride)).reduce((n,s)=>n+s.duration,0)+ride.duration/2
  const frame=officeLiftFrame(lift,now);shiftOfficeLiftTime(lift,5000)
- assert.deepEqual(officeLiftFrame(lift,now+5000),frame)
+ const shifted=officeLiftFrame(lift,now+5000)
+ assert.ok(Math.abs(shifted.y-frame.y)<1e-9)
+ assert.deepEqual({...shifted,y:frame.y},frame)
  const end=[...trips.values()].at(-1)!.endsAt+5000
  const final=officeLiftFrame(lift,end);advanceOfficeLift(lift,end)
  assert.deepEqual(officeLiftFrame(lift,end+10000),final);assert.equal(lift.reservations.length,0)
