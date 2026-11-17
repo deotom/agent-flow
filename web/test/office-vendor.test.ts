@@ -52,19 +52,20 @@ it('wet simulated hours close service but keep staff sheltered and seasonal stoc
 })
 function scene(width:number):OfficeScene{return {width,height:800,floors:[{id:'garden',kind:'lounge',sessionId:null,title:'Garden',subtitle:'',color:'#fff',y:20,height:width*.5625,actorKeys:[]}],actors:[],quietTeams:[],totalAgents:0,finishedCount:0}}
 function recorder(){
-  const calls:{op:string,args:unknown[]}[]=[],state:Record<string,unknown>={}
-  const c=new Proxy(state,{get(t,k){if(k in t)return t[k as string];return (...args:unknown[])=>calls.push({op:String(k),args})},set(t,k,v){t[String(k)]=v;return true}})
+  const calls:{op:string,args:unknown[];fill?:unknown}[]=[],state:Record<string,unknown>={}
+  const c=new Proxy(state,{get(t,k){if(k in t)return t[k as string];return (...args:unknown[])=>calls.push({op:String(k),args,fill:state.fillStyle})},set(t,k,v){t[String(k)]=v;return true}})
   return {c:c as unknown as CanvasRenderingContext2D,calls}
 }
 it('attaches chore props to the actual rendered palm at all supported widths',()=>{
  for(const width of [240,450,700])for(const time of [7,17,27]){
-  const r=recorder();let palm:{x:number;y:number}|undefined
+  const r=recorder();let palm:{x:number;y:number}|undefined,afterAvatar=0
   drawOfficeVendor(r.c,scene(width),date(12),time,staff=>{
    const hands=drawOfficeAvatar(r.c,officeAppearance(0),0,0,time,officeVendorAvatarPose(staff))
    palm=hands.right
    assert.ok(hands.left.x<-10,'working left hand remains outside foreground apron')
+   afterAvatar=r.calls.length
   })
-  const prop=r.calls.find(call=>call.op==='fillRect'&&call.args[2]===10&&(call.args[3]===3||call.args[3]===7))
+  const prop=r.calls.slice(afterAvatar).find(call=>call.op==='fillRect'&&call.args[2]===10&&(call.args[3]===3||call.args[3]===7))
   assert.ok(prop&&palm)
   assert.ok(Math.abs(Number(prop.args[0])+5-palm.x)<.001,'prop follows actual right palm x')
   assert.ok(Math.abs(Number(prop.args[1])+1-palm.y)<.001,'prop follows actual right palm y')
@@ -81,6 +82,81 @@ it('keeps foreground seasonal stock out of the sheltered clerk window',()=>{
   })
   assert.equal(overlap,false,'wares must not paint over sheltered head and chest')
  }
+})
+it('picks up shop objects from fixed holders and releases them onto actual shop surfaces',()=>{
+ for(const width of [240,450,700])for(const start of [4,14,24]){
+  const frames=[start+.1,start+3,start+5.9].map(time=>{
+   let action:OfficeVendorCharacter['shopAction']
+   drawOfficeVendor(recorder().c,scene(width),date(12),time,staff=>{
+    action=staff.shopAction
+    if(action){
+     const expected=start===14?[.728,.59]:start===24?[.73,.64]:[.738,.571]
+     const edgeOffset=start===14?-1:start===24?6:2
+     assert.ok(Math.abs(staff.x+action.destination.x*staff.scale-width*expected[0])<.001)
+     assert.ok(Math.abs(staff.y+(action.destination.y+edgeOffset)*staff.scale-(20+width*.5625*expected[1]))<.001)
+    }
+   })
+   assert.ok(action,'chore needs a shop object interaction, not just a pose label')
+   return action
+  })
+  assert.equal(frames[0].held,false,'object stays in its holder until picked up')
+  assert.deepEqual(frames[0].prop,frames[0].source)
+  assert.equal(frames[1].held,true,'object follows the hand while being used')
+  assert.equal(frames[2].held,false,'object is left on a shop surface before hands withdraw')
+  assert.deepEqual(frames[2].prop,frames[2].destination)
+ }
+})
+it('keeps resting tools behind the clerk and only held tools in the foreground',()=>{
+ for(const [start,color] of [[4,'#e3bc77'],[14,'#b9d2c2'],[24,'#9b653e']] as const){
+  for(const [offset,front] of [[.01,false],[3,true],[5.99,false]] as const){
+   const r=recorder();let actorAt=0
+   drawOfficeVendor(r.c,scene(450),date(12),start+offset,()=>{actorAt=r.calls.length})
+   const toolAt=r.calls.findIndex(call=>call.op==='fillRect'&&call.fill===color)
+   assert.equal(r.calls.filter(call=>call.op==='fillRect'&&call.fill===color).length,1,'one tool, without a duplicate at its holder')
+   assert.ok(toolAt>=0)
+   assert.equal(toolAt>actorAt,front,`${start+offset}: resting/held layer`)
+  }
+ }
+})
+it('rests tool bottoms on surfaces and wipes the clear shelf lip rather than the tray',()=>{
+ for(const width of [240,450,700]){
+  const h=width*.5625
+  for(const [time,baseline,offset] of [[4.01,.571,2],[24.01,.64,6]] as const){
+   drawOfficeVendor(recorder().c,scene(width),date(12),time,staff=>{
+    const a=staff.shopAction!
+    assert.ok(Math.abs(staff.y+(a.prop.y+offset)*staff.scale-(20+h*baseline))<.001)
+   })
+  }
+  drawOfficeVendor(recorder().c,scene(width),date(12),17,staff=>{
+   const clothBottom=staff.y+(staff.shopAction!.prop.y+2)*staff.scale
+   assert.ok(Math.abs(clothBottom-(20+h*.592))<.001)
+   assert.ok(clothBottom-3*staff.scale>20+h*.571,'cloth stays clear of tray')
+  })
+ }
+})
+it('puts a held tool away continuously before a real handoff and skips mid-chore resumption',()=>{
+ const {s,visual}=pickupFixture(),r=recorder()
+ const frame=(time:number,progress:number|null)=>{
+  let staff:OfficeVendorCharacter|undefined
+  const exchange=progress===null?null:officeVendorExchange(s,date(12),{...visual,guests:[{...visual.guests[0],pickupProgress:progress}]})
+  drawOfficeVendor(r.c,s,date(12),time,a=>{staff=a},exchange)
+  return staff!
+ }
+ const before=frame(7,null),first=frame(7.01,0)
+ assert.ok(first.shopAction&&before.shopAction,'held tool cannot jump home on interruption')
+ assert.ok(Math.hypot(first.shopAction.prop.x-before.shopAction.prop.x,first.shopAction.prop.y-before.shopAction.prop.y)<1)
+ assert.equal(frame(7.4,.28).pose,'handoff')
+ assert.equal(frame(8.5,null).pose,'idle','do not resume halfway through the interrupted chore')
+ assert.equal(frame(17,null).pose,'tidy','later chore can still start')
+})
+it('finishes put-away within the remaining pickup window after a delayed frame',()=>{
+ const {s,visual}=pickupFixture(),r=recorder()
+ drawOfficeVendor(r.c,s,date(12),7,()=>{})
+ const exchange=officeVendorExchange(s,date(12),{...visual,guests:[{...visual.guests[0],pickupProgress:.95}]})!
+ drawOfficeVendor(r.c,s,date(12),7.01,()=>{},exchange)
+ let pose:string|undefined
+ drawOfficeVendor(r.c,s,date(12),7.06,a=>{pose=a.pose},{...exchange,progress:.985})
+ assert.equal(pose,'handoff','decorative cleanup must leave time for the actual transfer')
 })
 it('places one full decorative merchant beside the painted cart within a bounded clip without scene writes',()=>{
   for(const width of [240,450,700]){
@@ -183,6 +259,7 @@ it('merchant reaches only for an eligible recipient rather than waving on a time
     const serving:OfficeVendorCharacter[]=[]
     drawOfficeVendor(recorder().c,s,date(12),time,a=>serving.push(a),exchange)
     assert.equal(serving[0].pose,'handoff');assert.equal(serving[0].supportHands,undefined)
+    assert.equal(serving[0].shopAction,undefined,'real service interrupts shop-object routines')
   }
 })
 import { officeVendorPickupProgress } from '../lib/office-vendor'

@@ -316,7 +316,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
   drawOfficeVendor(c,scene,o.date,time,staff=>{
     c.save();c.translate(staff.x,staff.y);c.scale(staff.scale,staff.scale)
     const hands=drawOfficeAvatar(c,shopkeeper,0,0,time,{...officeVendorAvatarPose(staff),wave:staff.pose==='serve',wardrobe:officeWardrobeFor(wardrobeTheme,shopkeeper.slot,true)})
-    vendorHand={x:staff.x+hands.right.x*staff.scale,y:staff.y+hands.right.y*staff.scale,scale:staff.scale}
+    if(!vendorExchange||staff.pose==='handoff')vendorHand={x:staff.x+hands.right.x*staff.scale,y:staff.y+hands.right.y*staff.scale,scale:staff.scale}
     c.restore()
   },vendorExchange)
   drawOfficeShaft(c,scene,false,o.architectureArt,false,o.lift)
