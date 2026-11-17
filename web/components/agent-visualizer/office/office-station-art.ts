@@ -2,25 +2,9 @@ import frames from './assets/work-stations-frames-v1.json'
 import type {OfficeRoomStation} from '../../../lib/office-room-design'
 import type {OfficeRoomArt} from './office-room-design-art'
 import type {OfficeStationState} from '../../../lib/office-station-activity'
-
-type Point=readonly[number,number]
-type Quad=readonly[Point,Point,Point,Point]
-type Hardware={screens:readonly Quad[];leds?:readonly Point[];lamp?:Point;page?:Point}
+import {officeStationHardware,type Hardware,type Point} from './office-station-hardware'
+export {officeStationHardware} from './office-station-hardware'
 export interface OfficeStationEffects {time:number;animate:boolean;state:OfficeStationState}
-const hardware:Record<OfficeRoomStation['kind'],{front:Hardware;angle:Hardware}>={
- build:{front:{screens:[[[.195,.091],[.49,.073],[.49,.30],[.195,.32]],[[.568,.09],[.82,.115],[.82,.32],[.568,.302]]]},angle:{screens:[[[.18,.13],[.425,.09],[.425,.31],[.18,.35]],[[.50,.10],[.735,.105],[.735,.31],[.50,.31]]]}},
- terminal:{front:{screens:[[[.65,.365],[.90,.365],[.88,.505],[.62,.505]]],leds:[.22,.31,.40,.49,.58,.67,.76,.85].flatMap(y=>[.18,.26,.34].map(x=>[x,y] as Point))},angle:{screens:[[[.625,.36],[.821,.39],[.858,.51],[.66,.51]]],leds:[.24,.33,.42,.51,.60,.69,.78].flatMap(y=>[.34,.41,.48].map(x=>[x,y] as Point))}},
- quality:{front:{screens:[[[.47,.225],[.59,.225],[.59,.326],[.47,.326]]],leds:[[.522,.374]],lamp:[.20,.115]},angle:{screens:[[[.475,.20],[.589,.20],[.589,.30],[.475,.30]]],leds:[[.535,.355]],lamp:[.224,.14]}},
- research:{front:{screens:[],lamp:[.735,.295],page:[.75,.54]},angle:{screens:[],lamp:[.703,.275],page:[.70,.535]}},
-}
-
-/** Landmarks are in the tight atlas frame, so view fallback and depth use one transform. */
-export function officeStationHardware(kind:OfficeRoomStation['kind'],facing:OfficeRoomStation['facing']):Hardware {
- const source=hardware[kind][facing==='front'?'front':'angle']
- if(facing!=='right')return source
- const flip=([x,y]:Point):Point=>[1-x,y]
- return {screens:source.screens.map(q=>[flip(q[1]),flip(q[0]),flip(q[3]),flip(q[2])] as Quad),leds:source.leds?.map(flip),lamp:source.lamp&&flip(source.lamp),page:source.page&&flip(source.page)}
-}
 
 function drawDeviceEffects(c:CanvasRenderingContext2D,kind:OfficeRoomStation['kind'],parts:Hardware,x:number,y:number,w:number,h:number,effect:OfficeStationEffects){
  const alpha=Number.isFinite(c.globalAlpha)?c.globalAlpha:1
@@ -51,9 +35,16 @@ function drawDeviceEffects(c:CanvasRenderingContext2D,kind:OfficeRoomStation['ki
   }
   c.stroke();c.restore()
  }
- for(const [index,led] of (parts.leds??[]).entries()){
-  const [px,py]=point(led),lit=time?(Math.sin(time*3.1+index*1.7)>.35?.9:.18):working?.65:alert?.85:.22
-  c.save();c.globalAlpha=alpha*lit;c.fillStyle=status;c.beginPath();c.ellipse(px,py,Math.max(.55,w*.01),Math.max(.45,h*.006),0,0,Math.PI*2);c.fill();c.restore()
+ // Two paths replace a save/fill/restore for every LED, with the same per-lamp phase.
+ if(parts.leds?.length)for(const bright of time?[false,true]:[false]){
+  const lit=time?(bright?.9:.18):working?.65:alert?.85:.22
+  c.save();c.globalAlpha=alpha*lit;c.fillStyle=status;c.beginPath();let count=0
+  for(const [index,led] of (parts.leds??[]).entries()){
+   if(time&&(Math.sin(time*3.1+index*1.7)>.35)!==bright)continue
+   const px=x+w*led[0],py=y+h*led[1],rx=Math.max(.55,w*.01)
+   c.moveTo(px+rx,py);c.ellipse(px,py,rx,Math.max(.45,h*.006),0,0,Math.PI*2);count++
+  }
+  if(count)c.fill();c.restore()
  }
  if(parts.lamp){
   const [px,py]=point(parts.lamp)
@@ -65,7 +56,7 @@ function drawDeviceEffects(c:CanvasRenderingContext2D,kind:OfficeRoomStation['ki
 }
 
 /** Tight atlas frames retain the real object aspect; its lowest foot is the floor anchor. */
-export function drawOfficeStation(c:CanvasRenderingContext2D,station:OfficeRoomStation,art:OfficeRoomArt,effects?:OfficeStationEffects){
+function paintOfficeStation(c:CanvasRenderingContext2D,station:OfficeRoomStation,art:OfficeRoomArt,effects?:OfficeStationEffects){
  const key=`${station.kind}-${station.facing}` as keyof typeof frames
  const requested=frames[key]??frames[`${station.kind}-front`],frame=requested.sheet==='angles'&&!art.stationAngles?frames[`${station.kind}-front`]:requested,source=frame.sheet==='angles'?art.stationAngles:art.stations
  if(!source)return
@@ -79,4 +70,39 @@ export function drawOfficeStation(c:CanvasRenderingContext2D,station:OfficeRoomS
   const facing=frame.sheet==='front'?'front':station.facing
   drawDeviceEffects(c,station.kind,officeStationHardware(station.kind,facing),station.x-w/2,station.y-h,w,h,effects)
  }
+}
+
+type Raster={canvas:OffscreenCanvas;x:number;y:number;scale:number;pixels:number}
+const rasters=new Map<string,Raster>(),sourceIds=new WeakMap<object,number>()
+let nextSourceId=0,rasterPixels=0
+
+/** Bounded presentation cache only; source state and moving devices are always read fresh. */
+export function drawOfficeStation(c:CanvasRenderingContext2D,station:OfficeRoomStation,art:OfficeRoomArt,effects?:OfficeStationEffects){
+ const moving=effects?.state==='working'&&effects.animate&&Number.isFinite(effects.time)&&effects.time>0
+ if(!effects||moving||typeof OffscreenCanvas==='undefined'||c.globalAlpha!==1||c.filter!=='none'||c.globalCompositeOperation!=='source-over'||c.imageSmoothingEnabled===false){paintOfficeStation(c,station,art,effects);return}
+ const matrix=c.getTransform(),scale=matrix.a
+ if(!Number.isFinite(scale)||scale<=0||matrix.b!==0||matrix.c!==0||matrix.d!==scale){paintOfficeStation(c,station,art,effects);return}
+ const key=`${station.kind}-${station.facing}` as keyof typeof frames,requested=frames[key]??frames[`${station.kind}-front`]
+ const frame=requested.sheet==='angles'&&!art.stationAngles?frames[`${station.kind}-front`]:requested,source=frame.sheet==='angles'?art.stationAngles:art.stations
+ if(!source)return
+ let id=sourceIds.get(source);if(id===undefined){id=++nextSourceId;sourceIds.set(source,id)}
+ // Align the blit to device pixels and paint the original subpixel phase inside
+ // the raster. Otherwise a second bilinear sample softens the painted assets.
+ const left=(station.x-(station.width+4)/2)*scale+(matrix.e??0),top=(station.y-station.height-2)*scale+(matrix.f??0)
+ const phaseX=left-Math.floor(left),phaseY=top-Math.floor(top)
+ const cacheKey=[id,station.kind,frame.sheet,frame.x,frame.y,station.width,station.height,station.depth,scale,phaseX.toFixed(6),phaseY.toFixed(6),effects.state].join(':')
+ let raster=rasters.get(cacheKey)
+ if(!raster){
+  const width=Math.ceil((station.width+4)*scale+phaseX),height=Math.ceil((station.height+station.width*.12+4)*scale+phaseY),pixels=width*height
+  if(!Number.isFinite(pixels)||pixels<=0||pixels>1_000_000){paintOfficeStation(c,station,art,effects);return}
+  const canvas=new OffscreenCanvas(width,height),context=canvas.getContext('2d')
+  if(!context){paintOfficeStation(c,station,art,effects);return}
+  const x=(station.width+4)/2+phaseX/scale,y=station.height+2+phaseY/scale
+  context.setTransform(scale,0,0,scale,0,0)
+  paintOfficeStation(context as unknown as CanvasRenderingContext2D,{...station,x,y},art,{...effects,time:0,animate:false})
+  raster={canvas,x,y,scale,pixels}
+  while(rasters.size&&(rasters.size>=32||rasterPixels+pixels>2_000_000)){const oldest=rasters.keys().next().value!;rasterPixels-=rasters.get(oldest)!.pixels;rasters.delete(oldest)}
+  rasters.set(cacheKey,raster);rasterPixels+=pixels
+ }else{rasters.delete(cacheKey);rasters.set(cacheKey,raster)}
+ c.drawImage(raster.canvas,station.x-raster.x,station.y-raster.y,raster.canvas.width/raster.scale,raster.canvas.height/raster.scale)
 }

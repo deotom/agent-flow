@@ -57,6 +57,7 @@ it('keeps all twelve hardware views inside their atlas frame and front fallback 
   const parts=officeStationHardware(kind,facing)
   const points=[...parts.screens.flat(),...(parts.leds??[]),...(parts.lamp?[parts.lamp]:[]),...(parts.page?[parts.page]:[])]
   assert.ok(points.every(p=>p.every(n=>Number.isFinite(n)&&n>=0&&n<=1)))
+  assert.ok(parts.screens.every(q=>q[0][0]<q[1][0]&&q[3][0]<q[2][0]),`${kind}/${facing}: display reading order`)
   for(const width of [240,450,700])for(const call of paint(2,true,'working',{...station,kind,facing,width:width*.18,height:width*.18})){
    for(const n of call)if(typeof n==='number')assert.ok(Number.isFinite(n))
   }
