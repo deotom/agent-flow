@@ -41,7 +41,8 @@ it('aligns basement lift thresholds with the walking floor while retaining the g
  const scene=buildOfficeScene([team],'active',false,new Map())
  const room=scene.floors.find(f=>f.kind==='team')!,surface=scene.floors.find(f=>f.kind==='lounge')!
  const door=officeLanding(scene,room.id)!,aisle=officeAisle(scene,room.id)!
- assert.equal(door.y,officeStationPoint(room,scene.width,'build').y,'door sill shares the agents walking plane')
+ assert.equal(door.y,room.y+room.height!*.79,'door sill stays on the painted front aisle')
+ for(const kind of ['research','build','quality','terminal'] as const)assert.ok(officeStationPoint(room,scene.width,kind).y<=door.y,'depth stations remain behind the entrance aisle')
  assert.equal(door.y,aisle.y,'no raised step at the side entrance')
  assert.ok(officeNavigation(scene).hatch.y<surface.height!*.76,'base stays above painted grass edge')
  const trip=createOfficeTrip({id:'enter',kind:'arrived',actorKey:scene.actors[0].key,parentKey:null,at:1},{...scene,actors:[]},scene,0)!

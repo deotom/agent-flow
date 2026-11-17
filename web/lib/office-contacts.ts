@@ -22,10 +22,11 @@ export function officeHandContacts(p:OfficeGripPose,m:OfficeHandMotion){
  if(offer){rx=mix(rx,28,offer);ry=mix(ry,-30,offer)}
  let left:OfficePoint={x:mix(lx,-17,stretch),y:mix(ly,-66,stretch)}
  let right:OfficePoint={x:mix(rx,17,stretch),y:mix(ry,-66,stretch)}
- if(p.typing&&p.supportHands){
+ if((p.typing||p.workGesture)&&p.supportHands){
   const face=p.face===-1?-1:1,lift=m.lift??0
-  left={x:p.supportHands.left.x*face,y:p.supportHands.left.y+lift}
-  right={x:p.supportHands.right.x*face,y:p.supportHands.right.y+lift}
+  const stance=Number.isFinite(p.workLift)&&!p.walk&&!p.sit&&!p.climb?Math.max(0,Math.min(8,p.workLift!)):0
+  left={x:p.supportHands.left.x*face,y:p.supportHands.left.y+lift+stance}
+  right={x:p.supportHands.right.x*face,y:p.supportHands.right.y+lift+stance}
  }else if(p.dressing){
   const dress=unit(p.dressing)
   left={x:mix(left.x,-8,dress),y:mix(left.y,-36,dress)}

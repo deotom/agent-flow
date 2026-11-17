@@ -92,7 +92,7 @@ it('keeps three persistent coworkers a full avatar apart with an idle lead in th
  for(const person of workers){const point=officeWorkPresenceTarget(s,person,'build',places);places.set(person.key,rememberOfficeWorkPlace(s,person,point,'build')!)}
  const points=workers.map(a=>officeActorAtWorkPlace(s,a,places.get(a.key)))
  for(let i=0;i<points.length;i++){
-  assert.equal(points[i].y,s.floors[0].y+s.floors[0].height!*.79,'feet remain on the painted front floorboards')
+  assert.ok(points[i].y>=s.floors[0].y+s.width*.36&&points[i].y<=s.floors[0].y+s.floors[0].height!-s.width*.118,'feet remain on painted floorboards')
   assert.ok(Math.abs(points[i].x-nook.x)>=44,'work bodies leave the reading nook clear')
   for(let j=0;j<i;j++)assert.ok(Math.abs(points[i].x-points[j].x)>=44,'same-row avatars have full body width clearance')
   assert.deepEqual(officeWorkPresenceTarget(s,workers[i],'build',places),{x:points[i].x,y:points[i].y},'valid persistent positions stay still on later pulses')
@@ -106,4 +106,13 @@ it('includes visible uncached desk occupants when choosing a workplace',()=>{
  s.actors.push(uncached)
  const point=officeWorkPresenceTarget(s,s.actors[0],'terminal',new Map())
  assert.ok(Math.hypot(point.x-base.x,point.y-base.y)>=44)
+})
+
+it('retains valid small-room depth workplaces instead of clamping them to one aisle',()=>{
+ const s=scene();s.floors[0]={...s.floors[0],height:253.125,room:'room-stations'}
+ const worker=s.actors[0],point={x:80,y:s.floors[0].y+450*.435}
+ const place=rememberOfficeWorkPlace(s,worker,point,'research')!
+ assert.deepEqual(officeWorkPresenceTarget(s,worker,'research',new Map([[worker.key,place]])),point)
+ const points=(['build','research','quality','terminal'] as const).map(kind=>officeWorkPresenceTarget(s,worker,kind,new Map()))
+ assert.ok(new Set(points.map(p=>p.y)).size>=3)
 })

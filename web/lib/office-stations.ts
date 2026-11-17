@@ -1,7 +1,7 @@
 import type { OfficeFloor, OfficeScene, OfficeWorkStation } from './office-types'
 import type { TeamAgentRow } from './team-types'
 import { isWorking } from './team-model'
-import {roomStationLayout} from './office-room-design'
+import {roomStationLayout,type OfficeRoomStation} from './office-room-design'
 
 export const OFFICE_STATION_LABELS:Record<OfficeWorkStation,string>={planning:'planning board',research:'reference corner',build:'development bench',quality:'verification lab',terminal:'operations console'}
 export const OFFICE_STATION_NAMES:Record<OfficeWorkStation,string>={planning:'Planning',research:'Research',build:'Development',quality:'Verification',terminal:'Operations'}
@@ -17,19 +17,20 @@ export function agentWorkStation(agent:TeamAgentRow):OfficeWorkStation {
  if(/compaction|plan|reason/.test(tool))return 'planning'
  return 'terminal'
 }
-export function officeStations(floor:OfficeFloor,width:number){
+export function officeStations(floor:OfficeFloor,width:number):OfficeRoomStation[]{
  if(floor.room==='room-stations'||floor.room==='room-stations-large')return roomStationLayout(floor,width)
  const kinds=['research','build','quality','terminal'] as const, seed=officeRoomSeed(floor.sessionId??floor.id)
  const order=Array.from({length:4},(_,i)=>kinds[(i+seed%4)%4])
  if(seed&4)order.reverse()
  const height=floor.height??width*.5625
- return order.map((kind,i)=>({kind,x:width*(.11+.185*i),y:floor.y+height*.74,width:width*.18,height:width*.18}))
+ return order.map((kind,i)=>({kind,x:width*(.11+.185*i),y:floor.y+height*.74,width:width*.18,height:width*.18,facing:'front',work:{x:width*(.11+.185*i),y:floor.y+height*.79},depth:0}))
 }
 export function officeStationPoint(floor:OfficeFloor,width:number,kind:OfficeWorkStation){
  const h=floor.height??width*.5625
  const station=officeStations(floor,width).find(s=>s.kind===kind)
- if(floor.room==='room-stations-large')return {x:kind==='planning'?width*.39:station!.x,y:kind==='planning'?floor.y+width*.43:station!.y+width*.025}
- return {x:kind==='planning'?width*.48:station!.x,y:floor.y+h*.79}
+ if(station)return station.work
+ if(floor.room==='room-stations-large')return {x:width*.39,y:floor.y+width*.43}
+ return {x:width*.48,y:floor.y+h*.79}
 }
 export function officeStationUsers(scene:OfficeScene,floor:OfficeFloor,kind:OfficeWorkStation){
  return scene.actors.filter(actor=>actor.floorId===floor.id&&!actor.hidden&&actor.zone==='desk'&&isWorking(actor.agent.status)&&agentWorkStation(actor.agent)===kind)

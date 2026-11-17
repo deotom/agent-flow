@@ -1,6 +1,6 @@
 import { it } from 'node:test'
 import assert from 'node:assert/strict'
-import { officeStations, officeStationUsers } from '../lib/office-stations'
+import { officeStations, officeStationUsers, officeStationPoint } from '../lib/office-stations'
 import { buildOfficeScene } from '../lib/office-model'
 import { officeWorkStation } from '../lib/office-work'
 import type {TeamSnapshot} from '../lib/team-types'
@@ -28,4 +28,16 @@ it('lights only stations currently used by visible working agents and recognizes
  assert.equal(officeStationUsers(scene,floor,'build').length,0)
  scene.actors[0].hidden=true;assert.equal(officeStationUsers(scene,floor,'quality').length,0)
  scene.actors[0].hidden=false;scene.actors[0].agent.status='done';assert.equal(officeStationUsers(scene,floor,'quality').length,0)
+})
+
+it('uses the station work edge as the target for room and fallback layouts',()=>{
+ const scene=buildOfficeScene([snap],'active',false,new Map()),floor=scene.floors.find(f=>f.kind==='team')!
+ for(const room of ['room-stations','room-stations-large',undefined] as const){
+  const f={...floor,room}
+  for(const station of officeStations(f,450)){
+   assert.deepEqual(officeStationPoint(f,450,station.kind),station.work)
+   assert.ok(['front','left','right'].includes(station.facing))
+   assert.ok(station.depth>=0&&station.depth<=1)
+  }
+ }
 })

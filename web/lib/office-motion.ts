@@ -166,6 +166,7 @@ export function officeTripFrame(trip: OfficeTrip, now: number): OfficeTripFrame 
       const face = !segment.liftPhase && segment.kind === 'hold' && segment.to.x === segment.from.x ? previousFace : segment.to.x < segment.from.x ? -1 : 1
       return { point: position, done: false, floorId:segment.floorId, elevatorY: segment.kind === 'ride' ? position.y : null,
         pose: { inLift:Boolean(segment.liftPhase&&Math.abs(position.x-trip.shaftX)<10*trip.rungPitch/18),opacity:segment.opacity?segment.opacity[0]+(segment.opacity[1]-segment.opacity[0])*ratio:undefined,climb: false,climbStep:position.y/trip.rungPitch,walk: segment.kind === 'walk', walkWeight:clamp(distance / segment.duration * 1000 / (75 * scale) * progress.speed, 0, 1), gait:(walked + distance * progress.ratio) / (22 * scale) * Math.PI * 2, seatBlend:holdSeatBlend(segment, elapsed), face, sit: false, carry: trip.event.kind === 'sent' || trip.event.kind === 'assigned',
+          stepDirection:segment.kind==='walk'&&distance>0?{x:(segment.to.x-segment.from.x)/distance,y:(segment.to.y-segment.from.y)/distance}:undefined,
           objectAction:segment.kind==='hold'&&trip.event.kind==='activity'&&trip.event.station==='research'?'book':undefined,
           typing:segment.kind==='hold'&&trip.event.kind==='activity'&&(trip.event.station==='build'||trip.event.station==='terminal'),
           hand:segment.kind==='hold'&&(trip.event.kind==='received'||(trip.event.kind==='activity'&&(trip.event.station==='planning'||trip.event.station==='quality'))) } }

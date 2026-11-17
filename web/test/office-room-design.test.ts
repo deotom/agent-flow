@@ -28,7 +28,7 @@ it('mission themes lead the station grouping without moving shared station geome
  const studio=floor('AgentFlow UX/UI'),operations=floor('quickVendor API'),research=floor('Research specimens'),quality=floor('Quality verification')
  const layouts=[studio,operations,research,quality].map(f=>roomStationLayout(f,450))
  assert.deepEqual(layouts.map(layout=>layout[0].kind),['build','terminal','research','quality'])
- for(const layout of layouts)assert.deepEqual(layout.map(({kind,...geometry})=>geometry),layouts[0].map(({kind,...geometry})=>geometry))
+ for(const layout of layouts)assert.deepEqual(layout.map(({kind,work,...geometry})=>geometry),layouts[0].map(({kind,work,...geometry})=>geometry))
  assert.deepEqual(roomStationLayout({...operations,subtitle:'Reading UI test tool',working:9,actorKeys:['one']},450),layouts[1])
 })
 it('painted themes change wall and floor accents plus distinct secondary wall displays',()=>{
@@ -61,12 +61,12 @@ it('paints a fixed-height old wall with deeper floorboards, plus bounded matchin
  for(const call of calls)for(const value of call.slice(1))assert.ok(typeof value!=='number'||Number.isFinite(value))
  assert.ok(calls.length>12)
 })
-it('large rooms use two real depth rows with original-sized stations and an open lift aisle',()=>{
+it('large rooms use two real depth rows with perspective-scaled stations and an open lift aisle',()=>{
  const small=floor(),large=floor('Research specimen collection',337.5),w=450
  const a=roomStationLayout(small,w),b=roomStationLayout(large,w)
- assert.equal(new Set(a.map(p=>p.y)).size,1)
+ assert.ok(new Set(a.map(p=>p.y)).size>=3)
  assert.equal(new Set(b.map(p=>p.y)).size,2)
- assert.equal(a[0].width,b[0].width)
+ assert.ok(a[0].width<b[2].width)
  assert.ok(Math.max(...b.map(p=>p.y))-Math.min(...b.map(p=>p.y))>=w*.16)
  assert.ok(b.every(p=>p.x+p.width/2<w*.80))
  assert.ok(roomActorSpots(large,w).length>=8)
@@ -80,4 +80,24 @@ it('large rooms use two real depth rows with original-sized stations and an open
  const nook=roomLeadRestPoint(large,w)
  assert.ok(nook.x>=w*.70&&nook.x<w*.82)
  assert.ok(nook.y<large.y+large.height!*.65)
+})
+
+it('places varied-facing furniture and usable work edges entirely on the original boards',()=>{
+ for(const height of [253.125,337.5])for(const w of [450,900]){
+  const f={...floor('Design studio',height*w/450),room:height>260?'room-stations-large' as const:'room-stations' as const},stations=roomStationLayout(f,w),back=f.y+w*.36,front=f.y+f.height!-w*.118
+  assert.ok(Math.max(...stations.map(s=>s.y))-Math.min(...stations.map(s=>s.y)) >= (height>260?60:20)*w/450)
+  assert.deepEqual(new Set(stations.map(s=>s.facing)),new Set(['front','left','right']))
+  for(const s of stations){
+   assert.ok(s.depth>=0&&s.depth<=1)
+   assert.ok(s.y>=back&&s.y<=front)
+   assert.ok(s.work.y>=back&&s.work.y<=front)
+   assert.ok(s.x<=w*.68&&s.x+s.width/2<w*.80)
+   assert.ok(Math.abs(s.work.x-s.x)<=s.width*.4)
+   assert.ok(s.work.y>=s.y)
+   assert.ok(Number.isFinite(s.work.x),'the usable side follows the pictured equipment, not merely the camera direction')
+  }
+  assert.ok(stations.find(s=>s.depth===0)!.width<stations.find(s=>s.depth===1)!.width)
+  assert.ok(roomActorSpots(f,w).every(p=>p.y>=back&&p.y<=front&&p.x<w*.70))
+  assert.deepEqual(stations,roomStationLayout({...f,working:99,subtitle:'Changed'},w))
+ }
 })

@@ -19,6 +19,9 @@ import {drawOfficeVendor,drawOfficeShopQueue} from './office-vendor-art'
 import {officeActorRenderScale} from '../../../lib/office-depth'
 import {officeVendorExchange} from '../../../lib/office-vendor'
 import {officeActorSupport,officeSeatFrame} from '../../../lib/office-support'
+import {officeStations} from '../../../lib/office-stations'
+import {drawOfficeStation} from './office-station-art'
+import {officeWalkPose} from '../../../lib/office-walk-pose'
 import type {OfficeWardrobeTransitionLook} from '../../../lib/office-wardrobe-transition'
 import type { OfficeActor, OfficeAppearance, OfficeDrawnOffset, OfficePaintOptions, OfficePose, OfficeScene, OfficeLeisureAction } from '../../../lib/office-types'
 import { officeLife, officeLifeCanChat, officeLifePairs, officeSeed, type OfficeLifePair, type OfficeMood } from '../../../lib/office-life'
@@ -54,6 +57,7 @@ function idleMotion(time:number,p:OfficeAvatarPose){
   if(p.objectAction==='game'){r.left=Math.sin(time*7)*1.2;r.right=Math.cos(time*8)*1.2}
   if(p.doze){r.headY+=3+Math.sin(time*1.1)*1.2;r.tilt=.14}
   if(p.slump){r.headY+=7;r.headX+=2;r.tilt=.22}
+  if(p.workGesture){r.headY+=p.workGesture.nod*10;r.tilt+=p.workGesture.turn*.35}
   return r
 }
 const mix=(a:number,b:number,k:number)=>a+(b-a)*k
@@ -126,25 +130,50 @@ function drawLeisureProp(c:Ctx,kind:OfficeLeisureAction,hands:ReturnType<typeof 
   oval(c,plate.x,plate.y,13,3,'#eee1be');for(const x of [-6,1,7])oval(c,plate.x+x,plate.y-3,3,3,'#b97d43');oval(c,rx+3,ry-3,3,3,'#c99658');c.fillStyle='#6c4a2f';c.fillRect(plate.x+1,plate.y-4,1,1)
  }
 }
+function drawWorkGestureProp(c:Ctx,p:OfficeAvatarPose,hands:ReturnType<typeof officeHandContacts>){
+ const gesture=p.workGesture;if(!gesture||gesture.reach<=0)return
+ const {x,y}=hands.right;c.save();c.globalAlpha*=gesture.reach
+ if(gesture.kind==='inspect'){
+  c.beginPath();c.moveTo(x,y);c.lineTo(x+4,y-5);c.strokeStyle='#b79b59';c.lineWidth=2.5;c.stroke()
+  oval(c,x+6,y-8,4.5,4.5,'#a6d8d875');c.strokeStyle='#f2d087';c.lineWidth=1.6;c.stroke()
+ }else if(gesture.kind==='note'||gesture.kind==='adjust'){
+  c.beginPath();c.moveTo(x-1,y+2);c.lineTo(x+3,y-7);c.strokeStyle=gesture.kind==='note'?'#e8c566':'#91aeb0';c.lineWidth=2;c.stroke()
+  if(gesture.kind==='adjust')round(c,x-3,y-1,4,6,'#a9663e',1)
+ }else if(gesture.kind==='page'){
+  c.beginPath();c.moveTo(x-4,y+1);c.quadraticCurveTo(x+1,y-6,x+5,y);c.lineTo(x+3,y+3);c.fillStyle='#f5e8c3';c.fill();c.strokeStyle='#aa946c';c.lineWidth=.7;c.stroke()
+ }
+ c.restore()
+}
 /** Original layered chibi human; local origin is the seat/feet. */
 export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time:number,p:OfficeAvatarPose={}) {
   c.save();c.translate(x,y)
   const m=idleMotion(time,p),stretch=p.stretch??0
   const weight=p.walk?Math.max(0,Math.min(1,p.walkWeight??1)):0,gait=p.gait??time*7
-  const support=officeSeatFrame(p,m.lift),seated=support.seated,settleOffset=support.settle,lean=(p.lean??0)*(1-seated)
+  const walk=p.walk?officeWalkPose(a.slot,gait,weight,Boolean(p.carry||p.mug||p.cup),p.stepLength,p.stepDirection?{x:p.stepDirection.x*(p.face===-1?-1:1),y:p.stepDirection.y}:undefined):null
+  if(walk){const swing=Math.sin(gait)*3*weight;m.left=walk.arm-swing;m.right=p.carry||p.mug||p.cup?0:-walk.arm+swing;m.tilt+=walk.headTilt}
+  const support=officeSeatFrame(p,m.lift),seated=support.seated,settleOffset=support.settle,lean=p.walk?0:(p.lean??0)*(1-seated)
+  const workLift=Number.isFinite(p.workLift)&&!p.walk&&!p.sit&&!p.climb?Math.max(0,Math.min(8,p.workLift!)):0
   oval(c,0,1,15,3,'#3d241c30',false) // Shadow stays on the floor during hops.
-  const bob=(p.walk?Math.abs(Math.sin(gait))*1.4*weight:0)-(p.hop??0)*(1-seated)
+  const bob=p.walk?0:-(p.hop??0)*(1-seated)
   c.translate(0,bob)
   if(p.face===-1)c.scale(-1,1)
   if(lean)c.rotate(-lean)
-  const bench=p.sit&&(p.mug||p.objectAction),back=p.climb||(p.sit&&seated>.8&&!bench),raised=p.hand||p.wave||p.climb||p.objectAction==='music'
+  const bench=p.sit&&(p.mug||p.objectAction),back=p.climb||(!p.walk&&p.workBack)||(p.sit&&seated>.8&&!bench)||Boolean(p.walk&&p.stepDirection&&p.stepDirection.y<-.35&&Math.abs(p.stepDirection.y)>Math.abs(p.stepDirection.x)*.8),raised=p.hand||p.wave||p.climb||p.objectAction==='music'
   // Short legs, soft shoes, torso and arms.
   const climbPhase=(p.climbStep??time*2)*Math.PI
   const step=p.climb?Math.sin(climbPhase)*4.5:p.walk ? Math.sin(gait)*3*weight : 0
   const bend=support.bend
-  round(c,-10,mix(-17,-10,bend),8,mix(17+step,9,bend),a.pants);round(c,2,mix(-17,-10,bend),8,mix(17-step,9,bend),a.pants)
-  oval(c,-7,0+step,6,3,'#e4cfac');oval(c,7,0-step,6,3,'#e4cfac')
-  c.save();c.translate(0,-support.torsoLift+settleOffset)
+  if(walk){
+   for(const [foot,hip] of [[walk.left,-7],[walk.right,7]] as const){
+    for(const [color,width] of [['#4b3025',8],[a.pants,5.5]] as const){c.beginPath();c.moveTo(hip+walk.sway,-17+walk.torsoY);c.lineTo(foot.knee.x,foot.knee.y);c.lineTo(foot.x,foot.y-1);c.lineCap='round';c.lineJoin='round';c.strokeStyle=color;c.lineWidth=width;c.stroke()}
+    c.save();c.translate(foot.x,foot.y);c.rotate(foot.angle);oval(c,0,0,6,3,'#e4cfac');c.restore()
+   }
+  }else{
+   round(c,-10,mix(-17-workLift,-10,bend),8,mix(17+workLift+step,9,bend),a.pants);round(c,2,mix(-17-workLift,-10,bend),8,mix(17+workLift-step,9,bend),a.pants)
+   oval(c,-7,0+step,6,3,'#e4cfac');oval(c,7,0-step,6,3,'#e4cfac')
+  }
+  const torsoY=-support.torsoLift+settleOffset+(walk?.torsoY??0)-workLift,torsoX=walk?.sway??0
+  c.save();c.translate(torsoX,torsoY)
   round(c,-14,-34,28,23,a.shirt,9)
   drawOutfit(c,a,Boolean(p.climb))
   if(p.wardrobeTransition){
@@ -154,7 +183,11 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
   }else if(p.wardrobe)drawOfficeWardrobe(c,a,p.wardrobe,Boolean(back))
   const hands=officeHandContacts({...p,gait},p.scratch?{...m,wave:Math.sin(time*12)*2}:m)
   const {x:lx,y:ly}=hands.left,{x:rx,y:ry}=hands.right
-  oval(c,(-13+lx)/2,(-28+ly)/2,5,9,a.shirt);oval(c,(13+rx)/2+1,(-28+ry)/2,5,9,a.shirt)
+  if(p.supportHands||p.walk){
+   for(const [hx,hy,shoulder] of [[lx,ly,-13],[rx,ry,13]])for(const [color,width] of [['#4b3025',8],[a.shirt,5.5]] as const){
+    c.beginPath();c.moveTo(shoulder,-28);c.lineTo((shoulder+hx)/2+(shoulder<0?-2:2),(-28+hy)/2+3);c.lineTo(hx,hy);c.lineCap='round';c.lineJoin='round';c.strokeStyle=color;c.lineWidth=width;c.stroke()
+   }
+  }else{oval(c,(-13+lx)/2,(-28+ly)/2,5,9,a.shirt);oval(c,(13+rx)/2+1,(-28+ry)/2,5,9,a.shirt)}
   if(p.runtime&&!back)drawShirtLogo(c,p.runtime,1,-20)
   c.save();c.translate(m.headX,m.headY-(p.lookUp?3:0))
   if(m.tilt){c.translate(0,-30);c.rotate(m.tilt);c.translate(0,30)}
@@ -171,18 +204,20 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
   if((p.mug||p.cup)&&(!p.objectAction||p.objectAction==='coffee')&&!raised&&!p.scratch&&stretch<.3){c.save();c.translate(hands.cup.pivot.x,hands.cup.pivot.y);c.rotate(hands.cup.angle);round(c,-10,-5,9,10,'#fff0cf',2);oval(c,1,0,3,3,'#ead6ae');c.restore()}
   if(p.objectAction&&!p.walk&&!p.climb){c.save();if(p.objectAction==='book'||p.objectAction==='game'||p.objectAction==='snack')c.globalAlpha*=Math.max(0,Math.min(1,p.seatBlend??1));drawLeisureProp(c,p.objectAction,hands,time);c.restore()}
   if(p.carry){if(p.climb)round(c,-10,-31,20,18,'#967450',4);else{round(c,rx-13,ry+2,20,14,'#c69a58',2);round(c,rx-12,ry,9,4,'#dbc38c',1)}}
-  oval(c,lx,ly,4,4,a.skin);oval(c,rx,ry,4,4,a.skin)
+  drawWorkGestureProp(c,p,hands)
+  const palm=p.workGesture?3:4
+  oval(c,lx,ly,palm,palm,a.skin);oval(c,rx,ry,palm,palm,a.skin)
   c.restore() // breathing torso
-  if(back&&!p.walk&&!p.climb&&p.seatBack!==false){
+  if(back&&p.sit&&!p.walk&&!p.climb&&p.seatBack!==false){
     // Chair back is the foreground layer, matching the empty chairs in the room art.
     round(c,-12,-24,24,21,'#514a3c',6);round(c,-10,-22,20,16,'#625a48',5)
   }
   // At a desk the patch sits on the upper back, just above the chair, like a jersey.
-  if(p.runtime&&back){c.save();c.translate(m.headX*.3,-support.torsoLift+settleOffset);drawShirtLogo(c,p.runtime,0,-22);c.restore()}
+  if(p.runtime&&back){c.save();c.translate(m.headX*.3+torsoX,torsoY);drawShirtLogo(c,p.runtime,0,-22);c.restore()}
   c.restore()
   const contact=(hand:{x:number;y:number})=>{
-    const hy=hand.y-support.torsoLift+settleOffset
-    return {x:x+(p.face===-1?-1:1)*(Math.cos(lean)*hand.x+Math.sin(lean)*hy),y:y+bob+Math.cos(lean)*hy-Math.sin(lean)*hand.x}
+    const hy=hand.y+torsoY,hx=hand.x+torsoX
+    return {x:x+(p.face===-1?-1:1)*(Math.cos(lean)*hx+Math.sin(lean)*hy),y:y+bob+Math.cos(lean)*hy-Math.sin(lean)*hx}
   }
   return {left:contact(hands.left),right:contact(hands.right),seat:contact({x:0,y:-11})}
 }
@@ -307,7 +342,11 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
   const pairs=time?pairsFor(scene.actors):new Map<string,OfficeLifePair>()
   const offsets=new Map<string,OfficeDrawnOffset>()
   const handFrames=new Map<string,{x:number;y:number}>()
+  const furniture=o.roomArt?.stations?scene.floors.filter(f=>f.kind==='team'&&!f.constructing&&!f.annexOf).flatMap(f=>officeStations(f,scene.width)).sort((a,b)=>a.y-b.y):[]
+  let furnitureIndex=0
+  const paintFurniture=(until:number)=>{while(furnitureIndex<furniture.length&&furniture[furnitureIndex].y<=until)drawOfficeStation(c,furniture[furnitureIndex++],o.roomArt!)}
   for(const actor of visible.sort((a,b)=>a.y-b.y)) {
+    paintFurniture(actor.y)
     if(actor.pose?.inLift&&!o.lift)continue
     const moving=Boolean(actor.pose?.walk||actor.pose?.climb||actor.pose?.inLift)
     const interaction=moving?undefined:interactions.get(actor.key)
@@ -327,15 +366,16 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     const t=time?time+phaseOf(actor.key):0
     const actorScale=officeActorRenderScale(scene,actor)
     c.save();c.globalAlpha=(Number.isFinite(c.globalAlpha)?c.globalAlpha:1)*(actor.pose?.opacity??1);c.translate(actor.x+life.dx,actor.y);c.scale(actorScale,actorScale)
-    const avatarPose=officeActorSupport(scene,actor,{wardrobeTransition:o.wardrobeLooks?.get(actor.key),dressing:o.wardrobeLooks?.get(actor.key)?.dressing,wardrobe:officeWardrobeFor(wardrobeTheme,actor.appearance.slot,floorsById.get(actor.floorId)?.kind==='lounge'),sit:!moving&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving,hand:o.live&&waiting,
+    const avatarPose=officeActorSupport(scene,actor,{stepLength:22*scale/actorScale,wardrobeTransition:o.wardrobeLooks?.get(actor.key),dressing:o.wardrobeLooks?.get(actor.key)?.dressing,wardrobe:officeWardrobeFor(wardrobeTheme,actor.appearance.slot,floorsById.get(actor.floorId)?.kind==='lounge'),sit:!moving&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving,hand:o.live&&waiting,
       mug:actor.zone==='lounge'&&!moving&&(!life.objectAction||life.objectAction==='coffee'),objectAction:life.objectAction,lead:actor.agent.role==='lead'||actor.pod,cup:life.cup,stretch:life.stretch,lean:life.lean,doze:life.doze,
-      slump:life.slump,scratch:life.scratch,wave:life.wave||interaction?.speaking,turn:interaction?(interaction.speaking ? .25 : -.2):life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose,...sharedPoses.get(actor.key),...(interaction?{face:interaction.face}:{}),...(vendorExchange?.actorKey===actor.key?{face:1 as const,offer:.8,mug:false,hand:false,typing:false,objectAction:undefined,sit:false}:{}),climb:false},actorScale,{x:actor.x+life.dx,y:actor.y})
+      slump:life.slump,scratch:life.scratch,wave:life.wave||interaction?.speaking,turn:interaction?(interaction.speaking ? .25 : -.2):life.turn,face:life.face,hop:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose,...sharedPoses.get(actor.key),...(interaction?{face:interaction.face}:{}),...(vendorExchange?.actorKey===actor.key?{face:1 as const,offer:.8,mug:false,hand:false,typing:false,objectAction:undefined,sit:false}:{}),climb:false},actorScale,{x:actor.x+life.dx,y:actor.y},t,o.live)
     const contact=drawOfficeAvatar(c,actor.appearance,0,0,t,avatarPose)
     handFrames.set(actor.key,{x:actor.x+life.dx+contact.right.x*actorScale,y:actor.y+contact.right.y*actorScale})
     if(life.mood){c.translate(0,-life.hop);drawMood(c,life.mood,t)}
     c.restore()
     offsets.set(actor.key,{dx:life.dx,dy:-life.hop*actorScale*(1-officeSeatFrame(avatarPose,0).seated),scale:actorScale/scale})
   }
+  paintFurniture(Infinity)
   drawOfficeCommunications(c,scene,time,exchange,[...chats,...sharedChats])
   if(vendorExchange&&vendorHand&&o.roomArt){
     const recipient=scene.actors.find(a=>a.key===vendorExchange.actorKey),to=handFrames.get(vendorExchange.actorKey),from=vendorHand as {x:number;y:number;scale:number}

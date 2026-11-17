@@ -645,7 +645,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
             <canvas ref={roomCanvas} aria-hidden="true" style={{zIndex:0,pointerEvents:'none',height:'100%'}} />
             {visualScene.floors.filter(f=>f.kind==='team'&&!f.constructing).flatMap(floor=>officeStations(floor,visualScene.width).map(station=>{
               const users=officeStationUsers(scene,floor,station.kind)
-              return <button key={`${floor.id}-${station.kind}`} type="button" className="of-workbench" data-kind={station.kind} data-active={users.length>0}
+              return <button key={`${floor.id}-${station.kind}`} type="button" className="of-workbench" data-kind={station.kind} data-facing={station.facing} data-painted={Boolean(roomArt?.stations)} data-active={users.length>0}
                 aria-label={`${OFFICE_STATION_NAMES[station.kind]}, ${floor.title}, ${users.length} working`}
                 tabIndex={peekFloor?.sessionId===floor.sessionId?-1:0}
                 onClick={()=>floor.sessionId&&inspectStation(floor.sessionId,station.kind)}

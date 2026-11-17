@@ -1,7 +1,7 @@
 import type {OfficeFloor,OfficeScene} from '../../../lib/office-types'
 import {roomDesignFor,roomLeadRestPoint,type OfficeRoomTheme} from '../../../lib/office-room-design'
 
-export interface OfficeRoomArt {shell:CanvasImageSource;props:CanvasImageSource;breakRoom:CanvasImageSource}
+export interface OfficeRoomArt {shell:CanvasImageSource;props:CanvasImageSource;breakRoom:CanvasImageSource;stations?:CanvasImageSource;stationAngles?:CanvasImageSource}
 type Ctx=CanvasRenderingContext2D
 /** Atlas uses equal cells: studio, operations, research / quality, reading nook, buffet. */
 export function drawRoomProp(c:Ctx,art:OfficeRoomArt,cell:number,x:number,y:number,w:number,h=w){

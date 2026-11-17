@@ -29,21 +29,21 @@ export function officeWorkPresenceTarget(scene:OfficeScene,actor:OfficeActor,sta
  const floor=scene.floors.find(f=>f.id===actor.floorId)
  if(!floor)return base
  const scale=scene.width/450,gap=48*scale,depthGap=60*scale
- const height=floor.height??scene.width*.5625,large=floor.room==='room-stations-large'
- const left=scene.width*.07,right=scene.width*.755,maxFeet=large?floor.y+height-scene.width*.125:floor.y+height*.79
+ const height=floor.height??scene.width*.5625,large=floor.room==='room-stations-large',room=large||floor.room==='room-stations'
+ const left=scene.width*.07,right=scene.width*.755,maxFeet=room?floor.y+height-scene.width*.118:floor.y+height*.79
  // Include initial canonical occupants as well as people already parked at a station.
  const occupied:OfficePoint[]=scene.actors.filter(a=>a.key!==actor.key&&!a.hidden&&a.floorId===actor.floorId&&(a.zone==='desk'||a.zone==='lounge'&&a.agent.role==='lead'&&a.agent.status==='idle')).map(a=>officeActorAtWorkPlace(scene,a,places.get(a.key)))
  const nook=roomLeadRestPoint(floor,scene.width)
  if(nook.y>=floor.y&&nook.y<=floor.y+height)occupied.push(nook)
  // A little depth alone must not permit two same-row bodies to overlap horizontally.
  const clear=(a:OfficePoint,b:OfficePoint)=>Math.abs(a.x-b.x)>=gap-.01||Math.abs(a.y-b.y)>=depthGap-.01
- const within=(p:OfficePoint)=>p.x>=left-.01&&p.x<=right+.01&&p.y>=floor.y&&p.y<=maxFeet+.01
+ const within=(p:OfficePoint)=>p.x>=left-.01&&p.x<=right+.01&&p.y>=(room?floor.y+scene.width*.36:floor.y)-.01&&p.y<=maxFeet+.01
  const available=(p:OfficePoint)=>within(p)&&occupied.every(a=>clear(a,p))
  if(current?.floorId===actor.floorId&&current.station===station){const p=officeActorAtWorkPlace(scene,actor,current);if(available(p))return {x:p.x,y:p.y}}
  const row=(x:number):OfficePoint=>({x,y:base.y})
  const aisle=[base,...Array.from({length:15},(_,i)=>row(base.x+(i-7)*gap)),...occupied.flatMap(a=>[row(a.x-gap),row(a.x+gap)]),row(left),row(right)].filter(within).sort((a,b)=>Math.abs(a.x-base.x)-Math.abs(b.x-base.x))
- const depth=large?roomActorSpots(floor,scene.width).sort((a,b)=>Math.hypot(a.x-base.x,a.y-base.y)-Math.hypot(b.x-base.x,b.y-base.y)):[]
- const candidates=(large?[...roomStationSpots(floor,scene.width,station),...depth,...aisle]:aisle).filter(within)
+ const depth=room?roomActorSpots(floor,scene.width).sort((a,b)=>Math.hypot(a.x-base.x,a.y-base.y)-Math.hypot(b.x-base.x,b.y-base.y)):[]
+ const candidates=(room?[...roomStationSpots(floor,scene.width,station),...depth,...aisle]:aisle).filter(within)
  const free=candidates.find(available)
  if(free)return free
  // Capacity is bounded by the scene builder. If a transient crowd fills every spot,

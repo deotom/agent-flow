@@ -14,7 +14,7 @@ export interface OfficeAppearance {
   face?: 'round' | 'square' | 'oval'
 }
 export interface OfficePoint { x: number; y: number }
-export interface OfficePose { dressing?:number;seatBack?:boolean;supportHands?:{left:OfficePoint;right:OfficePoint}; inLift?:boolean; opacity?:number;objectAction?:OfficeLeisureAction;climb?: boolean; climbStep?:number; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean; face?: 1 | -1;stretch?:number;turn?:number;lookUp?:boolean;walkWeight?:number;gait?:number;seatBlend?:number;offer?:number;cupTilt?:number }
+export interface OfficePose { workGesture?:import('./office-work-gestures').OfficeWorkGesture;workLift?:number;workBack?:boolean;stepLength?:number;stepDirection?:OfficePoint;dressing?:number;seatBack?:boolean;supportHands?:{left:OfficePoint;right:OfficePoint}; inLift?:boolean; opacity?:number;objectAction?:OfficeLeisureAction;climb?: boolean; climbStep?:number; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean; face?: 1 | -1;stretch?:number;turn?:number;lookUp?:boolean;walkWeight?:number;gait?:number;seatBlend?:number;offer?:number;cupTilt?:number }
 export interface OfficeActor extends OfficePoint {
   key: string
   sessionId: string
@@ -107,7 +107,7 @@ export interface OfficePaintOptions {
   sharedRest?:readonly import('./office-shared-rest').OfficeSharedRestPair[]
   cutawayFloor?:string
   exchange?:import('./office-communication').OfficeWorkExchange|null
-  roomArt?:{shell:CanvasImageSource;props:CanvasImageSource;breakRoom:CanvasImageSource}|null
+  roomArt?:{shell:CanvasImageSource;props:CanvasImageSource;breakRoom:CanvasImageSource;stations?:CanvasImageSource;stationAngles?:CanvasImageSource}|null
   dailyArt?:OfficeDailyVisual
   lift?:OfficeLiftVisual
   architectureArt?:OfficeArchitectureArt|null
