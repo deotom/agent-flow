@@ -21,6 +21,7 @@ import {officeVendorExchange} from '../../../lib/office-vendor'
 import {officeActorSupport,officeSeatFrame} from '../../../lib/office-support'
 import {officeStations} from '../../../lib/office-stations'
 import {drawOfficeStation} from './office-station-art'
+import {officeStationActivity} from '../../../lib/office-station-activity'
 import {officeWalkPose} from '../../../lib/office-walk-pose'
 import type {OfficeWardrobeTransitionLook} from '../../../lib/office-wardrobe-transition'
 import type { OfficeActor, OfficeAppearance, OfficeDrawnOffset, OfficePaintOptions, OfficePose, OfficeScene, OfficeLeisureAction } from '../../../lib/office-types'
@@ -342,9 +343,9 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
   const pairs=time?pairsFor(scene.actors):new Map<string,OfficeLifePair>()
   const offsets=new Map<string,OfficeDrawnOffset>()
   const handFrames=new Map<string,{x:number;y:number}>()
-  const furniture=o.roomArt?.stations?scene.floors.filter(f=>f.kind==='team'&&!f.constructing&&!f.annexOf).flatMap(f=>officeStations(f,scene.width)).sort((a,b)=>a.y-b.y):[]
+  const furniture=o.roomArt?.stations?scene.floors.filter(f=>f.kind==='team'&&!f.constructing&&!f.annexOf).flatMap(f=>officeStations(f,scene.width).map(station=>({...station,floorId:f.id}))).sort((a,b)=>a.y-b.y):[]
   let furnitureIndex=0
-  const paintFurniture=(until:number)=>{while(furnitureIndex<furniture.length&&furniture[furnitureIndex].y<=until)drawOfficeStation(c,furniture[furnitureIndex++],o.roomArt!)}
+  const paintFurniture=(until:number)=>{while(furnitureIndex<furniture.length&&furniture[furnitureIndex].y<=until){const station=furniture[furnitureIndex++];drawOfficeStation(c,station,o.roomArt!,{time:time?time+phaseOf(`${station.floorId}:${station.kind}`):0,animate:o.live&&o.motion,state:officeStationActivity(scene,station.floorId,station)})}}
   for(const actor of visible.sort((a,b)=>a.y-b.y)) {
     paintFurniture(actor.y)
     if(actor.pose?.inLift&&!o.lift)continue

@@ -651,7 +651,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
                 onClick={()=>floor.sessionId&&inspectStation(floor.sessionId,station.kind)}
                 style={{left:`${(station.x-station.width/2)/visualScene.width*100}%`,top:`${(station.y-station.height*.88)/visualScene.height*100}%`,width:`${station.width/visualScene.width*100}%`,height:`${station.height/visualScene.height*100}%`,'--station-accent':floor.color} as CSSProperties}>
                 <span>{OFFICE_STATION_NAMES[station.kind]}{users.length>0&&<b> · {users.length}</b>}</span>
-                {users.length>0&&<i aria-hidden="true"/>}
+                {users.length>0&&!roomArt?.stations&&<i aria-hidden="true"/>}
               </button>
             }))}
             {/* Every office has a progress board; compact rooms use a smaller wall panel. */}
