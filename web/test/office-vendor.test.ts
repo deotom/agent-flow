@@ -2,10 +2,26 @@ import { it } from 'node:test'
 import assert from 'node:assert/strict'
 import { officeVendorAllowsObject,officeVendorState } from '../lib/office-vendor'
 import { officeSky } from '../lib/office-sky'
-import { drawOfficeVendor, type OfficeVendorCharacter } from '../components/agent-visualizer/office/office-vendor-art'
+import { drawOfficeVendor,officeVendorAvatarPose, type OfficeVendorCharacter } from '../components/agent-visualizer/office/office-vendor-art'
 import type { OfficeScene } from '../lib/office-types'
+import {drawOfficeAvatar} from '../components/agent-visualizer/office/office-art'
 
 const date=(hour:number,minute=0)=>new Date(2026,10,16,hour,minute)
+it('keeps the shop busy between customers without inventing a sale, and freezes with effects off',()=>{
+ const poses=new Set<string>()
+ for(const time of [0,7,17,27,35]){
+  const staff:OfficeVendorCharacter[]=[]
+  drawOfficeVendor(recorder().c,scene(450),date(12),time,a=>staff.push(a))
+  poses.add(staff[0].pose)
+  assert.equal(staff[0].recipientKey,undefined)
+ }
+ assert.deepEqual([...poses].sort(),['idle','prepare','stock','tidy'])
+ for(const time of [0,NaN,-1]){
+  const staff:OfficeVendorCharacter[]=[]
+  drawOfficeVendor(recorder().c,scene(450),date(12),time,a=>staff.push(a))
+  assert.equal(staff[0].pose,'idle')
+ }
+})
 it('does not invite a cosmetic cart visit while closed, while indoor drinks and picnic seats remain usable',()=>{
  assert.equal(officeVendorAllowsObject(date(22),'lounge','coffee'),false)
  assert.equal(officeVendorAllowsObject(date(22),'break','coffee'),true)
@@ -40,6 +56,32 @@ function recorder(){
   const c=new Proxy(state,{get(t,k){if(k in t)return t[k as string];return (...args:unknown[])=>calls.push({op:String(k),args})},set(t,k,v){t[String(k)]=v;return true}})
   return {c:c as unknown as CanvasRenderingContext2D,calls}
 }
+it('attaches chore props to the actual rendered palm at all supported widths',()=>{
+ for(const width of [240,450,700])for(const time of [7,17,27]){
+  const r=recorder();let palm:{x:number;y:number}|undefined
+  drawOfficeVendor(r.c,scene(width),date(12),time,staff=>{
+   const hands=drawOfficeAvatar(r.c,officeAppearance(0),0,0,time,officeVendorAvatarPose(staff))
+   palm=hands.right
+   assert.ok(hands.left.x<-10,'working left hand remains outside foreground apron')
+  })
+  const prop=r.calls.find(call=>call.op==='fillRect'&&call.args[2]===10&&(call.args[3]===3||call.args[3]===7))
+  assert.ok(prop&&palm)
+  assert.ok(Math.abs(Number(prop.args[0])+5-palm.x)<.001,'prop follows actual right palm x')
+  assert.ok(Math.abs(Number(prop.args[1])+1-palm.y)<.001,'prop follows actual right palm y')
+ }
+})
+it('keeps foreground seasonal stock out of the sheltered clerk window',()=>{
+ for(const width of [240,450,700]){
+  const r=recorder();let afterStaff=0
+  drawOfficeVendor(r.c,scene(width),new Date(2026,6,2,12),17,()=>{afterStaff=r.calls.length})
+  const h=width*.5625
+  const overlap=r.calls.slice(afterStaff).filter(call=>call.op==='fillRect').some(call=>{
+   const [x,y,w,hRect]=call.args as number[]
+   return x<width*.812&&x+w>width*.745&&y<20+h*.585&&y+hRect>20+h*.50
+  })
+  assert.equal(overlap,false,'wares must not paint over sheltered head and chest')
+ }
+})
 it('places one full decorative merchant beside the painted cart within a bounded clip without scene writes',()=>{
   for(const width of [240,450,700]){
     const s=scene(width),before=JSON.stringify(s),r=recorder(),characters:OfficeVendorCharacter[]=[]
@@ -133,10 +175,15 @@ it('merchant reaches only for an eligible recipient rather than waving on a time
   assert.equal(characters[0].recipientKey,'customer-b')
   const idle:OfficeVendorCharacter[]=[]
   drawOfficeVendor(recorder().c,s,date(12),8,a=>idle.push(a))
-  assert.equal(idle[0].pose,'idle');assert.equal(idle[0].offer,undefined)
+  assert.equal(idle[0].pose,'prepare');assert.equal(idle[0].offer,undefined)
   const wet:OfficeVendorCharacter[]=[]
   drawOfficeVendor(recorder().c,s,new Date(2026,6,2,12),8,a=>wet.push(a),exchange)
   assert.equal(wet[0].pose,'idle');assert.equal(wet[0].offer,undefined)
+  for(const time of [7,17,27]){
+    const serving:OfficeVendorCharacter[]=[]
+    drawOfficeVendor(recorder().c,s,date(12),time,a=>serving.push(a),exchange)
+    assert.equal(serving[0].pose,'handoff');assert.equal(serving[0].supportHands,undefined)
+  }
 })
 import { officeVendorPickupProgress } from '../lib/office-vendor'
 import type { OfficeTrip } from '../lib/office-motion'

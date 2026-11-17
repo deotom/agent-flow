@@ -15,7 +15,7 @@ import {skyWeather} from '../../../lib/office-sky'
 import {officeAppearance} from '../../../lib/office-model'
 import {officeWardrobeTheme,officeWardrobeFor,type OfficeWardrobeLook} from '../../../lib/office-wardrobe'
 import {drawOfficeWardrobe} from './office-wardrobe-art'
-import {drawOfficeVendor,drawOfficeShopQueue} from './office-vendor-art'
+import {drawOfficeVendor,drawOfficeShopQueue,officeVendorAvatarPose} from './office-vendor-art'
 import {officeActorRenderScale} from '../../../lib/office-depth'
 import {officeVendorExchange} from '../../../lib/office-vendor'
 import {officeActorSupport,officeSeatFrame} from '../../../lib/office-support'
@@ -315,7 +315,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
   let vendorHand:{x:number;y:number;scale:number}|null=null
   drawOfficeVendor(c,scene,o.date,time,staff=>{
     c.save();c.translate(staff.x,staff.y);c.scale(staff.scale,staff.scale)
-    const hands=drawOfficeAvatar(c,shopkeeper,0,0,time,{face:staff.face,offer:staff.offer,wave:staff.pose==='serve',wardrobe:officeWardrobeFor(wardrobeTheme,shopkeeper.slot,true)})
+    const hands=drawOfficeAvatar(c,shopkeeper,0,0,time,{...officeVendorAvatarPose(staff),wave:staff.pose==='serve',wardrobe:officeWardrobeFor(wardrobeTheme,shopkeeper.slot,true)})
     vendorHand={x:staff.x+hands.right.x*staff.scale,y:staff.y+hands.right.y*staff.scale,scale:staff.scale}
     c.restore()
   },vendorExchange)
