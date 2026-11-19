@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { vscodeBridge, type ConnectionStatus, type AgentEvent, type SessionInfo, type SourceHealth, type TeamSnapshot, type TransportState } from '@/lib/vscode-bridge'
 import { historyArchive, estimateBytes, type HistoryPage } from '@/lib/history-archive'
+import { SessionEventBuffer, isRealtimeSnapshot, isRealtimeSession } from '@/lib/history-snapshots'
 import { SimulationEvent } from '@/lib/agent-types'
 import { shouldAutoSelectSession, type AnimationMode } from '@/lib/viewer-preferences'
 
@@ -157,6 +158,17 @@ export function useVSCodeBridge(): BridgeHookResult {
       }
     }, 0)
   }, [])
+  const eventBufferRef = useRef<SessionEventBuffer | null>(null)
+  if (!eventBufferRef.current) eventBufferRef.current = new SessionEventBuffer(event => {
+    void historyArchive.saveEvent(event.sessionId!, event).then(() => {
+      persistedRef.current.set(event.sessionId!, Math.max(persistedRef.current.get(event.sessionId!) ?? 0, event.sequence!))
+      pruneMemory()
+    }).catch(error => setStorageError(String(error)))
+  }, event => {
+    const size = estimateBytes(event)
+    eventBytesRef.current.set(event, size)
+    return size
+  })
   useEffect(() => {
     const resume = () => { if (!document.hidden && viewVisibleRef.current && reloadRequiredRef.current) { reloadRequiredRef.current = false; setHistoryRevision(value => value + 1) } }
     document.addEventListener('visibilitychange', resume)
@@ -226,7 +238,7 @@ export function useVSCodeBridge(): BridgeHookResult {
         setLastLiveBySession(previous => ({ ...previous, [event.sessionId!]: time }))
       }
       if (event.historical && event.sessionId === selectedSessionIdRef.current) setRestoring(true)
-      const simEvent: SimulationEvent = {
+      let simEvent: SimulationEvent = {
         time: event.time,
         type: event.type as SimulationEvent['type'],
         payload: event.payload,
@@ -239,13 +251,11 @@ export function useVSCodeBridge(): BridgeHookResult {
         const buf = sessionEventsRef.current.get(event.sessionId) || []
         simEvent.sequence = (sequenceRef.current.get(event.sessionId) ?? 0) + 1
         sequenceRef.current.set(event.sessionId, simEvent.sequence)
-        eventBytesRef.current.set(simEvent, estimateBytes(simEvent))
-        void historyArchive.saveEvent(event.sessionId, simEvent).then(() => {
-          persistedRef.current.set(event.sessionId!, Math.max(persistedRef.current.get(event.sessionId!) ?? 0, simEvent.sequence!))
-          pruneMemory()
-        }).catch(error => setStorageError(String(error)))
-        buf.push(simEvent)
-        sessionEventsRef.current.set(event.sessionId, buf)
+        simEvent = eventBufferRef.current!.ingest(simEvent)
+        if (!isRealtimeSnapshot(simEvent)) {
+          buf.push(simEvent)
+          sessionEventsRef.current.set(event.sessionId, buf)
+        }
         // Keep lastActivityTime roughly current (throttled: one state update per 5s per session)
         const now = Date.now()
         if (!event.historical) setSessions(prev => {
@@ -259,7 +269,14 @@ export function useVSCodeBridge(): BridgeHookResult {
       // Skip if a session switch is pending — useLayoutEffect will flush
       // from the session buffer once the simulation state is swapped.
       const selected = selectedSessionIdRef.current
-      if (selected && event.sessionId === selected && !sessionSwitchPendingRef.current && !reviewingRef.current) {
+      if (selected && event.sessionId === selected && !sessionSwitchPendingRef.current && (!reviewingRef.current || isRealtimeSnapshot(simEvent))) {
+        if (isRealtimeSnapshot(simEvent)) {
+          // Pending snapshots are replaceable current state, including while the graph is hidden.
+          for (let i = pendingEventsRef.current.length - 1; i >= 0; i--) {
+            const pending = pendingEventsRef.current[i]
+            if (pending.sessionId === simEvent.sessionId && isRealtimeSnapshot(pending)) pendingEventsRef.current.splice(i, 1)
+          }
+        }
         pendingEventsRef.current.push(simEvent)
         if (viewVisibleRef.current && !document.hidden) setEventVersion(v => v + 1)
       } else if (!event.historical && event.sessionId && event.sessionId !== selected) {
@@ -335,6 +352,7 @@ export function useVSCodeBridge(): BridgeHookResult {
         selectedSessionIdRef.current = null
         pendingEventsRef.current.length = 0
         sessionEventsRef.current.clear()
+        eventBufferRef.current!.clear()
         sequenceRef.current.clear(); persistedRef.current.clear(); flushGenerationRef.current++
         setSessionsWithActivity(new Set())
         dismissedSessionsRef.current.clear()
@@ -343,6 +361,10 @@ export function useVSCodeBridge(): BridgeHookResult {
       }
       if (type === 'list') {
         const sessionList = data as SessionInfo[]
+        const ids = new Set(sessionList.map(session => session.id))
+        eventBufferRef.current!.retainSessions(ids)
+        setTeamSnapshots(previous => Object.keys(previous).some(id => !ids.has(id))
+          ? Object.fromEntries(Object.entries(previous).filter(([id]) => ids.has(id))) : previous)
         setSessions(sessionList)
         // Auto-select: prefer active sessions, then most recently active.
         // Only set selection — useLayoutEffect handles flushing events.
@@ -465,6 +487,14 @@ export function useVSCodeBridge(): BridgeHookResult {
     setRestoring(true)
     sessionSwitchPendingRef.current = true
     pendingEventsRef.current.length = 0
+    const realtime = eventBufferRef.current!.replayRealtime(sessionId, fromIndex)
+    if (realtime !== null) {
+      pendingEventsRef.current.push(...realtime)
+      sessionSwitchPendingRef.current = false
+      finishRestoration()
+      setEventVersion(value => value + 1)
+      return
+    }
     void (async () => {
       let through = fromIndex
       try {
@@ -540,7 +570,10 @@ export function useVSCodeBridge(): BridgeHookResult {
     animationMode, animationSpeed,
     setAnimation: (mode, speed) => { setAnimationMode(mode); setAnimationSpeed(speed); vscodeBridge?.setAnimation(mode, speed) },
     patchVersion, extensionVersion, connectionSource, lastLiveEventAt: selectedSessionId ? lastLiveBySession[selectedSessionId] ?? null : null, historyProgress,
-    reloadView: () => vscodeBridge?.reloadView(),
+    reloadView: () => {
+      if (isRealtimeSession(selectedSessionIdRef.current)) setHistoryRevision(value => value + 1)
+      else vscodeBridge?.reloadView()
+    },
     refreshStatus: () => vscodeBridge?.requestStatus(),
     compact, openGraph: () => vscodeBridge?.openGraph(selectedSessionIdRef.current ?? undefined),
     isVSCode,

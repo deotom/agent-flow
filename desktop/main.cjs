@@ -104,13 +104,15 @@ function openAllT3() { return openFolder(app.getPath('home'), ALL_T3) }
 
 async function openFolder(folder, runtime = folderRuntime()) {
   if (state.busy || quitting) return snapshot()
-  state.busy = true
   state.error = ''
-  publish()
   let candidate
   try {
     folder = fs.realpathSync(folder)
     if (!fs.statSync(folder).isDirectory()) throw new Error('Please select a folder.')
+    const sameFolder = process.platform === 'win32' ? state.folder.toLowerCase() === folder.toLowerCase() : state.folder === folder
+    if (worker && state.url && sameFolder && settings.runtime === runtime) return snapshot()
+    state.busy = true
+    publish()
     candidate = utilityProcess.fork(path.join(__dirname, 'dist/worker.cjs'), [folder, runtime], {
       cwd: folder,
       serviceName: 'Agent Flow workspace',

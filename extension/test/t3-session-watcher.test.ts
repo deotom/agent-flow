@@ -114,15 +114,77 @@ test('reads only the lead\'s latest reply text, cleaned and capped, for the loca
     INSERT INTO orchestration_v2_projection_turn_items VALUES('a2','root','r',NULL,'assistant_message','completed','2026-11-06T01:01:00Z','{"text":"Shipped the **fix**."}');
     INSERT INTO orchestration_v2_projection_turn_items VALUES('u1','root','r',NULL,'user_message','completed','2026-11-06T01:02:00Z','{"text":"PRIVATE_USER_TEXT"}');
     INSERT INTO orchestration_v2_projection_turn_items VALUES('c1','root','r',NULL,'command_execution','completed','2026-11-06T01:02:00Z','{"output":"PRIVATE_TOOL_OUTPUT"}');`)
+  db.exec('BEGIN')
+  for (let i = 0; i < 19; i++) {
+    db.prepare(`INSERT INTO orchestration_v2_projection_threads SELECT ?,project_id,title,default_provider,active_provider_thread_id,created_at,updated_at,archived_at,deleted_at,payload_json FROM orchestration_v2_projection_threads WHERE thread_id='root'`).run(`other-${i}`)
+    const insert = db.prepare('INSERT INTO orchestration_v2_projection_turn_items VALUES(?,?,NULL,NULL,?,?,?,?)')
+    insert.run(`reply-${i}`, `other-${i}`, 'assistant_message', 'completed', null, '{"text":"First null timestamp"}')
+    insert.run(`tie-${i}`, `other-${i}`, 'assistant_message', 'completed', null, '{"text":"Second null timestamp"}')
+  }
+  db.exec('COMMIT')
+  db.exec(`CREATE INDEX reply_latest ON orchestration_v2_projection_turn_items(thread_id,type,updated_at DESC); BEGIN`)
+  const historical = db.prepare('INSERT INTO orchestration_v2_projection_turn_items VALUES(?,?,NULL,NULL,?,?,?,?)')
+  for (let i = 0; i < 100; i++) historical.run(`history-${i}`, 'root', 'assistant_message', 'completed', '2026-01-01', '{"text":"Historical reply"}')
+  db.exec(`COMMIT;
+    ALTER TABLE orchestration_v2_projection_turn_items RENAME TO reply_items;
+    CREATE VIEW orchestration_v2_projection_turn_items AS SELECT turn_item_id,thread_id,run_id,provider_thread_id,type,status,updated_at,
+      count_reply_payload(payload_json) AS payload_json FROM reply_items`)
+  let replyQueries = 0
+  let payloadReads = 0, replyPayloadReads = 0, decodeReads = 0, replyDecodeReads = 0
+  const decoder = new DatabaseSync(':memory:')
+  t.after(() => decoder.close())
+  const extract = decoder.prepare('SELECT json_extract(?,?) AS value')
+  const registered = new WeakSet<object>()
+  const prepare = DatabaseSync.prototype.prepare
+  t.mock.method(DatabaseSync.prototype, 'prepare', function(this: unknown, sql: string) {
+    if (!registered.has(this as object)) {
+      (this as any).function('count_reply_payload', (value: string) => { payloadReads++; return value })
+      ;(this as any).function('count_reply_decode', (value: string, selector: string) => {
+        decodeReads++
+        return extract.get(value, selector)?.value ?? null
+      })
+      registered.add(this as object)
+    }
+    const reply = sql.includes("type = 'assistant_message'")
+    const measured = reply ? sql.replaceAll('json_extract(payload_json,', 'count_reply_decode(payload_json,') : sql
+    const statement = prepare.call(this, measured), all = statement.all.bind(statement)
+    statement.all = (...args: unknown[]) => {
+      if (reply) { replyQueries++; payloadReads = 0; decodeReads = 0 }
+      const result = all(...args)
+      if (reply) { replyPayloadReads = payloadReads; replyDecodeReads = decodeReads }
+      return result
+    }
+    return statement
+  })
   const watcher = new T3SessionWatcher(['D:/Project/TH'], file)
   t.after(() => watcher.dispose())
   const fired: unknown[] = []
   watcher.onRepliesChanged(list => fired.push(list))
   watcher.poll()
-  assert.deepEqual(watcher.replies.map(({ sessionId, text }) => [sessionId, text]), [['t3:root', 'Shipped the fix.']])
+  assert.equal(watcher.replies.length, 20)
+  assert.equal(watcher.replies.find(reply => reply.sessionId === 't3:root')?.text, 'Shipped the fix.')
+  assert.ok(watcher.replies.filter(reply => reply.sessionId !== 't3:root').every(reply => reply.text === 'First null timestamp'))
+  assert.equal(replyQueries, 1, 'twenty lead captions share one statement')
+  assert.ok(replyPayloadReads <= 40, `indexed latest-reply reads must stop at winners, not materialize old payloads (${replyPayloadReads} reads)`)
   assert.ok(!JSON.stringify(watcher.replies).includes('PRIVATE'))
   watcher.poll()
   assert.equal(fired.length, 1, 'An unchanged reply is not sent again')
+  const previous = watcher.replies
+  // The real T3 schema need not have a timestamp-sorted assistant-message index.
+  db.exec("DROP INDEX reply_latest; DELETE FROM reply_items WHERE thread_id='root' AND type='assistant_message'; BEGIN")
+  const unordered = db.prepare('INSERT INTO reply_items VALUES(?,?,NULL,NULL,?,?,?,?)')
+  for (let i = 0; i < 100; i++) unordered.run(`scan-${i}`, 'root', 'assistant_message', 'completed', new Date(Date.UTC(2026, 0, 1) + i * 1000).toISOString(), '{"text":"Historical reply"}')
+  unordered.run('a1', 'root', 'assistant_message', 'completed', '2026-11-06T01:00:30Z', '{"text":"Old reply"}')
+  unordered.run('a2', 'root', 'assistant_message', 'completed', '2026-11-06T01:01:00Z', '{"text":"Shipped the **fix**."}')
+  db.exec('COMMIT')
+  watcher.poll()
+  assert.ok(replyDecodeReads <= 40, `only winners may be decoded even without the sorted index (${replyDecodeReads} decodes)`)
+  assert.deepEqual(watcher.replies, previous)
+  db.exec("UPDATE reply_items SET payload_json='{' WHERE turn_item_id='a2'")
+  watcher.poll()
+  assert.equal(watcher.sourceHealth?.state, 'ok', 'optional reply failures do not break team monitoring')
+  assert.deepEqual(watcher.replies, previous, 'a malformed winning reply retains the previous optional caption list')
+  assert.equal(fired.length, 1)
 })
 
 

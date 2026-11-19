@@ -193,6 +193,7 @@ function AgentRowCard({ row, guides, selected, live, now, compact, onSelect }: {
   return (
     <li className="jv-row-wrap" data-depth={depth} data-status={agent.status} data-live={live} style={{ '--jv-depth': depth } as CSSProperties}>
       {guides.map((guide, index) => guide && <span key={index} className="jv-guide" data-guide={guide} aria-hidden="true" style={{ '--jv-level': index + 1 } as CSSProperties} />)}
+      {depth > 0 && live && (agent.status === 'running' || agent.status === 'thinking') && <span className="jv-packet" aria-hidden="true" />}
       <button className="jv-row" data-selected={selected} data-status={agent.status} data-role={agent.role} data-live={live} aria-pressed={selected} onClick={() => onSelect(agent.id)}
         title={`${agent.name}${agent.task ? `\n\n${agent.task.slice(0, 300)}` : ''}`}>
         <span className="jv-brackets" aria-hidden="true" />

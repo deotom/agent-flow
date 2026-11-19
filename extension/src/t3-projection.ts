@@ -89,6 +89,61 @@ export function mapT3Delivery(stateValue: unknown, observedByRunId?: unknown): T
   return 'unknown'
 }
 
+/** Resolve scope/lineage once without constructing graph snapshots for the reader. */
+function selectT3Topology(data: T3Projection, workspaces: string[] | null, payloadFor = t3Payload) {
+  const inScope = (folder: string) => workspaces === null || workspaces.some(w => t3WorkspaceMatches(w, folder))
+  const liveProjects = data.projects.filter(row => !row.deleted_at && inScope(text(row.workspace_root)))
+  const projects = new Set(liveProjects.map(row => text(row.project_id)))
+  // Project name per team, so teams from different projects can be told apart.
+  const projectNames = new Map(liveProjects.map(row => [text(row.project_id), text(row.title) || path.basename(text(row.workspace_root))]))
+  const threads = new Map(data.threads.filter(row => !row.deleted_at).map(row => [text(row.thread_id), row]))
+  const parents = new Map<string, string>()
+  for (const [id, row] of threads) {
+    const lineage = object(payloadFor(row).lineage)
+    if (lineage.relationshipToParent === 'subagent' && threads.has(text(lineage.parentThreadId))) parents.set(id, text(lineage.parentThreadId))
+  }
+  for (const row of data.subagents) {
+    const child = text(row.child_thread_id), parent = text(row.thread_id)
+    if (child && child !== parent && threads.has(child) && threads.has(parent)) parents.set(child, parent)
+  }
+  const rootOf = (id: string): string | undefined => {
+    const seen = new Set<string>()
+    while (parents.has(id)) {
+      if (seen.has(id)) return undefined // Corrupt lineage must not loop or invent a team.
+      seen.add(id); id = parents.get(id)!
+    }
+    return id
+  }
+  const roots = [...threads].filter(([id, row]) => !parents.has(id) && !row.archived_at &&
+    (projects.has(text(row.project_id)) || (workspaces !== null && workspaces.some(w => t3WorkspaceMatches(w, text(row.worktree_path))))))
+    .sort((a, b) => timestamp(b[1].updated_at) - timestamp(a[1].updated_at)).slice(0, 20)
+  const membersByRoot = new Map(roots.map(([id]) => [id, [] as [string, T3Row][]]))
+  for (const member of threads) {
+    const root = rootOf(member[0])
+    if (root !== undefined) membersByRoot.get(root)?.push(member)
+  }
+  return { liveProjects, projectNames, threads, parents, roots, membersByRoot }
+}
+export function selectT3ThreadIds(data: T3Projection, workspaces: string[] | null): string[] {
+  const { roots, membersByRoot } = selectT3Topology(data, workspaces)
+  return roots.flatMap(([id]) => membersByRoot.get(id)!.map(([memberId]) => memberId))
+}
+
+// The reader collapses inactive rows by thread/run/provider/type. Raw fixtures
+// remain supported; timestamps stay as source values to preserve Date.parse
+// semantics (SQL lexical MAX is not equivalent for every stored timestamp).
+const itemCount = (items: T3Row[]): number => items.reduce((count, item) => count + (typeof item.item_count === 'number' ? item.item_count : 1), 0)
+function itemUpdatedAt(item: T3Row): number | null {
+  if (typeof item.updated_ats_json !== 'string') return optionalTimestamp(item.updated_at)
+  const values: unknown[] = JSON.parse(item.updated_ats_json)
+  let latest: number | null = null
+  for (const value of values) {
+    const parsed = optionalTimestamp(value)
+    if (parsed !== null && (latest === null || parsed > latest)) latest = parsed
+  }
+  return latest
+}
+
 /** Only explicit delegation relationships form teams. Forked or similarly named
  * conversations stay independent; no native transcript IDs are guessed. */
 /** `workspaces` null means every T3 project on this machine. */
@@ -118,35 +173,10 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
       else index.set(id, [item])
     }
   }
-  const inScope = (folder: string) => workspaces === null || workspaces.some(w => t3WorkspaceMatches(w, folder))
-  const liveProjects = data.projects.filter(row => !row.deleted_at && inScope(text(row.workspace_root)))
-  const projects = new Set(liveProjects.map(row => text(row.project_id)))
-  // Project name per team, so teams from different projects can be told apart.
-  const projectNames = new Map(liveProjects.map(row => [text(row.project_id), text(row.title) || path.basename(text(row.workspace_root))]))
-  const threads = new Map(data.threads.filter(row => !row.deleted_at).map(row => [text(row.thread_id), row]))
-  const parents = new Map<string, string>()
-  for (const [id, row] of threads) {
-    const lineage = object(payloadFor(row).lineage)
-    if (lineage.relationshipToParent === 'subagent' && threads.has(text(lineage.parentThreadId))) parents.set(id, text(lineage.parentThreadId))
-  }
-  for (const row of data.subagents) {
-    const child = text(row.child_thread_id), parent = text(row.thread_id)
-    if (child && child !== parent && threads.has(child) && threads.has(parent)) parents.set(child, parent)
-  }
-  const rootOf = (id: string): string | undefined => {
-    const seen = new Set<string>()
-    while (parents.has(id)) {
-      if (seen.has(id)) return undefined // Corrupt lineage must not loop or invent a team.
-      seen.add(id); id = parents.get(id)!
-    }
-    return id
-  }
-  const roots = [...threads].filter(([id, row]) => !parents.has(id) && !row.archived_at &&
-    (projects.has(text(row.project_id)) || (workspaces !== null && workspaces.some(w => t3WorkspaceMatches(w, text(row.worktree_path))))))
-    .sort((a, b) => timestamp(b[1].updated_at) - timestamp(a[1].updated_at)).slice(0, 20)
+  const { projectNames, threads, parents, roots, membersByRoot } = selectT3Topology(data, workspaces, payloadFor)
   const result: T3Team[] = []
   for (const [rootId, root] of roots) {
-    const members = [...threads].filter(([id]) => rootOf(id) === rootId)
+    const members = membersByRoot.get(rootId)!
     const memberIds = new Set(members.map(([id]) => id))
     const start = timestamp(root.created_at)
     const relative = (value: unknown) => Math.max(0, (timestamp(value) - start) / 1000)
@@ -216,7 +246,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
         parentId: task ? taskParent(task) : parentId ? nodeForThread.get(parentId) : null, isMain: id === rootId,
         runtime: runtime(provider?.driver, provider?.provider, row.default_provider), model, state,
         spawnTime: relative(row.created_at), timeAlive: Math.max(0, (now - timestamp(row.created_at)) / 1000),
-        tools: pending, currentTool: pending.at(-1)?.tool, toolCalls: tools.length,
+        tools: pending, currentTool: pending.at(-1)?.tool, toolCalls: itemCount(tools),
         tokensUsed: reported ? usedTokens : 0, tokensMax: reported ? maxTokens : 0,
         task: text(task && payloadFor(task).prompt), compacting: compactions.length > 0,
       })
@@ -241,7 +271,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
         status: shownStatus, task: capped(task && payloadFor(task).prompt), activities: shownStatus === 'background' ? background : activities,
         requestKind: openRequest ? requestKind || null : null,
         context: usedTokens > 0 && maxTokens > 0 ? { used: usedTokens, max: maxTokens } : null,
-        toolCallCount: tools.length, hasThread: true,
+        toolCallCount: itemCount(tools), hasThread: true,
         startedAt: task ? optionalTimestamp(task.started_at) ?? optionalTimestamp(row.created_at) : optionalTimestamp(row.created_at),
         updatedAt: Math.max(optionalTimestamp(row.updated_at) ?? 0, optionalTimestamp(task?.updated_at) ?? 0) || null,
         completedAt: optionalTimestamp(task?.completed_at) ?? optionalTimestamp(latest?.completed_at),
@@ -262,7 +292,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
         parentId: taskParent(task), isMain: false, runtime: runtime(task.driver, task.provider),
         model: text(p.model) || undefined, state: tools.length ? 'tool_calling' : running(task.status) || backgroundActivities(provider, payloadFor).length ? 'thinking' : task.status === 'failed' ? 'error' : 'complete',
         task: text(p.prompt), spawnTime: relative(task.started_at), tools, currentTool: tools.at(-1)?.tool,
-        tokensUsed: reported ? usedTokens : 0, tokensMax: reported ? maxTokens : 0, toolCalls: items.length })
+        tokensUsed: reported ? usedTokens : 0, tokensMax: reported ? maxTokens : 0, toolCalls: itemCount(items) })
       const openRequest = data.requests.filter(request => request.thread_id === task.thread_id && request.node_id === task.parent_node_id
         && ['pending', 'open', 'requested'].includes(text(request.status)))[0]
       const requestKind = text(openRequest?.kind) || text(payloadFor(openRequest || {}).kind)
@@ -283,7 +313,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
         model: text(p.model) || null, status: teamStatus, task: capped(p.prompt), activities: teamStatus === 'background' ? background : activities,
         requestKind: openRequest ? requestKind || null : null,
         context: usedTokens > 0 && maxTokens > 0 ? { used: usedTokens, max: maxTokens } : null,
-        toolCallCount: items.length, hasThread: false, startedAt: optionalTimestamp(task.started_at),
+        toolCallCount: itemCount(items), hasThread: false, startedAt: optionalTimestamp(task.started_at),
         updatedAt: optionalTimestamp(task.updated_at), completedAt: optionalTimestamp(task.completed_at) })
     }
     const delegations = taskRows.map(task => {
@@ -312,7 +342,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
     })
     const updatedCandidates = [root, ...members.map(([, row]) => row), ...taskRows,
       ...data.providerThreads.filter(row => memberIds.has(text(row.thread_id))), ...data.items.filter(row => memberIds.has(text(row.thread_id)))]
-      .map(row => optionalTimestamp(row.updated_at)).filter((value): value is number => value !== null)
+      .map(row => itemUpdatedAt(row)).filter((value): value is number => value !== null)
     const team: TeamSnapshot = { sessionId: session.id, title: text(root.title) || 'Untitled team', project: projectNames.get(text(root.project_id)) || null, active,
       updatedAt: updatedCandidates.length ? Math.max(...updatedCandidates) : null, agents: teamAgents, tasks: teamTasks }
     result.push({ session, event: { sessionId: session.id, time: relative(new Date(now).toISOString()), type: 'session_snapshot',

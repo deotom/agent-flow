@@ -5,6 +5,7 @@ import * as fs from 'node:fs'
 import { createRelay, Relay, allowLocalRequest } from '../scripts/relay'
 import { serveStatic } from '../app/src/static'
 import { listenOnAvailablePort } from '../app/src/listen'
+import { preferredDesktopPort } from './loopback-origin.cjs'
 
 const parent = (process as unknown as {
   parentPort?: { postMessage(value: unknown): void; on(name: string, listener: (event: { data: unknown }) => void): void }
@@ -47,7 +48,7 @@ async function main() {
     if (req.method === 'GET') return serveStatic(req, res)
     res.writeHead(404).end('Not found')
   })
-  const port = await listenOnAvailablePort(server, 0)
+  const port = await listenOnAvailablePort(server, preferredDesktopPort(workspace, mode || process.env.AGENT_FLOW_RUNTIME || 'auto'))
   send({ type: 'ready', url: `http://127.0.0.1:${port}` })
 }
 main().catch(error => {

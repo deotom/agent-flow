@@ -5,6 +5,7 @@ import type { AnimationMode } from '@/lib/viewer-preferences'
 import { COLORS } from '@/lib/colors'
 import { FlowIcon } from './flow-icon'
 import { historyArchive } from '@/lib/history-archive'
+import { isRealtimeSession } from '@/lib/history-snapshots'
 
 export function FlowControls({ bridge }: { bridge: ReturnType<typeof useVSCodeBridge> }) {
   const [panel, setPanel] = useState<'settings' | 'status' | null>(null)
@@ -18,6 +19,7 @@ export function FlowControls({ bridge }: { bridge: ReturnType<typeof useVSCodeBr
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panel])
   const session = bridge.sessions.find(session => session.id === bridge.selectedSessionId)
+  const realtime = isRealtimeSession(bridge.selectedSessionId)
   const stamp = (time?: number | null) => time ? new Date(time).toLocaleString() : 'None since opening this view'
   const toggle = (value: 'settings' | 'status') => setPanel(previous => previous === value ? null : value)
   return <div className="relative flex items-center gap-0.5 text-xs" style={{ color: COLORS.textPrimary }}>
@@ -44,11 +46,13 @@ export function FlowControls({ bridge }: { bridge: ReturnType<typeof useVSCodeBr
         <div>Session activity: {stamp(session?.lastActivityTime)}</div>
         <div>Last live event: {stamp(bridge.lastLiveEventAt)}</div>
         {bridge.lastLiveEventAt && <div>{Math.max(0, Math.floor((now - bridge.lastLiveEventAt) / 1000))} seconds since the last live event</div>}
-        <div>History: {bridge.historyProgress.loaded.toLocaleString()} / {bridge.historyProgress.total.toLocaleString()} events</div>
-        <div>History storage: {bridge.storageError || historyArchive.error ? 'Unavailable · memory fallback' : 'Local disk · paged on demand'}</div>
-        {(bridge.storageError || historyArchive.error) && <p role="alert" style={{ color: COLORS.tool }}>{bridge.storageError || historyArchive.error}</p>}
+        {realtime ? <div>Local history: Off · realtime viewer</div> : <>
+          <div>History: {bridge.historyProgress.loaded.toLocaleString()} / {bridge.historyProgress.total.toLocaleString()} events</div>
+          <div>History storage: {bridge.storageError || historyArchive.error ? 'Unavailable · memory fallback' : 'Local disk · paged on demand'}</div>
+          {(bridge.storageError || historyArchive.error) && <p role="alert" style={{ color: COLORS.tool }}>{bridge.storageError || historyArchive.error}</p>}
+        </>}
         <p style={{ color: COLORS.textMuted }}>A quiet session may still be thinking. This reports received data, not process health.</p>
-        <button onClick={bridge.reloadView} className="rounded p-1">Reload graph from transcripts</button>
+        <button onClick={bridge.reloadView} className="rounded p-1">{realtime ? 'Refresh current view' : 'Reload graph from transcripts'}</button>
         <button onClick={bridge.refreshStatus} className="rounded p-1" style={{ border: `1px solid ${COLORS.glassBorder}` }}>Refresh status</button>
       </div>}
     </div>}

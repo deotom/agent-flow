@@ -286,13 +286,15 @@
 .jv-lamp { position: relative; display: inline-block; flex-shrink: 0; --c: var(--jv-idle); }
 .jv-lamp svg { display: block; overflow: visible; }
 .jv-lamp-track { fill: none; stroke: color-mix(in srgb, var(--c) 22%, transparent); stroke-width: 2; }
-.jv-lamp-arc { fill: none; stroke: var(--c); stroke-width: 2.4; stroke-linecap: round; stroke-dasharray: 100 0; transform-origin: 16px 16px; filter: drop-shadow(0 0 3px var(--c)); }
+.jv-lamp-arc { fill: none; stroke: var(--c); stroke-width: 2.4; stroke-linecap: round; stroke-dasharray: 100 0; filter: drop-shadow(0 0 3px var(--c)); }
 .jv-lamp-core { fill: color-mix(in srgb, var(--c) 18%, #04121f); stroke: color-mix(in srgb, var(--c) 55%, transparent); stroke-width: 1; }
 .jv-lamp-glyph { fill: none; stroke: var(--c); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .jv-lamp[data-status="running"] .jv-lamp-glyph, .jv-lamp[data-status="thinking"] .jv-lamp-glyph { fill: var(--c); stroke-width: 1; }
-.jv-lamp[data-status="running"] .jv-lamp-arc { stroke-dasharray: 32 18; animation: jv-spin calc(1.6s * var(--jv-speed)) linear infinite; }
-.jv-lamp[data-status="thinking"] .jv-lamp-arc { stroke-dasharray: 12 13; animation: jv-spin calc(4s * var(--jv-speed)) linear infinite, jv-breathe calc(2.2s * var(--jv-speed)) ease-in-out infinite; }
-.jv-lamp:is([data-status="waiting_approval"], [data-status="waiting_input"]) .jv-lamp-arc { animation: jv-blink calc(1.1s * var(--jv-speed)) ease-in-out infinite; }
+.jv-lamp[data-status="running"] .jv-lamp-arc { stroke-dasharray: 32 18; }
+.jv-lamp[data-status="thinking"] .jv-lamp-arc { stroke-dasharray: 12 13; }
+.jv-lamp[data-status="running"] .jv-lamp-rotor { animation: jv-spin calc(1.6s * var(--jv-speed)) linear infinite; }
+.jv-lamp[data-status="thinking"] .jv-lamp-rotor { animation: jv-spin calc(4s * var(--jv-speed)) linear infinite, jv-breathe calc(2.2s * var(--jv-speed)) ease-in-out infinite; }
+.jv-lamp:is([data-status="waiting_approval"], [data-status="waiting_input"]) .jv-lamp-rotor { animation: jv-blink calc(1.1s * var(--jv-speed)) ease-in-out infinite; }
 .jv-lamp[data-status="cancelled"] .jv-lamp-arc { stroke-dasharray: 4 6; filter: none; }
 .jv-lamp[data-status="idle"] .jv-lamp-arc { stroke-dasharray: 2 10; filter: none; }
 .jv-lamp[data-status="failed"] .jv-lamp-core { fill: color-mix(in srgb, var(--jv-fail) 30%, #1a0508); }
@@ -307,9 +309,12 @@
 /* Team reactor */
 .jv-reactor { position: relative; flex-shrink: 0; display: grid; place-items: center; }
 .jv-reactor svg { position: absolute; inset: 0; overflow: visible; }
-.jv-reactor-halo { fill: none; stroke: rgba(95, 225, 255, 0.18); stroke-width: 1; }
+.jv-reactor-halo circle { fill: none; stroke: rgba(95, 225, 255, 0.18); stroke-width: 1; }
+.jv-reactor-halo-wide circle { stroke-width: 2; }
+.jv-reactor-halo-wide { opacity: 0; }
 .jv-reactor-ticks circle { fill: none; stroke: rgba(95, 225, 255, 0.35); stroke-width: 3; stroke-dasharray: 0.6 4.4; }
-.jv-reactor-ticks, .jv-reactor-inner { transform-origin: 50px 50px; }
+/* Animate HTML layers, not SVG descendants: SVG transforms trigger SVG layout each frame. */
+.jv-lamp-rotor, .jv-reactor-layer { position: absolute; inset: 0; pointer-events: none; transform-origin: 50% 50%; }
 .jv-reactor-seg { fill: none; stroke: var(--c, var(--jv-idle)); stroke-width: 7; filter: drop-shadow(0 0 4px var(--c, transparent)); }
 .jv-reactor-inner circle { fill: none; stroke: rgba(95, 225, 255, 0.5); stroke-width: 1.2; stroke-dasharray: 3 3; }
 .jv-reactor-core { fill: rgba(6, 30, 50, 0.95); stroke: rgba(95, 225, 255, 0.5); stroke-width: 1; }
@@ -480,12 +485,15 @@
 
 /* Reactor: halo pulse and core glow while the team works. */
 .jv-reactor[data-spinning="true"] .jv-reactor-halo { animation: jv-halo calc(2.6s * var(--jv-speed)) ease-in-out infinite; transform-origin: 50px 50px; }
+.jv-reactor[data-spinning="true"] .jv-reactor-halo-wide { animation-name: jv-halo-wide; }
 .jv-reactor[data-spinning="true"]::before {
   content: ""; position: absolute; inset: 14%; border-radius: 50%; pointer-events: none;
   background: radial-gradient(circle, rgba(95, 225, 255, 0.35), transparent 70%);
   animation: jv-breathe calc(2.6s * var(--jv-speed)) ease-in-out infinite;
 }
-@keyframes jv-halo { 0%, 100% { stroke-opacity: 0.25; } 50% { stroke-opacity: 0.9; stroke-width: 2; } }
+/* Crossfade fixed thin/thick rings: changing SVG stroke-width invalidates geometry. */
+@keyframes jv-halo { 0%, 100% { opacity: 0.25; } 50% { opacity: 0; } }
+@keyframes jv-halo-wide { 0%, 100% { opacity: 0; } 50% { opacity: 0.9; } }
 
 /* Working rows: a holographic sweep and a pulsing status edge. */
 .jv-row { overflow: hidden; }
@@ -511,28 +519,42 @@
 .jv-lamp[data-live="true"][data-status="running"] svg { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--jv-run) 70%, transparent)); }
 
 /* Delegation link: a comet of light runs down the trunk, turns along the branch and flashes the card's port. */
-.jv-row-wrap::after {
-  content: ""; position: absolute; pointer-events: none; opacity: 0; border-radius: 2px;
+.jv-packet {
+  position: absolute; z-index: 1; pointer-events: none; overflow: hidden;
   --jv-packet-x: calc((var(--jv-depth, 0) - 1) * var(--jv-indent) + var(--jv-trunk) - 0.5px);
   --jv-tail: 22px;
-  left: var(--jv-packet-x); top: calc(-1 * var(--jv-gap) - var(--jv-tail)); width: 2px; height: var(--jv-tail);
-  background: linear-gradient(transparent, color-mix(in srgb, var(--c, var(--jv-cyan)) 70%, transparent) 70%, #fff);
+  left: var(--jv-packet-x); top: calc(-1 * var(--jv-gap)); bottom: calc(50% - 1px);
+  width: calc(var(--jv-indent) - var(--jv-trunk) + 1px);
   filter: drop-shadow(0 0 3px var(--c, var(--jv-cyan)));
 }
-.jv-row-wrap:not([data-depth="0"])[data-live="true"]:is([data-status="running"], [data-status="thinking"])::after { animation: jv-packet calc(1.8s * var(--jv-speed)) ease-in infinite; }
+.jv-packet::before, .jv-packet::after {
+  content: ""; position: absolute; opacity: 0; border-radius: 2px;
+  animation: jv-packet-down calc(1.8s * var(--jv-speed)) ease-in infinite;
+}
+/* The clipping window follows the row size; only the light moves each frame. */
+.jv-packet::before {
+  left: 0; top: 0; bottom: 1px; width: 2px;
+  background: linear-gradient(transparent, color-mix(in srgb, var(--c, var(--jv-cyan)) 70%, transparent) 70%, #fff) bottom / 100% var(--jv-tail) no-repeat;
+  transform: translateY(-100%);
+}
+.jv-packet::after {
+  left: 0; bottom: 0; width: 100%; height: 2px; transform-origin: left center;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--c, var(--jv-cyan)) 70%, transparent) 70%, #fff);
+  transform: scaleX(0); animation-name: jv-packet-across;
+}
 .jv-row-wrap:not([data-depth="0"])[data-live="true"]:is([data-status="running"], [data-status="thinking"]) > .jv-guide:is([data-guide="tee"], [data-guide="last"])::after { animation: jv-port-flash calc(1.8s * var(--jv-speed)) ease-out infinite; }
 /* The head is the bright end: bottom edge on the trunk, right edge on the branch. */
-@keyframes jv-packet {
-  0% { top: calc(-1 * var(--jv-gap) - var(--jv-tail)); left: var(--jv-packet-x); width: 2px; height: var(--jv-tail); opacity: 0;
-    background: linear-gradient(transparent, color-mix(in srgb, var(--c, var(--jv-cyan)) 70%, transparent) 70%, #fff); }
+@keyframes jv-packet-down {
+  0% { transform: translateY(-100%); opacity: 0; }
   12% { opacity: 1; }
-  62% { top: calc(50% - var(--jv-tail)); left: var(--jv-packet-x); width: 2px; height: var(--jv-tail); opacity: 1;
-    background: linear-gradient(transparent, color-mix(in srgb, var(--c, var(--jv-cyan)) 70%, transparent) 70%, #fff); }
-  63% { top: calc(50% - 1px); left: var(--jv-packet-x); width: 2px; height: 2px;
-    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--c, var(--jv-cyan)) 70%, transparent) 70%, #fff); }
+  62% { transform: translateY(0); opacity: 1; }
+  63%, 100% { transform: translateY(0); opacity: 0; }
+}
+@keyframes jv-packet-across {
+  0%, 62% { transform: scaleX(0); opacity: 0; }
+  63% { transform: scaleX(0.1); opacity: 1; }
   92% { opacity: 1; }
-  100% { top: calc(50% - 1px); left: var(--jv-packet-x); width: calc(var(--jv-indent) - var(--jv-trunk) + 1px); height: 2px; opacity: 0;
-    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--c, var(--jv-cyan)) 70%, transparent) 70%, #fff); }
+  100% { transform: scaleX(1); opacity: 0; }
 }
 /* The port lights up as the comet arrives. */
 @keyframes jv-port-flash {
@@ -561,5 +583,6 @@
 
 /* Background commands: the run ended, but T3 still waits on commands it started. Calm working colour. */
 .jv-root [data-status="background"] { --c: var(--jv-run); }
-.jv-lamp[data-status="background"] .jv-lamp-arc { stroke-dasharray: 4 6; animation: jv-spin calc(6s * var(--jv-speed)) linear infinite; }
+.jv-lamp[data-status="background"] .jv-lamp-arc { stroke-dasharray: 4 6; }
+.jv-lamp[data-status="background"] .jv-lamp-rotor { animation: jv-spin calc(6s * var(--jv-speed)) linear infinite; }
 .jv-row[data-live="true"][data-status="background"]::after { opacity: 1; animation: jv-row-sweep calc(6s * var(--jv-speed)) ease-in-out infinite; }

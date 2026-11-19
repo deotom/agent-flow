@@ -102,6 +102,42 @@ test('missing workspace reports a useful failure and exits', { timeout: 10000 },
   const [code] = await exited
   assert.equal(code, 1)
 })
+
+test('reopening the same workspace reuses its available loopback origin', { timeout: 30000 }, async t => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-flow-origin-'))
+  const folder = path.join(home, 'workspace')
+  fs.mkdirSync(folder)
+  fixture(home, folder, 'dddddddd-dddd-dddd-dddd-dddddddddddd')
+  const workers = []
+  t.after(() => { for (const child of workers) if (child.exitCode === null) child.kill() })
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }))
+  const first = start(folder, home); workers.push(first)
+  const [a] = await once(first, 'message'); assert.equal(a.type, 'ready')
+  await stop(first)
+  const second = start(folder, home); workers.push(second)
+  const [b] = await once(second, 'message'); assert.equal(b.type, 'ready')
+  assert.equal(b.url, a.url, 'A restart must not mint another browser storage origin')
+  await stop(second)
+})
+
+test('an occupied stable origin falls back without using or stopping the existing listener', { timeout: 30000 }, async t => {
+  const {preferredDesktopPort} = require('../loopback-origin.cjs')
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-flow-origin-busy-'))
+  const folder = path.join(home, 'workspace'); fs.mkdirSync(folder)
+  fixture(home, folder, 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee')
+  const owner = http.createServer((_req, res) => res.end('existing owner'))
+  t.after(() => { owner.closeAllConnections(); owner.close() })
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }))
+  const preferred = preferredDesktopPort(fs.realpathSync(folder), 'codex')
+  await new Promise((resolve, reject) => { owner.once('error', reject); owner.listen(preferred, '127.0.0.1', resolve) })
+  const child = start(folder, home)
+  t.after(() => { if (child.exitCode === null) child.kill() })
+  const [ready] = await once(child, 'message'); assert.equal(ready.type, 'ready')
+  assert.notEqual(new URL(ready.url).port, String(preferred))
+  assert.equal(await (await fetch(`http://127.0.0.1:${preferred}`)).text(), 'existing owner')
+  assert.equal((await fetch(ready.url)).status, 200)
+  await stop(child)
+})
 test('SSE reconnect restores the complete Codex graph after a long history', { timeout: 30000 }, async t => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-flow-long-'))
   const folder = path.join(home, 'workspace')

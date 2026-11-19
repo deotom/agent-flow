@@ -4,6 +4,7 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import {T3SessionWatcher} from '../src/t3-session-watcher'
+import {projectT3Teams, type T3Projection} from '../src/t3-projection'
 const {DatabaseSync}=require('node:sqlite')
 test('reads referenced parent nodes only and resolves latest-run items without a per-item correlated run lookup',t=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'agent-flow-reader-')),file=path.join(dir,'state.sqlite'),db=new DatabaseSync(file)
@@ -28,20 +29,47 @@ test('reads referenced parent nodes only and resolves latest-run items without a
  db.exec('BEGIN')
  for(let i=0;i<1000;i++)insert.run(`history-${i}`,'root')
  db.exec('COMMIT')
+ db.exec(`INSERT INTO orchestration_v2_projection_runs VALUES('duplicate','root',2,'completed',NULL,NULL,'{}'),('null-ordinal','root',NULL,'completed',NULL,NULL,'{}');
+ INSERT INTO orchestration_v2_projection_turn_items VALUES('excluded-duplicate','root','duplicate',NULL,'dynamic_tool','running','2026-11-19','{}'),('excluded-null','root','null-ordinal',NULL,'dynamic_tool','running','2026-11-19','{}'),('completed-compaction','root','new',NULL,'compaction','completed','2026-11-17','{}')`)
+ const completed=db.prepare('INSERT INTO orchestration_v2_projection_turn_items VALUES(?,?,?, ?,?,?,?,?)')
+ db.exec('BEGIN')
+ for(let i=0;i<1000;i++)completed.run(`completed-${i}`,'root','new',i%2?'native':null,'dynamic_tool',i%3?'completed':null,i===999?'November 18, 2026':'2026-11-17','{"output":"unused"}')
+ db.exec('COMMIT')
  const observed:{sql:string;args:unknown[];rows:number;values:any[]}[]=[],original=DatabaseSync.prototype.prepare
  t.mock.method(DatabaseSync.prototype,'prepare',function(this:unknown,sql:string){
   const statement=original.call(this,sql),all=statement.all.bind(statement)
   statement.all=(...args:unknown[])=>{const rows=all(...args);observed.push({sql,args,rows:rows.length,values:rows});return rows}
   return statement
  })
+ const now=Date.parse('2026-11-19T12:00:00Z');t.mock.method(Date,'now',()=>now)
  const watcher=new T3SessionWatcher(null,file);t.after(()=>watcher.dispose());watcher.poll()
  assert.equal(watcher.sourceHealth?.state,'ok')
  assert.equal(observed.find(q=>/FROM orchestration_v2_projection_nodes/.test(q.sql))?.rows,1,'unreferenced historical nodes must not enter the projection')
  const itemQuery=observed.find(q=>/FROM orchestration_v2_projection_turn_items i/.test(q.sql))!
  assert.ok(itemQuery)
- assert.equal(itemQuery.values.find(row=>row.turn_item_id==='new-tool').payload_json,'{}','completed tool payload is not used by the live projection and must not be decoded')
+ assert.ok(itemQuery.rows<10,'completed history must be summarized instead of materializing every historical tool row')
  assert.deepEqual(JSON.parse(itemQuery.values.find(row=>row.turn_item_id==='pending-tool').payload_json),{toolName:'inspect',title:'Current work'},'active tool details must remain available')
  const plan=original.call(db,'EXPLAIN QUERY PLAN '+itemQuery.sql).all(...itemQuery.args)
  assert.ok(!plan.some((row:{detail:string})=>/CORRELATED/i.test(row.detail)),'latest run is resolved once per thread, not once per tool item')
  const root=watcher.getActiveSessions()[0];assert.equal(root.status,'active','older running run still wins in the projector')
+ const replay:any[]=[];watcher.replaySessionStart(undefined,{onSnapshot:e=>replay.push(e)})
+ assert.equal(replay[0].payload.agents[1].toolCalls,500,'native-provider historical counts survive summarization even when latest app run is different')
+ assert.equal(replay[0].payload.team.updatedAt,Date.parse('November 18, 2026'),'timestamp reduction retains Date.parse semantics rather than lexical MAX')
+ // Compare against the previous unaggregated reader shape, not an aggregate
+ // helper, including NULL status, native providers and compaction timestamps.
+ const rows=(table:string)=>observed.find(q=>q.sql.includes(`FROM ${table}`))!.values
+ const rawItems=original.call(db,`SELECT turn_item_id,thread_id,run_id,provider_thread_id,type,status,updated_at,
+ CASE WHEN status IN ('running','starting','queued','pending','in_progress') THEN
+ json_object('toolName',json_extract(payload_json,'$.toolName'),'title',json_extract(payload_json,'$.title')) ELSE '{}' END AS payload_json
+ FROM orchestration_v2_projection_turn_items WHERE thread_id='root' AND run_id='new'
+ AND type IN ('command_execution','dynamic_tool','file_change','web_search','mcp_tool_call','compaction')`).all()
+ const baseline:T3Projection={projects:rows('projection_projects'),threads:rows('orchestration_v2_projection_threads'),subagents:rows('orchestration_v2_projection_subagents'),runs:rows('orchestration_v2_projection_runs'),providerThreads:rows('orchestration_v2_projection_provider_threads'),requests:rows('orchestration_v2_projection_runtime_requests'),nodes:rows('orchestration_v2_projection_nodes'),items:rawItems}
+ assert.deepEqual(replay,projectT3Teams(baseline,null,now).map(team=>team.event),'aggregation preserves the complete published snapshot')
+ db.exec("UPDATE orchestration_v2_projection_runs SET status='completed' WHERE run_id='old'; UPDATE orchestration_v2_projection_runs SET status='running' WHERE run_id='new'")
+ watcher.poll()
+ const current:any[]=[];watcher.replaySessionStart(undefined,{onSnapshot:e=>current.push(e)})
+ assert.equal(current[0].payload.agents[0].toolCalls,502,'app-thread tool counts include completed summaries but exclude native providers and compactions')
+ assert.deepEqual(current[0].payload.agents[0].tools,[{callId:'pending-tool',tool:'inspect',args:'Current work'}],'active details retain their original order and values')
+ baseline.runs=original.call(db,'SELECT * FROM orchestration_v2_projection_runs').all()
+ assert.deepEqual(current,projectT3Teams(baseline,null,now).map(team=>team.event),'current-run snapshots also remain identical')
 })

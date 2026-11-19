@@ -1,9 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mapT3Delivery, projectT3Teams, t3WorkspaceMatches, type T3Projection, type T3Row } from '../src/t3-projection'
+import { mapT3Delivery, projectT3Teams, selectT3ThreadIds, t3WorkspaceMatches, type T3Projection, type T3Row } from '../src/t3-projection'
 import type { TeamSnapshot } from '../../web/lib/team-types'
 
 const row = (fields: T3Row, payload: T3Row = {}) => ({ ...fields, payload_json: JSON.stringify(payload) })
+test('selects the same scoped roots and explicit child threads without constructing snapshots', () => {
+  assert.deepEqual(selectT3ThreadIds(fixture(), ['d:/project/th']), ['lead', 'worker', 'fork'])
+  assert.deepEqual(selectT3ThreadIds(fixture(), ['D:/unrelated']), [])
+})
 export function fixture(): T3Projection {
   return {
     projects: [{ project_id: 'vrm', workspace_root: 'D:\\Project\\TH\\vrm' }, { project_id: 'other', workspace_root: 'D:\\Project\\TH-other' }],

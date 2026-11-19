@@ -248,6 +248,10 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   await invoke('open-project', { root: folders[0] })
   assert.equal(invoke('state').folder, fs.realpathSync(folders[0]))
   const activeURL = invoke('state').url
+  await invoke('choose-folder')
+  assert.equal(children.length, 1, 'Choosing the current source must reuse its worker and storage origin')
+  assert.equal(invoke('state').url, activeURL)
+  assert.equal(children[0].stopped, undefined)
   invoke('toggle-widget')
   assert.equal(invoke('state').widgetMode, false)
   assert.equal(window.bounds.width, 1120)
@@ -468,6 +472,7 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   assert.equal(invoke('state').url, '')
   await invoke('choose-folder')
   failNext = true
+  selected = { canceled: false, filePaths: [folders[0]] }
   await invoke('choose-folder')
   assert.equal(children[3].stopped, true)
   assert.equal(children[2].stopped, undefined, 'Failed switch must keep the current workspace alive')

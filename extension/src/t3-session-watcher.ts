@@ -4,7 +4,7 @@ import * as path from 'node:path'
 import { TypedEventEmitter } from './typed-event-emitter'
 import type { AgentEvent, SessionInfo } from './protocol'
 import type { SessionLifecycleEvent } from './session-runtime'
-import { projectT3Teams, t3WorkspaceMatches, type T3Projection, type T3Row, type T3Team } from './t3-projection'
+import { projectT3Teams, selectT3ThreadIds, t3WorkspaceMatches, type T3Projection, type T3Row, type T3Team } from './t3-projection'
 
 /** A T3 project the prompt bar can target. Only id, title and folder: no scripts, settings or icons. */
 export interface T3ProjectInfo { id: string; title: string; root: string; current: boolean }
@@ -96,15 +96,26 @@ export class T3SessionWatcher {
   replaySessionStart(ids?: string[], options?: { latestOnly?: boolean; onSnapshot?: (event: AgentEvent) => void }): void {
     for (const [id, team] of this.teams) if (!ids || ids.includes(id)) (options?.onSnapshot || (event => this.events.fire(event)))(team.event)
   }
-    private updateReplies(db: ReadDatabase, sessionIds: string[]): void {
+  private updateReplies(db: ReadDatabase, sessionIds: string[]): void {
     const list: T3Reply[] = []
     try {
-      const latest = db.prepare(`SELECT updated_at, json_extract(payload_json, '$.streaming') AS streaming,
-        substr(json_extract(payload_json, '$.text'), 1, 2000) AS text
-        FROM orchestration_v2_projection_turn_items WHERE thread_id = ? AND type = 'assistant_message'
-        ORDER BY updated_at DESC LIMIT 1`)
+      // Select each lead's winner before decoding JSON. This also bounds decoding
+      // when the source database has no timestamp-sorted assistant-message index.
+      const rows = db.prepare(`WITH selected(thread_id) AS (
+        VALUES ${sessionIds.map(() => '(?)').join(',') || '(NULL)'})
+        SELECT selected.thread_id, (
+          SELECT json_object('updated_at', updated_at,
+            'streaming', json_extract(payload_json, '$.streaming'),
+            'text', substr(json_extract(payload_json, '$.text'), 1, 2000))
+          FROM (SELECT updated_at, payload_json
+            FROM orchestration_v2_projection_turn_items
+            WHERE thread_id = selected.thread_id AND type = 'assistant_message'
+            ORDER BY updated_at DESC LIMIT 1) AS winning) AS reply_json
+        FROM selected WHERE selected.thread_id IS NOT NULL`).all(...sessionIds.map(id => id.replace(/^t3:/, '')))
+      const latest = new Map(rows.map(row => [row.thread_id,
+        typeof row.reply_json === 'string' ? JSON.parse(row.reply_json) as T3Row : undefined]))
       for (const sessionId of sessionIds) {
-        const row = latest.all(sessionId.replace(/^t3:/, ''))[0]
+        const row = latest.get(sessionId.replace(/^t3:/, ''))
         const text = replyText(row?.text)
         if (row && text) list.push({ sessionId, text, at: Date.parse(String(row.updated_at)) || null, streaming: row.streaming === 1 || row.streaming === true })
       }
@@ -156,8 +167,7 @@ poll(): void {
           'completionDelivery', json_object('observedByRunId', json_extract(payload_json, '$.completionDelivery.observedByRunId'))) AS payload_json
         FROM orchestration_v2_projection_subagents`).all()
       const skeleton: T3Projection = { projects, threads, subagents, runs: [], items: [], providerThreads: [], requests: [] }
-      const selected = projectT3Teams(skeleton, this.workspaces).flatMap(team => (team.event.payload.agents as T3Row[])
-        .map(agent => String(agent.id)).filter(id => id.startsWith('t3-agent:')).map(id => id.slice('t3-agent:'.length)))
+      const selected = selectT3ThreadIds(skeleton, this.workspaces)
       const placeholders = selected.map(() => '?').join(',') || 'NULL'
       const runs = db.prepare(`SELECT run_id, thread_id, ordinal, status, provider_thread_id, completed_at,
         json_object('modelSelection', json_extract(payload_json, '$.modelSelection')) AS payload_json
@@ -184,14 +194,22 @@ poll(): void {
       // Completed items contribute counts/timestamps only. Decoding their large
       // historical tool results is unnecessary work on every live read.
       const items = db.prepare(`WITH latest_runs(thread_id, run_id) AS (
-        VALUES ${[...latestRuns].map(() => '(?,?)').join(',') || '(NULL,NULL)'})
-        SELECT i.turn_item_id, i.thread_id, i.run_id, i.provider_thread_id, i.type, i.status, i.updated_at,
-        CASE WHEN i.status IN ('running','starting','queued','pending','in_progress') THEN
-          json_object('toolName', json_extract(i.payload_json, '$.toolName'), 'title', json_extract(i.payload_json, '$.title'))
-          ELSE '{}' END AS payload_json
-        FROM orchestration_v2_projection_turn_items i
-        JOIN latest_runs latest ON latest.thread_id = i.thread_id AND latest.run_id = i.run_id
-        WHERE i.type IN ('command_execution','dynamic_tool','file_change','web_search','mcp_tool_call','compaction')`).all(...latestPairs)
+        VALUES ${[...latestRuns].map(() => '(?,?)').join(',') || '(NULL,NULL)'}),
+        relevant AS MATERIALIZED (
+          SELECT i.turn_item_id, i.thread_id, i.run_id, i.provider_thread_id, i.type, i.status, i.updated_at,
+            i.status IN ('running','starting','queued','pending','in_progress') AS active,
+            CASE WHEN i.status IN ('running','starting','queued','pending','in_progress') THEN
+              json_object('toolName', json_extract(i.payload_json, '$.toolName'), 'title', json_extract(i.payload_json, '$.title'))
+              ELSE '{}' END AS payload_json
+          FROM orchestration_v2_projection_turn_items i
+          JOIN latest_runs latest ON latest.thread_id = i.thread_id AND latest.run_id = i.run_id
+          WHERE i.type IN ('command_execution','dynamic_tool','file_change','web_search','mcp_tool_call','compaction'))
+        SELECT turn_item_id, thread_id, run_id, provider_thread_id, type, status, updated_at, payload_json,
+          1 AS item_count, NULL AS updated_ats_json FROM relevant WHERE active = 1
+        UNION ALL
+        SELECT NULL, thread_id, run_id, provider_thread_id, type, NULL, NULL, '{}',
+          COUNT(*), json_group_array(updated_at) FROM relevant WHERE active IS NOT 1
+        GROUP BY thread_id, run_id, provider_thread_id, type`).all(...latestPairs)
       db.exec('COMMIT')
       const projection: T3Projection = { projects, threads, subagents, runs, providerThreads, requests, items, nodes }
       const next = new Map(projectT3Teams(projection, this.workspaces).map(team => [team.session.id, team]))

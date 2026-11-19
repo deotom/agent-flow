@@ -14,6 +14,7 @@ import { useVisibleFrameLoop } from './use-visible-frame-loop'
 import { hasActiveAgents } from '@/lib/render-budget'
 import { animationFrameInterval } from '@/lib/viewer-preferences'
 import { historyArchive, type MessageRow } from '@/lib/history-archive'
+import { isRealtimeSession, simulationEventLog } from '@/lib/history-snapshots'
 import { compactHistory } from './simulation/compact-history'
 import { stableAgentLayout } from './simulation/stable-layout'
 
@@ -210,7 +211,7 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
 
     // Append new events to log
     if (newEvents.length > 0) {
-      let newLog = currentState.eventLog.concat(newEvents)
+      const newLog = simulationEventLog(currentState.eventLog, newEvents)
       // In mock mode, eventIndex tracks position in MOCK_SCENARIO (not the log).
       // In live mode, eventIndex tracks position in the event log.
       if (!useMockData) {
@@ -230,7 +231,7 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
 
     const archiveSession = sessionFilterRef.current
     if (newEvents.length) archiveDirtyRef.current = true
-    if (!useMockData && archiveSession && archiveDirtyRef.current && !reviewCursorRef.current && !historyArchive.error
+    if (!useMockData && archiveSession && !isRealtimeSession(archiveSession) && archiveDirtyRef.current && !reviewCursorRef.current && !historyArchive.error
       && archiveBusyRef.current?.generation !== seekGenerationRef.current) {
       const archiveJob = { generation: seekGenerationRef.current }
       archiveBusyRef.current = archiveJob
@@ -378,6 +379,11 @@ export function useAgentSimulation(options: UseAgentSimulationOptions = {}) {
   /** Seek to a specific time — replays events from scratch up to targetTime */
   const seekToTime = useCallback(async (targetTime: number, live = false) => {
     const prev = frameRef.current
+    if (!useMockData && isRealtimeSession(sessionFilterRef.current)) {
+      // T3 has no local history. Pause/resume the current scene without a disk replay.
+      commitState({ ...prev, isPlaying: live })
+      return
+    }
     const generation = ++seekGenerationRef.current
     reviewCursorRef.current = null
     const session = sessionFilterRef.current

@@ -24,10 +24,14 @@ export function AgentLamp({ status, live = true, size = 32 }: { status: TeamAgen
     <span className="jv-lamp" data-status={status} data-live={live} style={{ width: size, height: size }} role="img" aria-label={live ? STATUS_LABEL[status] : `Last known: ${STATUS_LABEL[status]}`}>
       <svg viewBox="0 0 32 32" width={size} height={size} aria-hidden="true">
         <circle className="jv-lamp-track" cx="16" cy="16" r="13.5" />
-        <circle className="jv-lamp-arc" cx="16" cy="16" r="13.5" pathLength={100} />
         <circle className="jv-lamp-core" cx="16" cy="16" r="9.5" />
         <g className="jv-lamp-glyph"><StatusGlyph status={status} /></g>
       </svg>
+      <span className="jv-lamp-rotor" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width={size} height={size}>
+          <circle className="jv-lamp-arc" cx="16" cy="16" r="13.5" pathLength={100} />
+        </svg>
+      </span>
     </span>
   )
 }
@@ -45,18 +49,19 @@ export function TeamReactor({ statuses, active, live, size = 72, label = 'Active
   return (
     <div className="jv-reactor" data-spinning={spinning} style={{ width: size, height: size }} role="img"
       aria-label={`${active} of ${statuses.length} agents active${live ? '' : ', last known'}`}>
+      <span className="jv-reactor-layer jv-reactor-halo" aria-hidden="true"><svg viewBox="0 0 100 100" width={size} height={size}><circle cx="50" cy="50" r="47" /></svg></span>
+      <span className="jv-reactor-layer jv-reactor-halo jv-reactor-halo-wide" aria-hidden="true"><svg viewBox="0 0 100 100" width={size} height={size}><circle cx="50" cy="50" r="47" /></svg></span>
+      <span className="jv-reactor-layer jv-reactor-ticks" aria-hidden="true"><svg viewBox="0 0 100 100" width={size} height={size}><circle cx="50" cy="50" r="46" pathLength={120} /></svg></span>
       <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden="true">
-        <circle className="jv-reactor-halo" cx="50" cy="50" r="47" />
-        <g className="jv-reactor-ticks"><circle cx="50" cy="50" r="46" pathLength={120} /></g>
         <g transform="rotate(-90 50 50)">
           {statuses.map((status, index) => (
             <circle key={index} className="jv-reactor-seg" data-status={status} cx="50" cy="50" r="38" pathLength={100}
               strokeDasharray={`${length} ${100 - length}`} strokeDashoffset={-index * (100 / total) - gap / 2} />
           ))}
         </g>
-        <g className="jv-reactor-inner"><circle cx="50" cy="50" r="29.5" pathLength={36} /></g>
         <circle className="jv-reactor-core" cx="50" cy="50" r="24" />
       </svg>
+      <span className="jv-reactor-layer jv-reactor-inner" aria-hidden="true"><svg viewBox="0 0 100 100" width={size} height={size}><circle cx="50" cy="50" r="29.5" pathLength={36} /></svg></span>
       <div className="jv-reactor-readout"><strong>{active}</strong>{size >= 60 && <span>{label}</span>}</div>
     </div>
   )
