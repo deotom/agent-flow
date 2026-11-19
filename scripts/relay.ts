@@ -24,6 +24,7 @@ import {
 import { setLogLevel } from '../extension/src/logger'
 import type { TelemetryClient } from './telemetry'
 import type { SourceHealth } from '../web/lib/team-types'
+import {SSEWriter,type SSESink} from './sse-writer'
 
 const MAX_EVENT_BUFFER = 5000
 const DISCOVERY_DIR = path.join(os.homedir(), '.claude', 'agent-flow')
@@ -63,8 +64,20 @@ function log(...args: unknown[]) {
 
 const sseClients = new Set<http.ServerResponse>()
 
-interface RelaySink { write(value: string): unknown; writableLength?: number; writableEnded?: boolean; end?(): unknown }
-const MAX_SSE_QUEUE = 4 * 1024 * 1024
+type RelaySink=SSESink
+const sseWriters=new WeakMap<RelaySink,SSEWriter>()
+function sseWriter(client:RelaySink,onClientError?:(client:RelaySink)=>void):SSEWriter {
+ let writer=sseWriters.get(client)
+ if(!writer){writer=new SSEWriter(client,{onDrop:reason=>{log(`[sse] Client dropped: ${reason}`);onClientError?.(client)}});sseWriters.set(client,writer)}
+ return writer
+}
+function latestStateKey(data:unknown):string|undefined {
+ const message=data as {type?:string;event?:AgentEvent}|null
+ if(!message)return undefined
+ if(message.type==='agent-event'&&message.event?.type==='session_snapshot'&&message.event.payload?.source==='t3')return `t3:${message.event.sessionId}`
+ if(['source-health','connection-status','session-list','t3-projects','t3-replies'].includes(message.type??''))return message.type
+ return undefined
+}
 
 /** Local HTTP only. */
 export function allowLocalRequest(req: http.IncomingMessage, res: http.ServerResponse): boolean {
@@ -75,17 +88,7 @@ export function allowLocalRequest(req: http.IncomingMessage, res: http.ServerRes
 }
 
 function writeSSE(client: RelaySink, value: string, onClientError?: (client: RelaySink) => void): void {
-  if (client.writableEnded) return
-  try {
-    // write() returning false only means the 16 KB high-water mark was passed (normal during a replay);
-    // a client is dropped only when its queue really grows past the cap.
-    if ((client.writableLength ?? 0) <= MAX_SSE_QUEUE) {
-      client.write(value)
-      if ((client.writableLength ?? 0) <= MAX_SSE_QUEUE) return
-    }
-  } catch { /* Drop failed and slow clients; EventSource reconnects for a fresh replay. */ }
-  onClientError?.(client)
-  try { client.end?.() } catch { /* Already closed. */ }
+  sseWriter(client,onClientError).sendData(value)
 }
 
 export function distributeRelayMessage(
@@ -94,7 +97,7 @@ export function distributeRelayMessage(
   onClientError?: (client: RelaySink) => void,
 ): void {
   for (const client of clients) {
-    writeSSE(client, `data: ${data}\n\n`, onClientError)
+    writeSSE(client, data, onClientError)
   }
 }
 
@@ -103,7 +106,11 @@ export function t3ConnectionStatus(health: SourceHealth | null): 'connected' | '
 }
 
 function sendSSE(res: http.ServerResponse, data: unknown) {
-  writeSSE(res, `data: ${JSON.stringify(data)}\n\n`, () => sseClients.delete(res))
+  sseWriter(res,()=>sseClients.delete(res)).sendValue(data,latestStateKey(data))
+}
+
+function broadcastValue(data:unknown):void {
+ for(const client of sseClients)sseWriter(client,()=>sseClients.delete(client)).sendValue(data,latestStateKey(data))
 }
 
 function broadcast(data: string) {
@@ -111,14 +118,11 @@ function broadcast(data: string) {
 }
 
 function broadcastSourceHealth(health: SourceHealth): void {
-  distributeRelayMessage(JSON.stringify({ type: 'source-health', health }), sseClients,
-    client => sseClients.delete(client as http.ServerResponse))
+  broadcastValue({type:'source-health',health})
 }
 
 function broadcastT3ConnectionStatus(health: SourceHealth): void {
-  distributeRelayMessage(JSON.stringify({ type: 'connection-status', status: t3ConnectionStatus(health),
-    source: health.reason || 'T3 local teams (read-only)' }), sseClients,
-  client => sseClients.delete(client as http.ServerResponse))
+  broadcastValue({type:'connection-status',status:t3ConnectionStatus(health),source:health.reason||'T3 local teams (read-only)'})
 }
 
 // ─── Event buffering ────────────────────────────────────────────────────────
@@ -152,7 +156,8 @@ function broadcastEvent(event: AgentEvent) {
 
   bufferRelayHistory(eventBuffer, event)
 
-  broadcast(JSON.stringify({ type: 'agent-event', event }))
+  if(event.type==='session_snapshot'&&event.payload.source==='t3')broadcastValue({type:'agent-event',event})
+  else broadcast(JSON.stringify({ type: 'agent-event', event }))
 }
 
 function broadcastSessionLifecycle(type: 'started' | 'ended' | 'updated', sessionId: string, label: string) {
@@ -493,11 +498,9 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
     t3Watcher = new T3SessionWatcher(options.allProjects ? null : [workspace])
     t3Watcher.onEvent(broadcastEvent)
     t3Watcher.onSessionLifecycle(event => broadcastSessionLifecycle(event.type, event.sessionId, event.label))
-    t3Watcher.onSessionsChanged(sessions => broadcast(JSON.stringify({ type: 'session-list', sessions })))
-    t3Watcher.onRepliesChanged(replies => distributeRelayMessage(JSON.stringify({ type: 't3-replies', replies }), sseClients,
-      client => sseClients.delete(client as http.ServerResponse)))
-    t3Watcher.onProjectsChanged(projects => distributeRelayMessage(JSON.stringify({ type: 't3-projects', projects }), sseClients,
-      client => sseClients.delete(client as http.ServerResponse)))
+    t3Watcher.onSessionsChanged(sessions=>broadcastValue({type:'session-list',sessions}))
+    t3Watcher.onRepliesChanged(replies=>broadcastValue({type:'t3-replies',replies}))
+    t3Watcher.onProjectsChanged(projects=>broadcastValue({type:'t3-projects',projects}))
     t3Watcher.onSourceHealth(health => {
       broadcastSourceHealth(health)
       broadcastT3ConnectionStatus(health)
@@ -605,7 +608,7 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
       if (sorted.length > 0) {
         const buffered = eventBuffer.get(sorted[0].id)
         if (buffered) {
-          sendSSE(res, { type: 'agent-event-batch', events: buffered })
+          for(let offset=0;offset<buffered.length;offset+=128)sendSSE(res, { type: 'agent-event-batch', events: buffered.slice(offset,offset+128) })
         }
       }
 
