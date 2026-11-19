@@ -251,7 +251,7 @@ export function connectionView(transport: TransportState, health: SourceHealth |
   if (silence > Math.max(10_000, health.pollIntervalMs * 5)) return { label: 'Read delayed', tone: 'warn', live: false,
     detail: `Service is still connected, but T3 data is delayed. No read result for ${Math.round(silence / 1000)}s. Last read ${ageLabel(health.lastSuccessAt, now)}.` }
   return { label: 'Connected', tone: 'ok', live: true,
-    detail: `Read-only. Checks T3 every ${Math.round(health.pollIntervalMs / 1000)}s, so short steps between checks are not shown.` }
+    detail: `Read-only. Minimum check interval: ${Math.round(health.pollIntervalMs / 1000)}s. Reads may take longer, with extra pauses under load or after failures; short steps between checks may not be shown.` }
 }
 
 /** Strip the viewer's label prefix so team names read as names. */

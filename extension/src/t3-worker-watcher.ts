@@ -18,6 +18,8 @@ interface T3WorkerValues {
 export interface T3WorkerTiming extends T3PollTiming { transferMs: number; deliveryMs: number; timerLateMs: number }
 const POLL_INTERVAL_MS = 2000
 const POLL_TIMEOUT_MS = 30_000
+const MAX_READ_REST_MS = 5000
+type WorkerFailure = 'timeout' | 'memory' | 'error' | 'exit' | 'dispatch'
 
 /** Relay-side cache. Only the dedicated worker imports/executes synchronous SQLite.
  * One request/completion at a time bounds queued snapshots even with a slow relay. */
@@ -52,6 +54,9 @@ export class T3WorkerWatcher {
   private started = false
   private disposed = false
   private timerLateMs = 0
+  private pollStartedAt = 0
+  private nextPollDelayMs = POLL_INTERVAL_MS
+  private failedReads = 0
   constructor(private workspaces: string[] | null, private databasePath?: string,
     private createWorker: () => Worker = () => new Worker(path.join(__dirname, 't3-poll-worker.cjs'), {
       workerData: { workspaces: this.workspaces, databasePath: this.databasePath, timing: !!this.onTiming },
@@ -73,22 +78,27 @@ export class T3WorkerWatcher {
   }
   private schedule(): void {
     if (this.disposed) return
-    const due = this.onTiming ? performance.now() + POLL_INTERVAL_MS : 0
+    const due = this.onTiming ? performance.now() + this.nextPollDelayMs : 0
     this.timer = setTimeout(() => {
       this.timer = undefined
       if (this.onTiming) this.timerLateMs = Math.max(0, performance.now() - due)
       this.poll()
-    }, POLL_INTERVAL_MS)
+    }, this.nextPollDelayMs)
     this.timer.unref?.()
   }
   private poll(): void {
     if (this.disposed) return
+    this.pollStartedAt = performance.now()
     try {
       if (!this.worker) {
         const worker = this.createWorker()
         this.worker = worker
         worker.on('message', (messages: T3WorkerMessage[]) => {
           if (this.disposed || this.worker !== worker || !Array.isArray(messages)) return
+          // Leave the source time to work after an expensive read. This is a
+          // bounded rest, not a CPU cap; freshness warnings remain unchanged.
+          const elapsed = Math.max(0, performance.now() - this.pollStartedAt)
+          this.nextPollDelayMs = Math.min(MAX_READ_REST_MS, Math.max(POLL_INTERVAL_MS, Math.ceil(elapsed * 3)))
           const receivedAt = this.onTiming ? Date.now() : 0
           const deliveryAt = this.onTiming ? performance.now() : 0
           clearTimeout(this.watchdog)
@@ -114,26 +124,34 @@ export class T3WorkerWatcher {
             this.schedule()
           }
         })
-        worker.on('error', () => this.failed(worker))
-        worker.on('exit', () => this.failed(worker))
+        worker.on('error', error => this.failed(worker,
+          (error as NodeJS.ErrnoException).code === 'ERR_WORKER_OUT_OF_MEMORY' ? 'memory' : 'error'))
+        worker.on('exit', () => this.failed(worker, 'exit'))
         worker.unref()
       }
       const worker = this.worker
-      this.watchdog = setTimeout(() => this.failed(worker), POLL_TIMEOUT_MS)
+      this.watchdog = setTimeout(() => this.failed(worker, 'timeout'), POLL_TIMEOUT_MS)
       this.watchdog.unref?.()
       this.worker.postMessage('poll')
-    } catch { this.failed(this.worker) }
+    } catch { this.failed(this.worker, 'dispatch') }
   }
-  private failed(worker: Worker | undefined): void {
+  private backOff(): void {
+    this.failedReads = Math.min(4, this.failedReads + 1)
+    this.nextPollDelayMs = Math.min(30_000, 5000 * 2 ** (this.failedReads - 1))
+  }
+  private failed(worker: Worker | undefined, failure: WorkerFailure): void {
     if (this.disposed || this.worker !== worker) return
     this.worker = undefined
+    this.backOff()
     // Wait for native work to actually stop before creating another worker.
     // A synchronous native call may delay termination; never accumulate peers.
     const stopped = worker ? worker.terminate().catch(() => {}) : Promise.resolve()
     clearTimeout(this.timer)
     clearTimeout(this.watchdog)
     this.watchdog = undefined
-    const reason = 'T3 poll worker unavailable. Retrying local monitoring.'
+    const detail = { timeout: 'read exceeded 30 seconds', memory: 'worker memory limit reached',
+      error: 'worker error', exit: 'worker exited', dispatch: 'could not start or dispatch read' }[failure]
+    const reason = `T3 poll worker unavailable (${detail}). Retrying local monitoring.`
     const prior = this.health
     this.health = { source: 't3', state: 'unavailable', checkedAt: Date.now(),
       lastSuccessAt: prior?.lastSuccessAt ?? null, lastChangeAt: prior?.lastChangeAt ?? null,
@@ -183,6 +201,8 @@ export class T3WorkerWatcher {
       case 'replies': this.replyList = message.value; this.replyLists.fire(message.value); break
       case 'health':
         this.health = message.value
+        if (message.value.state === 'ok') this.failedReads = 0
+        else this.backOff()
         // A recreated watcher may be healthy without emitting a recovery diagnostic.
         const source = message.value.reason || 'T3 local teams (read-only)'
         if (this.source !== source) { this.source = source; this.diagnostics.fire(source) }
