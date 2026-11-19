@@ -3,7 +3,7 @@ import * as path from 'node:path'
 import { TypedEventEmitter } from './typed-event-emitter'
 import type { AgentEvent, SessionInfo } from './protocol'
 import type { SessionLifecycleEvent } from './session-runtime'
-import type { T3ProjectInfo, T3Reply } from './t3-session-watcher'
+import type { T3ProjectInfo, T3Reply, T3PollTiming } from './t3-session-watcher'
 // @ts-ignore -- shared web contract intentionally lives outside extension/rootDir.
 import type { SourceHealth } from '../../web/lib/team-types'
 
@@ -13,7 +13,9 @@ export type T3WorkerMessage = {
 interface T3WorkerValues {
   event: AgentEvent; lifecycle: SessionLifecycleEvent; detected: string; diagnostic: string
   sessions: SessionInfo[]; projects: T3ProjectInfo[]; replies: T3Reply[]; health: SourceHealth
+  timing: T3PollTiming
 }
+export interface T3WorkerTiming extends T3PollTiming { transferMs: number; deliveryMs: number; timerLateMs: number }
 const POLL_INTERVAL_MS = 2000
 const POLL_TIMEOUT_MS = 30_000
 
@@ -49,10 +51,11 @@ export class T3WorkerWatcher {
   private newlyStarted = new Set<string>()
   private started = false
   private disposed = false
+  private timerLateMs = 0
   constructor(private workspaces: string[] | null, private databasePath?: string,
     private createWorker: () => Worker = () => new Worker(path.join(__dirname, 't3-poll-worker.cjs'), {
-      workerData: { workspaces: this.workspaces, databasePath: this.databasePath },
-    })) {}
+      workerData: { workspaces: this.workspaces, databasePath: this.databasePath, timing: !!this.onTiming },
+    }), private onTiming?: (value: T3WorkerTiming) => void) {}
   get diagnostic(): string { return this.source }
   get sourceHealth(): SourceHealth | null { return this.health }
   get projects(): T3ProjectInfo[] { return this.projectList }
@@ -70,7 +73,12 @@ export class T3WorkerWatcher {
   }
   private schedule(): void {
     if (this.disposed) return
-    this.timer = setTimeout(() => { this.timer = undefined; this.poll() }, POLL_INTERVAL_MS)
+    const due = this.onTiming ? performance.now() + POLL_INTERVAL_MS : 0
+    this.timer = setTimeout(() => {
+      this.timer = undefined
+      if (this.onTiming) this.timerLateMs = Math.max(0, performance.now() - due)
+      this.poll()
+    }, POLL_INTERVAL_MS)
     this.timer.unref?.()
   }
   private poll(): void {
@@ -81,6 +89,8 @@ export class T3WorkerWatcher {
         this.worker = worker
         worker.on('message', (messages: T3WorkerMessage[]) => {
           if (this.disposed || this.worker !== worker || !Array.isArray(messages)) return
+          const receivedAt = this.onTiming ? Date.now() : 0
+          const deliveryAt = this.onTiming ? performance.now() : 0
           clearTimeout(this.watchdog)
           this.watchdog = undefined
           try {
@@ -92,7 +102,17 @@ export class T3WorkerWatcher {
             }
             for (const message of messages) { if (this.disposed) break; this.receive(message) }
           }
-          finally { this.schedule() }
+          finally {
+            if (this.onTiming) {
+              const timing = messages.find(message => message.kind === 'timing')
+              if (timing?.kind === 'timing') {
+                try { this.onTiming({ ...timing.value, transferMs: Math.max(0, receivedAt - timing.value.finishedAt),
+                  deliveryMs: performance.now() - deliveryAt, timerLateMs: this.timerLateMs }) }
+                catch { /* Diagnostics cannot affect monitoring or its next poll. */ }
+              }
+            }
+            this.schedule()
+          }
         })
         worker.on('error', () => this.failed(worker))
         worker.on('exit', () => this.failed(worker))
@@ -132,6 +152,7 @@ export class T3WorkerWatcher {
   }
   private receive(message: T3WorkerMessage): void {
     switch (message.kind) {
+      case 'timing': break // Diagnostic metadata is never forwarded to viewers.
       case 'event':
         if (message.value.sessionId) this.snapshots.set(message.value.sessionId, message.value)
         this.events.fire(message.value); break

@@ -29,6 +29,12 @@ import type { SourceHealth } from '../../web/lib/team-types'
 
 const T3_POLL_INTERVAL_MS = 2000
 
+/** Opt-in numeric diagnostics only; never include source content or identifiers. */
+export interface T3PollTiming {
+  startedAt: number; finishedAt: number; totalMs: number
+  readMs: number; projectMs: number; repliesMs: number; closeMs: number
+}
+
 interface ReadDatabase {
   exec(sql: string): void
   prepare(sql: string): { all(...args: unknown[]): T3Row[] }
@@ -69,7 +75,8 @@ export class T3SessionWatcher {
   private latestHealth: SourceHealth | null = null
   private disposed = false
   /** `workspaces` null watches every T3 project on this machine. */
-  constructor(private workspaces: string[] | null, readonly databasePath = process.env.AGENT_FLOW_T3_DB || path.join(os.homedir(), '.t3', 'userdata', 'statev2.sqlite')) {}
+  constructor(private workspaces: string[] | null, readonly databasePath = process.env.AGENT_FLOW_T3_DB || path.join(os.homedir(), '.t3', 'userdata', 'statev2.sqlite'),
+    private onTiming?: (value: T3PollTiming) => void) {}
 
   start(): void {
     if (this.timer || this.disposed) return
@@ -145,6 +152,15 @@ export class T3SessionWatcher {
 poll(): void {
     if (this.disposed) return
     let checkedAt = Date.now()
+    const timing = this.onTiming ? { startedAt: checkedAt, finishedAt: 0, totalMs: 0,
+      readMs: 0, projectMs: 0, repliesMs: 0, closeMs: 0 } : undefined
+    let timingMark = timing ? performance.now() : 0
+    let timingStage: 'readMs' | 'projectMs' | 'repliesMs' | 'closeMs' = 'readMs'
+    const advanceTiming = timing ? (next: typeof timingStage) => {
+      const at = performance.now()
+      timing[timingStage] += at - timingMark
+      timingMark = at; timingStage = next
+    } : undefined
     let db: ReadDatabase | undefined
     try {
       if (!fs.existsSync(this.databasePath)) throw new Error('T3 database not found. Open T3 or set AGENT_FLOW_T3_DB.')
@@ -213,6 +229,7 @@ poll(): void {
         SELECT NULL, thread_id, run_id, provider_thread_id, type, NULL, NULL, '{}',
           COUNT(*), json_group_array(updated_at) FROM relevant WHERE active IS NOT 1
         GROUP BY thread_id, run_id, provider_thread_id, type`).all(...latestPairs)
+      advanceTiming?.('projectMs')
       const projection: T3Projection = { projects, threads, subagents, runs, providerThreads, requests, items, nodes }
       // Compare the complete freshly read input, not file timestamps or an
       // inferred source revision. All SQLite and optional reply reads still run.
@@ -240,6 +257,7 @@ poll(): void {
         if (changed) this.sessionLists.fire(this.getActiveSessions())
       }
       this.updateProjects(projects)
+      advanceTiming?.('repliesMs')
       this.updateReplies(db, [...this.teams.keys()])
       db.exec('COMMIT')
       this.projectionFingerprint = projectionFingerprint
@@ -260,8 +278,18 @@ poll(): void {
       this.latestHealth = { source: 't3', state: 'unavailable', checkedAt, lastSuccessAt: this.lastSuccessAt,
         lastChangeAt: this.lastChangeAt, pollIntervalMs: T3_POLL_INTERVAL_MS, reason }
     } finally {
-      db?.close()
-      if (this.latestHealth?.checkedAt === checkedAt) this.sourceHealthEvents.fire(this.latestHealth)
+      advanceTiming?.('closeMs')
+      try {
+        db?.close()
+        if (this.latestHealth?.checkedAt === checkedAt) this.sourceHealthEvents.fire(this.latestHealth)
+      } finally {
+        if (timing) {
+          advanceTiming?.('closeMs')
+          timing.finishedAt = Date.now()
+          timing.totalMs = timing.readMs + timing.projectMs + timing.repliesMs + timing.closeMs
+          try { this.onTiming?.(timing) } catch { /* Diagnostics cannot affect monitoring. */ }
+        }
+      }
     }
   }
   dispose(): void {

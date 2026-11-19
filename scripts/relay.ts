@@ -110,7 +110,18 @@ function sendSSE(res: http.ServerResponse, data: unknown) {
 }
 
 function broadcastValue(data:unknown):void {
- for(const client of sseClients)sseWriter(client,()=>sseClients.delete(client)).sendValue(data,latestStateKey(data))
+ distributeRelayValue(data,sseClients,client=>sseClients.delete(client as http.ServerResponse))
+}
+
+/** One immutable broadcast, one lazy encoding. No cross-broadcast cache. */
+export function distributeRelayValue(data:unknown,clients:Iterable<RelaySink>,onClientError?:(client:RelaySink)=>void):void {
+ const key=latestStateKey(data)
+ let encoded:string|undefined
+ const encode=()=>{
+  if(encoded===undefined){encoded=JSON.stringify(data)??'null';data=undefined}
+  return encoded
+ }
+ for(const client of clients)sseWriter(client,onClientError).sendEncoded(encode,key)
 }
 
 function broadcast(data: string) {
@@ -495,7 +506,8 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
   let codexWatcher: CodexSessionWatcher | null = null
   let t3Watcher: T3WorkerWatcher | undefined
   if (mode === 't3') {
-    t3Watcher = new T3WorkerWatcher(options.allProjects ? null : [workspace])
+    t3Watcher = new T3WorkerWatcher(options.allProjects ? null : [workspace], undefined, undefined,
+      process.env.AGENT_FLOW_T3_TIMING === '1' ? timing => console.log('[t3-timing]', JSON.stringify(timing)) : undefined)
     t3Watcher.onEvent(broadcastEvent)
     t3Watcher.onSessionLifecycle(event => broadcastSessionLifecycle(event.type, event.sessionId, event.label))
     t3Watcher.onSessionsChanged(sessions=>broadcastValue({type:'session-list',sessions}))

@@ -29,7 +29,8 @@ test('reads committed WAL changes without modifying T3, replays teams and recove
     INSERT INTO orchestration_v2_projection_turn_items VALUES('t','root','r',NULL,'dynamic_tool','running','2026-11-06T01:01:00Z','{"toolName":"delegate_task","output":"PRIVATE_TOOL_OUTPUT"}');`)
   const hash = () => createHash('sha256').update(fs.readFileSync(file)).update(fs.readFileSync(`${file}-wal`)).digest('hex')
   const before = hash()
-  const watcher = new T3SessionWatcher(['D:/Project/TH'], file)
+  const timings: any[] = []
+  const watcher = new T3SessionWatcher(['D:/Project/TH'], file, value => timings.push(value))
   t.after(() => watcher.dispose())
   const events: AgentEvent[] = [], lifecycle: string[] = []
   const health: Array<{ state: string; checkedAt: number; lastSuccessAt: number | null; lastChangeAt: number | null }> = []
@@ -48,6 +49,9 @@ test('reads committed WAL changes without modifying T3, replays teams and recove
   const dateNow = t.mock.method(Date, 'now', () => clock)
   const slowDelivery = watcher.onEvent(() => { clock = 112_000 })
   watcher.poll()
+  assert.equal(timings.length, 1)
+  assert.equal(timings[0].totalMs, timings[0].readMs + timings[0].projectMs + timings[0].repliesMs + timings[0].closeMs)
+  assert.ok(timings[0].readMs > 0 && timings[0].projectMs > 0 && timings[0].repliesMs > 0)
   assert.equal(health.at(-1)?.checkedAt, 112_000)
   assert.equal(health.at(-1)?.lastSuccessAt, 112_000)
   slowDelivery.dispose()
@@ -275,4 +279,18 @@ test('keeps the next poll scheduled when a health listener throws during start o
   assert.equal(notifications, 3, 'a caught observer error does not silently disable future polling')
   watcher.dispose()
   assert.equal(pending, undefined, 'disposal cancels the next read')
+})
+
+
+test('optional poll timing reports numeric stages after errors without leaking source paths', t => {
+ const records:any[]=[]
+ const watcher=new T3SessionWatcher([],path.join(os.tmpdir(),'missing-private-t3-timing.sqlite'),record=>{records.push(record);throw Error('diagnostic failed')})
+ t.after(()=>watcher.dispose())
+ watcher.poll();watcher.poll()
+ assert.equal(records.length,2,'each attempted read has a diagnostic even when the read or diagnostic fails')
+ for(const record of records){
+  assert.deepEqual(Object.keys(record).sort(),['startedAt','finishedAt','readMs','projectMs','repliesMs','closeMs','totalMs'].sort())
+  for(const value of Object.values(record))assert.ok(typeof value==='number'&&Number.isFinite(value)&&value>=0)
+ }
+ assert.equal(watcher.sourceHealth?.state,'unavailable')
 })

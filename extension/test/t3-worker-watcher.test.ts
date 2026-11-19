@@ -135,9 +135,11 @@ test('bundled production worker forwards missing-source health and stops cleanly
   const bundle = buildSync({ entryPoints: [path.resolve(__dirname, '../src/t3-poll-worker.ts')],
     bundle: true, platform: 'node', format: 'cjs', write: false })
   let worker: Worker | undefined
+  const rawMessages: any[] = []
   const watcher = new T3WorkerWatcher([], undefined, () => {
     worker = new Worker(bundle.outputFiles[0].text, { eval: true,
       workerData: { workspaces: [], databasePath: path.join(__dirname, `missing-${process.pid}.sqlite`) } })
+    worker.on('message', value => rawMessages.push(...value))
     return worker
   })
   t.after(() => watcher.dispose())
@@ -146,6 +148,7 @@ test('bundled production worker forwards missing-source health and stops cleanly
   await health
   assert.equal(watcher.sourceHealth?.state, 'unavailable')
   assert.match(watcher.diagnostic, /not found/)
+  assert.ok(rawMessages.every(message => message.kind !== 'timing'), 'default-off worker must not collect or transfer diagnostics')
   const exited = once(worker!, 'exit')
   watcher.dispose()
   await exited
@@ -181,4 +184,26 @@ test('recovery waits for native worker termination before starting a replacement
   t.mock.timers.tick(1)
   assert.equal(starts, 2, 'retry starts only after termination and its normal delay')
   watcher.dispose()
+})
+
+
+test('opt-in timings cross the real bundled worker boundary and observer errors cannot stop polling', async t => {
+ const bundle=buildSync({entryPoints:[path.resolve(__dirname,'../src/t3-poll-worker.ts')],bundle:true,platform:'node',format:'cjs',write:false})
+ let worker:Worker|undefined
+ const timings:any[]=[]
+ const watcher=new T3WorkerWatcher([],undefined,()=>{
+  worker=new Worker(bundle.outputFiles[0].text,{eval:true,workerData:{workspaces:[],databasePath:path.join(__dirname,'private-missing.sqlite'),timing:true}})
+  return worker
+ },value=>{timings.push(value);throw Error('diagnostic consumer failed')})
+ t.after(()=>watcher.dispose())
+ const next=()=>new Promise<void>(resolve=>watcher.onSourceHealth(()=>resolve()))
+ let health=next();watcher.start();worker!.ref();await health
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.equal(timings.length,1,'a requested diagnostic must be forwarded once per completed poll')
+ const timing=timings[0]
+ assert.deepEqual(Object.keys(timing).sort(),['closeMs','deliveryMs','finishedAt','projectMs','readMs','repliesMs','startedAt','timerLateMs','totalMs','transferMs'].sort())
+ for(const number of Object.values(timing))assert.ok(typeof number==='number'&&Number.isFinite(number)&&number>=0)
+ assert.ok(timing.finishedAt>=timing.startedAt)
+ health=next();await health
+ assert.equal(watcher.sourceHealth?.state,'unavailable','a diagnostic throw must not stop later polls')
 })

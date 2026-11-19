@@ -48,7 +48,11 @@ export class SSEWriter {
   this.enqueue({encode:()=>data,bytes:key?0:Buffer.byteLength(data)+8,key})
  }
  sendValue(value:unknown,key?:string):void {
-  this.enqueue({encode:()=>JSON.stringify(value)??'null',bytes:0,key})
+  this.sendEncoded(()=>JSON.stringify(value)??'null',key)
+ }
+ /** A broadcast may share one lazy encoding across its recipients. */
+ sendEncoded(encode:()=>string,key?:string):void {
+  this.enqueue({encode,bytes:0,key})
  }
  private enqueue(frame:Frame):void {
   if(this.closed)return

@@ -4,9 +4,10 @@ import { buildSync } from 'esbuild'
 import { runInNewContext } from 'node:vm'
 import type { SourceHealth } from '../web/lib/team-types'
 
-const bundle = buildSync({ stdin: { contents: `export { distributeRelayMessage, t3ConnectionStatus, allowLocalRequest, bufferRelayHistory } from './scripts/relay'`,
+const bundle = buildSync({ stdin: { contents: `export { distributeRelayMessage, distributeRelayValue, t3ConnectionStatus, allowLocalRequest, bufferRelayHistory } from './scripts/relay'`,
   resolveDir: process.cwd(), loader: 'ts' }, bundle: true, platform: 'node', format: 'cjs', external: ['vscode'], write: false })
 const bundledModule = { exports: {} as { distributeRelayMessage: typeof import('./relay').distributeRelayMessage;
+  distributeRelayValue: typeof import('./relay').distributeRelayValue;
   t3ConnectionStatus: typeof import('./relay').t3ConnectionStatus;
   allowLocalRequest: typeof import('./relay').allowLocalRequest;
   bufferRelayHistory: typeof import('./relay').bufferRelayHistory } }
@@ -14,7 +15,7 @@ runInNewContext(bundle.outputFiles[0].text, { module: bundledModule, exports: bu
   require: (name: string) => name === 'vscode' ? {} : require(name), process, Buffer, console,
   TextEncoder, TextDecoder, URL, URLSearchParams, AbortController, fetch, structuredClone, queueMicrotask,
   setTimeout, clearTimeout, setInterval, clearInterval, setImmediate, clearImmediate })
-const { distributeRelayMessage, t3ConnectionStatus, allowLocalRequest, bufferRelayHistory } = bundledModule.exports
+const { distributeRelayMessage, distributeRelayValue, t3ConnectionStatus, allowLocalRequest, bufferRelayHistory } = bundledModule.exports
 
 const unavailable: SourceHealth = { source: 't3', state: 'unavailable', checkedAt: 1, lastSuccessAt: null,
   lastChangeAt: null, pollIntervalMs: 2000, reason: 'T3 projection unavailable.' }
@@ -71,4 +72,33 @@ test('T3 reconnect history does not accumulate full snapshots and overflow the S
   const native = { sessionId: 'native-session', time: 0, type: 'message' as const, payload: { text: 'History needed for incremental native events' } }
   bufferRelayHistory(buffers, native)
   assert.equal(buffers.get(native.sessionId)?.[0], native, 'native incremental history is retained')
+})
+
+
+test('one immutable broadcast encodes once across clients and preserves write-failure isolation', () => {
+ let encodes=0
+ const received:string[][]=[[],[]],dropped:unknown[]=[]
+ const failed={write(){throw Error('closed')},end(){}}
+ const clients=[failed,...received.map(writes=>({write(value:string){writes.push(value);return true}}))]
+ distributeRelayValue({type:'source-health',get health(){encodes++;return {state:'ok'}}},clients,sink=>dropped.push(sink))
+ assert.equal(encodes,1,'all recipients share one encoding, including after a failed peer')
+ assert.deepEqual(dropped,[failed])
+ assert.equal(received[0][0],received[1][0])
+ assert.equal(JSON.parse(received[0][0].slice(6)).health.state,'ok')
+ distributeRelayValue({type:'source-health',health:{state:'unavailable'}},clients.slice(1))
+ assert.equal(received[0].length,2)
+ assert.equal(JSON.parse(received[0][1].slice(6)).health.state,'unavailable','later broadcasts must not reuse an older encoding')
+})
+
+test('replaced shared state stays unencoded until a slow recipient drains', () => {
+ const listeners=new Map<string,()=>void>(),writes:string[]=[]
+ const slow={writableLength:0,write(value:string){writes.push(value);this.writableLength=1;return false},
+  once(event:string,listener:()=>void){listeners.set(event,listener)},removeListener(event:string){listeners.delete(event)},end(){}}
+ distributeRelayMessage('{}',[slow]);let encodes=0
+ for(let revision=0;revision<100;revision++)distributeRelayValue({type:'source-health',get health(){encodes++;return {revision}}},[slow])
+ assert.equal(encodes,0,'coalesced old states are never encoded')
+ slow.writableLength=0;listeners.get('drain')!()
+ assert.equal(encodes,1)
+ assert.equal(JSON.parse(writes[1].slice(6)).health.revision,99)
+ listeners.get('close')?.()
 })

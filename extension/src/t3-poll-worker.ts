@@ -3,7 +3,8 @@ import { T3SessionWatcher } from './t3-session-watcher'
 import type { T3WorkerMessage } from './t3-worker-watcher'
 
 if (!parentPort) throw new Error('T3 poll entry requires a worker thread')
-const watcher = new T3SessionWatcher(workerData.workspaces, workerData.databasePath)
+const watcher = new T3SessionWatcher(workerData.workspaces, workerData.databasePath,
+  workerData.timing === true ? value => messages.push({ kind: 'timing', value }) : undefined)
 let messages: T3WorkerMessage[] = []
 let initialized = false
 watcher.onEvent(value => messages.push({ kind: 'event', value }))
