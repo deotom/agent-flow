@@ -11,6 +11,63 @@ class Sink extends EventEmitter {
  destroy(){this.end()}
  drain(){this.blocked=false;this.writableLength=0;this.emit('drain')}
 }
+test('does not strand an accepted frame when drain is synchronous or already empty',()=>{
+ for(const emitDrain of [true,false]){
+  const sink=new Sink();sink.write=value=>{sink.writes.push(value);sink.writableLength=0;if(emitDrain)sink.emit('drain');return false}
+  const writer=new SSEWriter(sink)
+  writer.sendData('first');writer.sendData('second')
+  assert.deepEqual(sink.writes,['data: first\n\n','data: second\n\n'])
+  assert.equal(writer.stats.blocked,false)
+  assert.equal(sink.listenerCount('drain'),0)
+  writer.dispose()
+ }
+})
+test('resumes after an accepted write callback completes even if HTTP omits drain',async()=>{
+ const sink=new Sink();let finished!:()=>void,callbacks=0
+ const done=new Promise<void>(resolve=>{finished=resolve})
+ sink.write=(value:string,callback?:(error?:Error|null)=>void)=>{
+  sink.writes.push(value);sink.writableLength=1
+  setImmediate(()=>{callback?.();sink.writableLength=0;if(++callbacks===2)finished()})
+  return false
+ }
+ const writer=new SSEWriter(sink),timer=setTimeout(()=>finished(),300)
+ try{
+  writer.sendData('first');writer.sendData('second');await done
+  await new Promise<void>(resolve=>setImmediate(resolve))
+  assert.equal(callbacks,2,'accepted callbacks must release the stalled pump without resending')
+  assert.deepEqual(sink.writes,['data: first\n\n','data: second\n\n'])
+  assert.equal(writer.stats.blocked,false)
+ }finally{clearTimeout(timer);writer.dispose()}
+})
+test('real HTTP drains a cold mixed-size baseline through repeated low-watermark transitions',async()=>{
+ let writer:SSEWriter|undefined
+ const reasons:string[]=[]
+ const server=http.createServer({highWaterMark:16*1024},(_req,res)=>{
+  res.writeHead(200,{'Content-Type':'text/event-stream'})
+  writer=new SSEWriter(res,{drainTimeoutMs:200,onDrop:reason=>reasons.push(reason)})
+  // An async source completes after the HTTP handler; its large first frame is
+  // followed by enough small lifecycle/state frames to cross another watermark.
+  setImmediate(()=>{
+   writer!.sendValue({i:-1,padding:'x'.repeat(1024*1024)})
+   for(let i=0;i<100;i++)writer!.sendValue({i,padding:'x'.repeat(400)})
+   writer!.sendValue({final:true})
+  })
+ })
+ await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve))
+ try{
+  const count=await new Promise<number>((resolve,reject)=>{
+   let text='',count=0
+   const request=http.get(`http://127.0.0.1:${(server.address() as {port:number}).port}`,res=>{
+    res.setEncoding('utf8');res.on('data',chunk=>{text+=chunk;let end:number;while((end=text.indexOf('\n\n'))>=0){const message=JSON.parse(text.slice(6,end));text=text.slice(end+2);if(message.final){clearTimeout(timer);resolve(count);request.destroy()}else count++}})
+    res.on('error',error=>{clearTimeout(timer);reject(error)})
+    res.on('end',()=>{clearTimeout(timer);reject(Error('Cold stream ended early'))})
+   })
+   const timer=setTimeout(()=>{request.destroy();reject(Error('Cold stream deadline'))},2000)
+   request.on('error',error=>{clearTimeout(timer);reject(error)})
+  })
+  assert.equal(count,101);assert.deepEqual(reasons,[])
+ }finally{writer?.dispose();server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()))}
+})
 test('accepts each frame once and waits for drain, including a current-state replay larger than 4 MiB',()=>{
  const sink=new Sink(),writer=new SSEWriter(sink)
  writer.sendValue({type:'source-health'},'health')

@@ -9,6 +9,11 @@ const esbuild = require('esbuild')
 const path = require('path')
 
 esbuild.buildSync({
+  entryPoints: [path.join(__dirname, '../extension/src/t3-poll-worker.ts')],
+  outfile: path.join(__dirname, 't3-poll-worker.cjs'),
+  bundle: true, platform: 'node', target: 'node18',
+})
+esbuild.buildSync({
   entryPoints: [path.join(__dirname, 'dev-relay.ts')],
   bundle: true,
   platform: 'node',

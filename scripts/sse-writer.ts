@@ -1,6 +1,6 @@
 /** One accepted frame may be large; never send another until its drain. */
 export interface SSESink {
- write(value:string):unknown
+ write(value:string,callback?:(error?:Error|null)=>void):unknown
  writableLength?:number
  writableEnded?:boolean
  end?():unknown
@@ -8,7 +8,7 @@ export interface SSESink {
  once?(event:string,listener:()=>void):unknown
  removeListener?(event:string,listener:()=>void):unknown
 }
-interface Options {maxQueuedBytes?:number;maxQueuedFrames?:number;maxFrameBytes?:number;drainTimeoutMs?:number;onDrop?:(reason:string)=>void}
+interface Options {maxQueuedBytes?:number;maxQueuedFrames?:number;maxFrameBytes?:number;drainTimeoutMs?:number;onDrop?:(reason:string)=>void;onTrace?:(state:unknown)=>void}
 interface Frame {encode:()=>string;bytes:number;key?:string}
 
 /** Latest state is held by reference and serialized only when writable. This
@@ -21,10 +21,25 @@ export class SSEWriter {
  private waiting=false
  private closed=false
  private timer?:ReturnType<typeof setTimeout>
+ private drainedCheck?:ReturnType<typeof setImmediate>
  private flushing=false
  private readonly onClose=()=>this.dispose()
  private readonly onError=()=>this.drop('stream-error')
- private readonly onDrain=()=>{this.clearDrain();this.flush()}
+ private readonly onDrain=()=>{this.trace('drain');this.clearDrain();this.flush()}
+ private readonly onFlushed=(error?:Error|null)=>{
+  if(this.closed)return
+  if(error){this.drop('write-failed');return}
+  // Some HTTP runtimes complete a corked write without a later drain event.
+  // Wait for their internal pending-byte accounting to finish, then resume only
+  // if no bytes remain. Coalesce checks to one immediate per client.
+  if(this.drainedCheck)return
+  this.drainedCheck=setImmediate(()=>{
+   this.drainedCheck=undefined
+   if(!this.closed&&this.waiting&&this.sink.writableLength===0){this.trace('empty-after-write');this.onDrain()}
+  })
+  this.drainedCheck.unref?.()
+ }
+ private trace(event:string,accepted?:unknown):void{try{this.options.onTrace?.({event,at:Date.now(),accepted,...this.stats,writable:this.sink.writableLength})}catch{/* Diagnostics cannot affect delivery. */}}
  constructor(private readonly sink:SSESink,private readonly options:Options={}){
   sink.once?.('close',this.onClose);sink.once?.('error',this.onError)
  }
@@ -60,14 +75,20 @@ export class SSEWriter {
     let wire:string
     try{wire=`data: ${frame.encode()}\n\n`}catch{this.drop('serialize-failed');return}
     if(Buffer.byteLength(wire)>(this.options.maxFrameBytes??32*1024*1024)){this.drop('frame-limit');return}
+    // Subscribe before write: an implementation may drain reentrantly. The
+    // callback clears waiting while the outer pump remains protected by flushing.
+    this.waiting=true;this.sink.once?.('drain',this.onDrain)
     let accepted:unknown
-    try{accepted=this.sink.write(wire)}catch{this.drop('write-failed');return}
+    try{accepted=this.sink.write(wire,this.onFlushed)}catch{this.drop('write-failed');return}
+    this.trace('write',accepted)
     if(this.closed||this.sink.writableEnded){this.dispose();return}
-    if(accepted===false){
-     this.waiting=true;this.sink.once?.('drain',this.onDrain)
-     this.timer=setTimeout(()=>this.drop('drain-timeout'),this.options.drainTimeoutMs??15_000)
+    if(accepted===false&&this.sink.writableLength!==0&&this.waiting){
+     this.timer=setTimeout(()=>{this.trace('timeout');this.drop('drain-timeout')},this.options.drainTimeoutMs??15_000)
      this.timer.unref?.();return
     }
+    // Explicitly empty means the accepted frame has already drained. An absent
+    // writableLength still follows the ordinary false -> drain contract above.
+    this.clearDrain()
     if((this.sink.writableLength??0)>(this.options.maxQueuedBytes??4*1024*1024)){this.drop('invalid-backpressure');return}
    }
   }finally{this.flushing=false}
@@ -78,7 +99,7 @@ export class SSEWriter {
  }
  dispose():void {
   if(this.closed)return
-  this.closed=true;this.clearDrain();this.queue.length=0;this.latest.clear();this.queuedBytes=0
+  this.closed=true;this.clearDrain();clearImmediate(this.drainedCheck);this.drainedCheck=undefined;this.queue.length=0;this.latest.clear();this.queuedBytes=0
   this.sink.removeListener?.('close',this.onClose);this.sink.removeListener?.('error',this.onError)
  }
  private drop(reason:string):void {

@@ -10,6 +10,11 @@ execFileSync(process.execPath, [path.join(root, 'app/build.js')], { cwd: root, s
 fs.mkdirSync(path.join(__dirname, 'dist'), { recursive: true })
 fs.cpSync(path.join(root, 'app/dist/webview'), path.join(__dirname, 'dist/webview'), { recursive: true })
 esbuild.buildSync({
+  entryPoints: [path.join(root, 'extension/src/t3-poll-worker.ts')],
+  outfile: path.join(__dirname, 'dist/t3-poll-worker.cjs'),
+  bundle: true, platform: 'node', target: 'node22',
+})
+esbuild.buildSync({
   entryPoints: [path.join(__dirname, 'worker.ts')],
   outfile: path.join(__dirname, 'dist/worker.cjs'),
   bundle: true,

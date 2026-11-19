@@ -13,7 +13,7 @@ const bundledModule = { exports: {} as { distributeRelayMessage: typeof import('
 runInNewContext(bundle.outputFiles[0].text, { module: bundledModule, exports: bundledModule.exports,
   require: (name: string) => name === 'vscode' ? {} : require(name), process, Buffer, console,
   TextEncoder, TextDecoder, URL, URLSearchParams, AbortController, fetch, structuredClone, queueMicrotask,
-  setTimeout, clearTimeout, setInterval, clearInterval })
+  setTimeout, clearTimeout, setInterval, clearInterval, setImmediate, clearImmediate })
 const { distributeRelayMessage, t3ConnectionStatus, allowLocalRequest, bufferRelayHistory } = bundledModule.exports
 
 const unavailable: SourceHealth = { source: 't3', state: 'unavailable', checkedAt: 1, lastSuccessAt: null,

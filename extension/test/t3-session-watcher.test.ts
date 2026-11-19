@@ -12,7 +12,8 @@ test('reads committed WAL changes without modifying T3, replays teams and recove
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't3-flow-'))
   const file = path.join(dir, 'statev2.sqlite')
   const db = new DatabaseSync(file)
-  t.after(() => { db.close(); fs.rmSync(dir, { recursive: true, force: true }) })
+  let writerClosed = false
+  t.after(() => { if (!writerClosed) db.close(); fs.rmSync(dir, { recursive: true, force: true }) })
   db.exec(`PRAGMA journal_mode=WAL;
     CREATE TABLE projection_projects(project_id TEXT, workspace_root TEXT, deleted_at TEXT);
     INSERT INTO projection_projects VALUES('p','D:/Project/TH',NULL);
@@ -35,6 +36,12 @@ test('reads committed WAL changes without modifying T3, replays teams and recove
   watcher.onEvent(event => events.push(event))
   watcher.onSessionLifecycle(event => lifecycle.push(event.type))
   watcher.onSourceHealth(value => health.push(value))
+  let teamSerializations = 0
+  const stringify = JSON.stringify
+  t.mock.method(JSON, 'stringify', (value: any, replacer?: any, space?: any) => {
+    if (value?.session && value?.payload) teamSerializations++
+    return stringify(value, replacer, space)
+  })
   // A successful heartbeat is fresh when it is published, even when reading/
   // delivering a large all-project snapshot takes longer than the warning age.
   let clock = 100_000
@@ -53,28 +60,48 @@ test('reads committed WAL changes without modifying T3, replays teams and recove
   assert.ok(health.at(-1)?.lastChangeAt)
   assert.equal(hash(), before, 'Read-only polling must not write the main DB or WAL')
   assert.ok(!JSON.stringify(events).includes('PRIVATE_TOOL_OUTPUT'))
+  let projectionReads = 0
+  const prepare = DatabaseSync.prototype.prepare
+  t.mock.method(DatabaseSync.prototype, 'prepare', function(this: unknown, sql: string) {
+    if (sql.includes('FROM orchestration_v2_projection_threads')) projectionReads++
+    return prepare.call(this, sql)
+  })
   watcher.poll()
   assert.equal(events.length, 1, 'Idle polling must not duplicate graph snapshots')
+  assert.equal(teamSerializations, 1, 'identical complete input reuses projected teams and their fingerprints')
+  assert.equal(projectionReads, 1, 'fresh connections read every snapshot without assuming a cross-connection revision contract')
   const replay: AgentEvent[] = []
   watcher.replaySessionStart(undefined, { onSnapshot: e => replay.push(e) })
   assert.equal(replay.length, 1)
   assert.equal(events.length, 1, 'Reconnect replay stays local to its recipient')
+  const commitDuringRead = watcher.onEvent(() => db.exec("UPDATE orchestration_v2_projection_threads SET title='Concurrent commit'"))
   db.exec("UPDATE orchestration_v2_projection_runs SET status='completed'; UPDATE orchestration_v2_projection_turn_items SET status='completed'")
   watcher.poll()
   assert.equal(events.length, 2)
+  assert.equal(projectionReads, 2, 'a WAL commit is visible without a main database mtime change')
+  commitDuringRead.dispose()
+  watcher.poll()
+  assert.equal(projectionReads, 3, 'a commit during snapshot delivery remains visible next poll')
+  assert.equal(teamSerializations, 3, 'a changed source input invalidates the projection cache')
+  assert.equal(watcher.getActiveSessions()[0].label, 'T3 · Concurrent commit')
   assert.equal(watcher.isActive(), false)
   db.exec('ALTER TABLE orchestration_v2_projection_nodes RENAME TO saved_nodes')
   watcher.poll()
   assert.match(watcher.diagnostic, /unavailable or incompatible/)
   assert.equal(watcher.getActiveSessions().length, 1, 'A failed poll keeps the last known team')
   assert.equal(health.at(-1)?.state, 'unavailable')
-  assert.equal(health.length, 4, 'Health is emitted after every poll')
+  assert.equal(health.length, 5, 'Health is emitted after every poll')
   assert.equal(lifecycle.includes('ended'), false)
   db.exec('ALTER TABLE saved_nodes RENAME TO orchestration_v2_projection_nodes')
   watcher.poll()
   assert.equal(watcher.getActiveSessions().length, 1)
   assert.deepEqual(watcher.projects, [{ id: 'p', title: 'TH', root: 'D:/Project/TH', current: true }], 'Older schemas fall back to the folder name')
   assert.equal(watcher.diagnostic, 'T3 local teams (read-only)')
+  db.close(); writerClosed = true
+  fs.renameSync(file, `${file}.moving`)
+  fs.renameSync(`${file}.moving`, file)
+  watcher.poll()
+  assert.equal(watcher.sourceHealth?.state, 'ok', 'T3 can replace its database between polls without a retained reader handle')
   watcher.dispose()
   watcher.poll()
   assert.equal(watcher.getActiveSessions().length, 0)
@@ -98,7 +125,6 @@ test('reads only the lead\'s latest reply text, cleaned and capped, for the loca
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't3-reply-'))
   const file = path.join(dir, 'statev2.sqlite')
   const db = new DatabaseSync(file)
-  t.after(() => { db.close(); fs.rmSync(dir, { recursive: true, force: true }) })
   db.exec(`CREATE TABLE projection_projects(project_id TEXT, workspace_root TEXT, deleted_at TEXT);
     INSERT INTO projection_projects VALUES('p','D:/Project/TH',NULL);
     CREATE TABLE orchestration_v2_projection_threads(thread_id TEXT,project_id TEXT,title TEXT,default_provider TEXT,active_provider_thread_id TEXT,created_at TEXT,updated_at TEXT,archived_at TEXT,deleted_at TEXT,payload_json TEXT);
@@ -157,7 +183,7 @@ test('reads only the lead\'s latest reply text, cleaned and capped, for the loca
     return statement
   })
   const watcher = new T3SessionWatcher(['D:/Project/TH'], file)
-  t.after(() => watcher.dispose())
+  t.after(() => { watcher.dispose(); db.close(); fs.rmSync(dir, { recursive: true, force: true }) })
   const fired: unknown[] = []
   watcher.onRepliesChanged(list => fired.push(list))
   watcher.poll()
@@ -185,6 +211,10 @@ test('reads only the lead\'s latest reply text, cleaned and capped, for the loca
   assert.equal(watcher.sourceHealth?.state, 'ok', 'optional reply failures do not break team monitoring')
   assert.deepEqual(watcher.replies, previous, 'a malformed winning reply retains the previous optional caption list')
   assert.equal(fired.length, 1)
+  db.exec(`UPDATE reply_items SET payload_json='{"text":"Updated reply"}' WHERE turn_item_id='a2'`)
+  watcher.poll()
+  assert.equal(watcher.replies.find(reply => reply.sessionId === 't3:root')?.text, 'Updated reply', 'reply-only source changes are read even when the team projection input is unchanged')
+  assert.equal(fired.length, 2)
 })
 
 

@@ -26,6 +26,11 @@ execSync('npx vite build --config vite.config.app.ts', {
 // 2. Bundle the app
 console.log('\n[2/2] Bundling app...')
 esbuild.buildSync({
+  entryPoints: [path.join(ROOT, 'extension/src/t3-poll-worker.ts')],
+  outfile: path.join(APP_DIR, 'dist/t3-poll-worker.cjs'),
+  bundle: true, platform: 'node', target: 'node18',
+})
+esbuild.buildSync({
   entryPoints: [path.join(APP_DIR, 'src', 'app.ts')],
   bundle: true,
   platform: 'node',

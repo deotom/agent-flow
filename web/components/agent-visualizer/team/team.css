@@ -475,13 +475,17 @@
 
 /* ── HUD effects. Each one restates a status already given in text; all stop with motion off. ── */
 .jv-bar { overflow: visible; }
-.jv-bar::after {
-  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; pointer-events: none;
-  background: linear-gradient(90deg, transparent, rgba(95, 225, 255, 0.9), transparent) no-repeat;
-  background-size: 30% 100%; background-position: -40% 0; opacity: 0;
+.jv-header-sweep {
+  position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; pointer-events: none; overflow: hidden;
 }
-.jv-root[data-live="true"] .jv-bar:has(.jv-reactor[data-spinning="true"])::after { opacity: 1; animation: jv-sweep-x calc(4.5s * var(--jv-speed)) linear infinite; }
-@keyframes jv-sweep-x { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+.jv-header-sweep::after {
+  content: ""; position: absolute; left: 0; top: 0; width: 30%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(95, 225, 255, 0.9), transparent) no-repeat;
+  opacity: 0; transform: translateX(-93.333333%);
+}
+.jv-root[data-live="true"] .jv-bar:has(.jv-reactor[data-spinning="true"]) > .jv-header-sweep::after { opacity: 1; animation: jv-sweep-x calc(4.5s * var(--jv-speed)) linear infinite; }
+/* Background percentages refer to the unused 70% of the header; transforms refer to the 30% stripe. */
+@keyframes jv-sweep-x { from { transform: translateX(-93.333333%); } to { transform: translateX(326.666667%); } }
 
 /* Reactor: halo pulse and core glow while the team works. */
 .jv-reactor[data-spinning="true"] .jv-reactor-halo { animation: jv-halo calc(2.6s * var(--jv-speed)) ease-in-out infinite; transform-origin: 50px 50px; }
@@ -505,13 +509,21 @@
 .jv-row[data-live="true"]:is([data-status="running"], [data-status="thinking"])::after { opacity: 1; animation: jv-row-sweep calc(3.2s * var(--jv-speed)) ease-in-out infinite; }
 .jv-row[data-live="true"][data-status="thinking"]::after { animation-duration: calc(5s * var(--jv-speed)); }
 @keyframes jv-row-sweep { 0% { transform: translateX(-120%); } 60%, 100% { transform: translateX(320%); } }
-.jv-row[data-live="true"]:is([data-status="running"], [data-status="thinking"], [data-status="waiting_approval"], [data-status="waiting_input"]) {
+.jv-root:not([data-motion="off"]) .jv-row[data-live="true"]:not([data-selected="true"]):is([data-status="running"], [data-status="thinking"], [data-status="waiting_approval"], [data-status="waiting_input"]) {
+  box-shadow: inset 3px 0 0 var(--c);
+}
+/* Rasterize the full glow once. Its wrapper lets the shadow extend beyond the clipped card. */
+.jv-row-wrap[data-live="true"]:is([data-status="running"], [data-status="thinking"], [data-status="waiting_approval"], [data-status="waiting_input"]):not(:has(> .jv-row[data-selected="true"]))::after {
+  content: ""; position: absolute; top: 0; bottom: 0; right: 0; left: calc(var(--jv-depth, 0) * var(--jv-indent));
+  border-radius: 10px; pointer-events: none; opacity: 0;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--c) 30%, transparent);
   animation: jv-edge calc(2.4s * var(--jv-speed)) ease-in-out infinite;
 }
 @keyframes jv-edge {
-  0%, 100% { box-shadow: inset 3px 0 0 var(--c), 0 0 0 transparent; }
-  50% { box-shadow: inset 3px 0 0 var(--c), 0 0 18px color-mix(in srgb, var(--c) 30%, transparent); }
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
 }
+.jv-root[data-motion="off"] .jv-row-wrap::after { display: none; }
 .jv-row[data-live="true"]:is([data-status="waiting_approval"], [data-status="waiting_input"]) { border-color: color-mix(in srgb, var(--jv-wait) 55%, transparent) !important; }
 .jv-row[data-selected="true"] { animation: none !important; }
 
@@ -565,11 +577,11 @@
 
 /* Pipeline: the Working stage shimmers while it has work. */
 .jv-root[data-live="true"] .jv-stage[data-stage="working"]:not([data-empty="true"])::after {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 200%; pointer-events: none;
   background: linear-gradient(100deg, transparent 30%, rgba(95, 225, 255, 0.22) 50%, transparent 70%) no-repeat;
-  background-size: 200% 100%; animation: jv-shimmer calc(2.2s * var(--jv-speed)) linear infinite;
+  animation: jv-shimmer calc(2.2s * var(--jv-speed)) linear infinite;
 }
-@keyframes jv-shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+@keyframes jv-shimmer { from { transform: translateX(-75%); } to { transform: translateX(25%); } }
 
 /* Corner brackets glow on the selected detail panel. */
 .jv-detail > .jv-brackets::before, .jv-detail > .jv-brackets::after { width: 16px; height: 16px; border-color: var(--jv-cyan); opacity: 1; }

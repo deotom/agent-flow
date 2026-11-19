@@ -61,6 +61,7 @@ export class T3SessionWatcher {
   get replies(): T3Reply[] { return this.replyList }
   private teams = new Map<string, T3Team>()
   private fingerprints = new Map<string, string>()
+  private projectionFingerprint = ''
   private timer?: ReturnType<typeof setTimeout>
   private lastError = ''
   private lastSuccessAt: number | null = null
@@ -149,6 +150,8 @@ poll(): void {
       if (!fs.existsSync(this.databasePath)) throw new Error('T3 database not found. Open T3 or set AGENT_FLOW_T3_DB.')
       // Lazy loading keeps existing modes compatible with hosts without node:sqlite.
       const { DatabaseSync } = require('node:sqlite') as { DatabaseSync: new (file: string, options: { readOnly: boolean }) => ReadDatabase }
+      // Release every handle after its snapshot. On Windows even an idle
+      // read-only connection can prevent T3 replacing/upgrading its database.
       db = new DatabaseSync(this.databasePath, { readOnly: true })
       db.exec('PRAGMA query_only = ON; PRAGMA busy_timeout = 100; BEGIN')
       // Titles name each team's project; an older schema without them falls back to folder names.
@@ -210,29 +213,36 @@ poll(): void {
         SELECT NULL, thread_id, run_id, provider_thread_id, type, NULL, NULL, '{}',
           COUNT(*), json_group_array(updated_at) FROM relevant WHERE active IS NOT 1
         GROUP BY thread_id, run_id, provider_thread_id, type`).all(...latestPairs)
-      db.exec('COMMIT')
       const projection: T3Projection = { projects, threads, subagents, runs, providerThreads, requests, items, nodes }
-      const next = new Map(projectT3Teams(projection, this.workspaces).map(team => [team.session.id, team]))
-      let changed = next.size !== this.teams.size
-      for (const [id, old] of this.teams) if (!next.has(id)) {
-        this.lifecycle.fire({ type: 'ended', sessionId: id, label: old.session.label })
-        this.fingerprints.delete(id)
+      // Compare the complete freshly read input, not file timestamps or an
+      // inferred source revision. All SQLite and optional reply reads still run.
+      const projectionFingerprint = JSON.stringify(projection)
+      let changed = false
+      if (projectionFingerprint !== this.projectionFingerprint) {
+        const next = new Map(projectT3Teams(projection, this.workspaces).map(team => [team.session.id, team]))
+        changed = next.size !== this.teams.size
+        for (const [id, old] of this.teams) if (!next.has(id)) {
+          this.lifecycle.fire({ type: 'ended', sessionId: id, label: old.session.label })
+          this.fingerprints.delete(id)
+        }
+        for (const [id, team] of next) {
+          // Wall-clock age is not an activity change.
+          const signature = JSON.stringify({ session: team.session, payload: { ...team.event.payload,
+            agents: (team.event.payload.agents as T3Row[]).map(({ timeAlive, ...agent }) => agent) } })
+          if (signature === this.fingerprints.get(id)) continue
+          changed = true
+          this.lifecycle.fire({ type: this.teams.has(id) ? 'updated' : 'started', sessionId: id, label: team.session.label })
+          if (!this.teams.has(id)) this.detected.fire(id)
+          this.events.fire(team.event)
+          this.fingerprints.set(id, signature)
+        }
+        this.teams = next
+        if (changed) this.sessionLists.fire(this.getActiveSessions())
       }
-      for (const [id, team] of next) {
-        // Wall-clock age is not an activity change.
-        const signature = JSON.stringify({ session: team.session, payload: { ...team.event.payload,
-          agents: (team.event.payload.agents as T3Row[]).map(({ timeAlive, ...agent }) => agent) } })
-        if (signature === this.fingerprints.get(id)) continue
-        changed = true
-        this.lifecycle.fire({ type: this.teams.has(id) ? 'updated' : 'started', sessionId: id, label: team.session.label })
-        if (!this.teams.has(id)) this.detected.fire(id)
-        this.events.fire(team.event)
-        this.fingerprints.set(id, signature)
-      }
-      this.teams = next
-      if (changed) this.sessionLists.fire(this.getActiveSessions())
       this.updateProjects(projects)
-      this.updateReplies(db, [...next.keys()])
+      this.updateReplies(db, [...this.teams.keys()])
+      db.exec('COMMIT')
+      this.projectionFingerprint = projectionFingerprint
       // Date the completed read, not its start: large snapshots take time.
       checkedAt = Date.now()
       this.lastSuccessAt = checkedAt
@@ -258,6 +268,7 @@ poll(): void {
     this.disposed = true
     clearTimeout(this.timer)
     this.teams.clear(); this.fingerprints.clear()
-    this.events.dispose(); this.lifecycle.dispose(); this.detected.dispose(); this.diagnostics.dispose(); this.sessionLists.dispose(); this.sourceHealthEvents.dispose()
+    this.projectionFingerprint = ''
+    this.events.dispose(); this.lifecycle.dispose(); this.detected.dispose(); this.diagnostics.dispose(); this.sessionLists.dispose(); this.sourceHealthEvents.dispose(); this.projectLists.dispose(); this.replyLists.dispose()
   }
 }

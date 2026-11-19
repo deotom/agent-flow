@@ -351,6 +351,7 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
     <div className="jv-root" data-widget={widget} data-motion={animationMode} data-live={live}>
       <div className="jv-backdrop" aria-hidden="true" />
       <header className={office ? "jv-bar of-header" : "jv-bar"}>
+        {!office && <span className="jv-header-sweep" aria-hidden="true" />}
         {!office && <TeamReactor statuses={statuses} active={office ? statuses.filter(status => ['running', 'thinking', 'background', 'waiting_approval', 'waiting_input'].includes(status)).length : view?.counts.active ?? 0} live={live} size={widget ? 46 : 76} />}
         <div className="jv-bar-main">
           <div className="jv-bar-row">

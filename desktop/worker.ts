@@ -41,7 +41,7 @@ async function main() {
   const mode = process.argv[3]
   const allProjects = mode === 't3-all'
   const runtime = allProjects ? 't3' : mode === 't3' || mode === 'auto' ? mode : undefined
-  relay = await createRelay({ workspace, runtime, allProjects, onSourceStatus: message => send({ type: 'source-status', message }) })
+  relay = await createRelay({ workspace, runtime, allProjects, verbose: process.env.AGENT_FLOW_RELAY_VERBOSE === '1', onSourceStatus: message => send({ type: 'source-status', message }) })
   server = http.createServer((req, res) => {
     if (!allowLocalRequest(req, res)) return
     if (req.url === '/events') return relay!.handleSSE(req, res)

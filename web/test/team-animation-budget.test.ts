@@ -6,6 +6,17 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { AgentLamp, TeamReactor } from '../components/agent-visualizer/team/team-visuals'
 
+it('continuous row glows and HUD sweeps animate cached pixels rather than repainting shadows or gradients', () => {
+  const css = postcss.parse(readFileSync(new URL('../components/agent-visualizer/team/team.css', import.meta.url), 'utf8'))
+  const checked = new Set<string>()
+  css.walkAtRules('keyframes', animation => {
+    if (!['jv-edge', 'jv-sweep-x', 'jv-shimmer'].includes(animation.params)) return
+    checked.add(animation.params)
+    animation.walkDecls(declaration => assert.ok(['opacity', 'transform'].includes(declaration.prop), `${animation.params} repaints ${declaration.prop}`))
+  })
+  assert.equal(checked.size, 3)
+})
+
 it('team status animations do not change layout or SVG geometry on every frame', () => {
   const css = postcss.parse(readFileSync(new URL('../components/agent-visualizer/team/team.css', import.meta.url), 'utf8'))
   const geometry = /^(top|right|bottom|left|width|height|min-width|max-width|min-height|max-height|margin(?:-.+)?|padding(?:-.+)?|stroke-width|r|cx|cy)$/

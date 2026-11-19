@@ -15,7 +15,7 @@ import { readNewFileLines, foldPathCase } from '../extension/src/fs-utils'
 import { scanSubagentsDir, readSubagentNewLines } from '../extension/src/subagent-watcher'
 import { handlePermissionDetection } from '../extension/src/permission-detection'
 import { CodexSessionWatcher } from '../extension/src/codex-session-watcher'
-import { T3SessionWatcher } from '../extension/src/t3-session-watcher'
+import { T3WorkerWatcher } from '../extension/src/t3-worker-watcher'
 import {
   INACTIVITY_TIMEOUT_MS, SCAN_INTERVAL_MS, ACTIVE_SESSION_AGE_S, POLL_FALLBACK_MS,
   SESSION_ID_DISPLAY, SYSTEM_PROMPT_BASE_TOKENS, ORCHESTRATOR_NAME,
@@ -68,7 +68,7 @@ type RelaySink=SSESink
 const sseWriters=new WeakMap<RelaySink,SSEWriter>()
 function sseWriter(client:RelaySink,onClientError?:(client:RelaySink)=>void):SSEWriter {
  let writer=sseWriters.get(client)
- if(!writer){writer=new SSEWriter(client,{onDrop:reason=>{log(`[sse] Client dropped: ${reason}`);onClientError?.(client)}});sseWriters.set(client,writer)}
+ if(!writer){writer=new SSEWriter(client,{onDrop:reason=>{log(`[sse] Client dropped: ${reason}; writable=${client.writableLength??0}`);onClientError?.(client)},onTrace:verbose?state=>log('[sse-trace]',JSON.stringify(state)):undefined});sseWriters.set(client,writer)}
  return writer
 }
 function latestStateKey(data:unknown):string|undefined {
@@ -493,9 +493,9 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
   // lifecycle 'started' event in CodexSessionWatcher.attachSession, so
   // wiring both would double-broadcast session-started to SSE clients.
   let codexWatcher: CodexSessionWatcher | null = null
-  let t3Watcher: T3SessionWatcher | undefined
+  let t3Watcher: T3WorkerWatcher | undefined
   if (mode === 't3') {
-    t3Watcher = new T3SessionWatcher(options.allProjects ? null : [workspace])
+    t3Watcher = new T3WorkerWatcher(options.allProjects ? null : [workspace])
     t3Watcher.onEvent(broadcastEvent)
     t3Watcher.onSessionLifecycle(event => broadcastSessionLifecycle(event.type, event.sessionId, event.label))
     t3Watcher.onSessionsChanged(sessions=>broadcastValue({type:'session-list',sessions}))

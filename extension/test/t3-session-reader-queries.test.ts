@@ -8,7 +8,8 @@ import {projectT3Teams, type T3Projection} from '../src/t3-projection'
 const {DatabaseSync}=require('node:sqlite')
 test('reads referenced parent nodes only and resolves latest-run items without a per-item correlated run lookup',t=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'agent-flow-reader-')),file=path.join(dir,'state.sqlite'),db=new DatabaseSync(file)
- t.after(()=>{db.close();fs.rmSync(dir,{recursive:true,force:true})})
+ let watcher:T3SessionWatcher|undefined
+ t.after(()=>{watcher?.dispose();db.close();fs.rmSync(dir,{recursive:true,force:true})})
  db.exec(`CREATE TABLE projection_projects(project_id TEXT,title TEXT,workspace_root TEXT,deleted_at TEXT,archived_at TEXT);
  INSERT INTO projection_projects VALUES('p','Project','D:/work',NULL,NULL);
  CREATE TABLE orchestration_v2_projection_threads(thread_id TEXT,project_id TEXT,title TEXT,default_provider TEXT,active_provider_thread_id TEXT,created_at TEXT,updated_at TEXT,archived_at TEXT,deleted_at TEXT,payload_json TEXT);
@@ -42,7 +43,7 @@ test('reads referenced parent nodes only and resolves latest-run items without a
   return statement
  })
  const now=Date.parse('2026-11-19T12:00:00Z');t.mock.method(Date,'now',()=>now)
- const watcher=new T3SessionWatcher(null,file);t.after(()=>watcher.dispose());watcher.poll()
+ watcher=new T3SessionWatcher(null,file);watcher.poll()
  assert.equal(watcher.sourceHealth?.state,'ok')
  assert.equal(observed.find(q=>/FROM orchestration_v2_projection_nodes/.test(q.sql))?.rows,1,'unreferenced historical nodes must not enter the projection')
  const itemQuery=observed.find(q=>/FROM orchestration_v2_projection_turn_items i/.test(q.sql))!
