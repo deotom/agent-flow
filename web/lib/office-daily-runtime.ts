@@ -47,10 +47,11 @@ export class OfficeDailyRuntime {
 
  /** Keep occupied geometry while source rooms disappear or newcomers append below it. */
  project(base:OfficeScene):OfficeScene {
-  if(!this.canteenOpen)base={...base,floors:base.floors.filter(f=>f.id!==OFFICE_CANTEEN_ID)}
+  if(!this.canteenOpen)base=projectOfficeDailyScene(base,{canteenOpen:false})
   let result=base
-  if(this.retained&&this.guests.size){
-   const floors:OfficeFloor[]=this.retained.floors.filter(f=>f.kind!=='quiet'&&(this.canteenOpen||f.id!==OFFICE_CANTEEN_ID)).map(old=>({...old,...base.floors.find(f=>f.id===old.id),y:old.y,height:old.height,actorKeys:[]}))
+  const retained=this.retained&&(this.canteenOpen?this.retained:projectOfficeDailyScene(this.retained,{canteenOpen:false}))
+  if(retained&&this.guests.size){
+   const floors:OfficeFloor[]=retained.floors.filter(f=>f.kind!=='quiet').map(old=>({...old,...base.floors.find(f=>f.id===old.id),y:old.y,height:old.height,actorKeys:[]}))
    let bottom=Math.max(0,...floors.filter(f=>!f.annexOf).map(f=>f.y+(f.height??base.width*.5625)*.9))
    for(const floor of base.floors.filter(f=>!f.annexOf&&f.kind!=='quiet'))if(!floors.some(f=>f.id===floor.id)){floors.push({...floor,y:bottom});bottom+=(floor.height??base.width*.5625)*.9}
    for(const floor of base.floors.filter(f=>f.annexOf))if(!floors.some(f=>f.id===floor.id))floors.push({...floor,y:floors.find(f=>f.id===floor.annexOf)?.y??floor.y})

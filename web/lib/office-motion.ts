@@ -205,10 +205,11 @@ export function mergeOfficeEvents(pending: readonly OfficeEvent[], incoming: rea
 export function officePresenceEvents(before: OfficeScene | null, next: OfficeScene, knownTeams: ReadonlySet<string>, now: number, newTeams:ReadonlySet<string> = new Set()): OfficeEvent[] {
   if (!before) return []
   const old = new Map(before.actors.map(actor => [actor.key, actor])), current = new Map(next.actors.map(actor => [actor.key, actor]))
+  const presentedRemote=new Set([...before.floors,...next.floors].flatMap(floor=>(floor.collaboration??[]).filter(member=>member.remote).map(member=>member.key)))
   const events: OfficeEvent[] = []
-  for (const actor of before.actors) if (!actor.hidden && !current.has(actor.key)) events.push({ id: JSON.stringify(['left', actor.key, now]), kind: 'left', actorKey: actor.key, parentKey: actor.parentKey, at: now })
+  for (const actor of before.actors) if (!actor.hidden && !current.has(actor.key)&&!presentedRemote.has(actor.key)) events.push({ id: JSON.stringify(['left', actor.key, now]), kind: 'left', actorKey: actor.key, parentKey: actor.parentKey, at: now })
   for (const actor of next.actors) if (!actor.hidden && old.has(actor.key) && !old.get(actor.key)!.hidden && old.get(actor.key)!.floorId !== actor.floorId) events.push({id:JSON.stringify(['finished',actor.key,now]),kind:'finished',actorKey:actor.key,parentKey:actor.parentKey,at:now})
-  for (const actor of next.actors) if (!actor.hidden && !old.has(actor.key) && (knownTeams.has(actor.sessionId)||newTeams.has(actor.sessionId)) && ['running','thinking','background','waiting_approval','waiting_input'].includes(actor.agent.status)) {
+  for (const actor of next.actors) if (!actor.hidden && !old.has(actor.key)&&!presentedRemote.has(actor.key) && (knownTeams.has(actor.sessionId)||newTeams.has(actor.sessionId)) && ['running','thinking','background','waiting_approval','waiting_input'].includes(actor.agent.status)) {
     events.push({ id: JSON.stringify(['arrived', actor.key, now]), kind: 'arrived', actorKey: actor.key, parentKey: actor.parentKey, at: now })
   }
   return events
@@ -224,7 +225,7 @@ export function officeDepartureScene(held: OfficeScene, next: OfficeScene, snaps
     if(f.kind!=='team')return {...f}
     const agents=teams.get(f.sessionId??'')?.agents??[],working=agents.filter(a=>isWorking(a.status)).length,waiting=agents.filter(a=>a.status.startsWith('waiting_')).length
     const subtitle=[working?`${working} working`:'',waiting?`${waiting} needs you`:''].filter(Boolean).join(' · ')||'Heading home'
-    return {...f,working,waiting,subtitle}
+    return {...f,working,waiting,subtitle,collaboration:next.floors.find(current=>current.id===f.id)?.collaboration??f.collaboration}
   })
   const byId=new Map(floors.map(f=>[f.id,f]))
   let bottom=Math.max(0,...floors.filter(f=>!f.annexOf).map(f=>f.y+(f.height??0)))

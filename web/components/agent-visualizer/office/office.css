@@ -1,5 +1,6 @@
 @import './office-discovery.css';
 @import './office-inspector.css';
+@import './office-remote-meeting.css';
 .of-view{min-width:0;min-height:0;display:flex;flex:1;flex-direction:column;background:#ecc891;color:#493525;font-family:"Segoe UI",system-ui,sans-serif}
 .of-toolbar{display:flex;align-items:center;gap:8px;flex:none;height:37px;box-sizing:border-box;padding:6px 10px;background:#32291f;color:#f7dfb7;font-size:11px;white-space:nowrap}.of-counts{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}.of-link{flex:none;max-width:100px;overflow:hidden;text-overflow:ellipsis;font-size:9px;color:#b6d6ba}.of-link[data-tone=warn]{color:#ffd381}.of-link[data-tone=down]{color:#ffab99}.of-waiting{color:#ffd381;font-weight:500}.of-toolbar time{font-size:10px;font-variant-numeric:tabular-nums}.of-toolbar button{width:25px;height:25px;border:1px solid #8a7050;border-radius:8px;background:#53412c;color:#ffe6bc;cursor:pointer}.of-toolbar button:disabled{opacity:.4}
 .of-season-label{position:absolute;left:4%;max-width:80%;z-index:2;pointer-events:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:1px solid #b5c89a70;border-radius:8px;padding:3px 7px;background:#243c30d9;color:#f7ebc9;font-size:clamp(7px,1.7vw,11px);line-height:1.2;box-shadow:0 1px 3px #0003}

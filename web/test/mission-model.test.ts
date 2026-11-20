@@ -140,3 +140,13 @@ describe('mission background commands', () => {
     assert.equal(missionStage(agent('w', { status: 'background' }), task('w')), 'working')
   })
 })
+
+
+describe('reused child job delivery',()=>{
+ it('does not show an old received report as the stage of a newer pending job',()=>{
+  const old=task('worker',{id:'old',startedAt:10,completedAt:20,updatedAt:50,delivery:'received'})
+  const current=task('worker',{id:'current',startedAt:30,completedAt:40,updatedAt:41,delivery:'pending'})
+  const view=buildMissionView(team([lead(),agent('worker',{status:'done'})],[old,current]))!
+  assert.equal(view.links.find(link=>link.to==='worker')!.stage,'queued')
+ })
+})

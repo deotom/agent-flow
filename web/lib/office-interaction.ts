@@ -1,6 +1,8 @@
 import type {TeamSnapshot} from './team-types'
 import type {OfficeBoard,OfficeScene} from './office-types'
 import {officeKey} from './office-model'
+import {compareTeamTaskRecency} from './team-model'
+import {officeCollaboratorDisplayed} from './office-collaboration'
 
 /** Re-read requests on each click; stable IDs keep polling from shuffling the cycle. */
 export function officeNextAttention(snapshots:readonly TeamSnapshot[],previous:string|null){
@@ -15,7 +17,7 @@ export function officeAgentInfo(snapshots:readonly TeamSnapshot[],key:string|nul
  for(const team of snapshots){
   const agent=team.agents.find(row=>officeKey(team.sessionId,row.id)===key)
   if(!agent)continue
-  const task=team.tasks.filter(row=>row.childId===agent.id).sort((a,b)=>(b.updatedAt??0)-(a.updatedAt??0))[0]??null
+  const task=team.tasks.filter(row=>row.childId===agent.id).sort(compareTeamTaskRecency)[0]??null
   return {team,agent,task,assignment:task?.task??agent.task}
  }
  return null
@@ -37,6 +39,8 @@ export function officePlanningInfo(snapshots:readonly TeamSnapshot[],sessionId:s
 
 /** Use the physical render, not the source's reserved desk or home seat. */
 export function officeRevealTarget(scene:OfficeScene,key:string):{peekId:string|null;y:number}|null{
+ const meeting=scene.floors.find(floor=>floor.kind==='team'&&!floor.constructing&&floor.collaboration?.some(member=>member.key===key&&member.remote&&officeCollaboratorDisplayed(member)))
+ if(meeting)return {peekId:null,y:meeting.y+(meeting.height??0)*.28}
  const actor=scene.actors.find(row=>row.key===key&&!row.hidden)
  if(!actor||!Number.isFinite(actor.y))return null
  const floor=scene.floors.find(row=>row.id===actor.floorId)

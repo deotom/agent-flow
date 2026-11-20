@@ -186,3 +186,13 @@ it('tree guides keep trunks unbroken across siblings and nested children', () =>
   ])
   assert.deepEqual(treeGuides([0, 1, 2]), [[], ['last'], [null, 'last']])
 })
+
+
+describe('reused worker jobs',()=>{
+ it('keeps the newer job current when an old result is delivered later',()=>{
+  const old=task('worker',{id:'old',startedAt:10,completedAt:20,updatedAt:40,delivery:'delivered'})
+  const current=task('worker',{id:'current',startedAt:30,completedAt:null,updatedAt:31,status:'working',delivery:'pending'})
+  const view=buildTeamView(team([lead(),agent('worker',{status:'thinking'})],[old,current]),'active')
+  assert.equal(view.rows.find(r=>r.agent.id==='worker')!.task?.id,'current')
+ })
+})

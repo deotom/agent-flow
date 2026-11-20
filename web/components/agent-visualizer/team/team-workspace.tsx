@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import type { SessionInfo } from '@/lib/bridge-types'
 import type { SourceHealth, TeamAgentRow, TeamSnapshot, TeamTaskRow, TransportState } from '@/lib/team-types'
-import { LEGEND, STATUS_LABEL, ageLabel, buildTeamView, connectionView, deliverySteps, describeActivity, teamTitle, treeGuides, type AttentionItem, type TreeGuide, type ConnectionView, type TeamRow, type TeamScope, type TeamView } from '@/lib/team-model'
+import { LEGEND, STATUS_LABEL, ageLabel, buildTeamView, compareTeamTaskRecency, connectionView, deliverySteps, describeActivity, teamTitle, treeGuides, type AttentionItem, type TreeGuide, type ConnectionView, type TeamRow, type TeamScope, type TeamView } from '@/lib/team-model'
 import { buildMissionView, type MissionView } from '@/lib/mission-model'
 import { formatModelName } from '@/lib/utils'
 import type { AnimationMode } from '@/lib/viewer-preferences'
@@ -240,7 +240,7 @@ function TaskEvidence({ task }: { task: TeamTaskRow }) {
 function DetailPanel({ snapshot, agentId, live, now, onSelect, onClose }: { snapshot: TeamSnapshot; agentId: string; live: boolean; now: number; onSelect: (id: string) => void; onClose: () => void }) {
   const agent = snapshot.agents.find(row => row.id === agentId)
   if (!agent) return null
-  const task = snapshot.tasks.filter(row => row.childId === agent.id).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0]
+  const task = snapshot.tasks.filter(row => row.childId === agent.id).sort(compareTeamTaskRecency)[0]
   const parent = agent.parentId ? snapshot.agents.find(row => row.id === agent.parentId) : undefined
   const children = snapshot.agents.filter(row => row.parentId === agent.id)
   const prompt = task?.task ?? agent.task

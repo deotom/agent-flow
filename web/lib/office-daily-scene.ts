@@ -18,6 +18,16 @@ export function officeGardenOccupiedSeats(scene:OfficeScene,excludeKeys:Readonly
 /** Start from the source scene every frame. Guest positions are purely visual clones. */
 export function projectOfficeDailyScene(base:OfficeScene,state:{canteenOpen:boolean;guests?:readonly OfficeActor[]}):OfficeScene {
  const guests=state.guests??[],open=state.canteenOpen||guests.some(a=>a.floorId===OFFICE_CANTEEN_ID)
+ // Runtime inputs can already contain the projected room. Removing only its
+ // art/floor leaves its offset and total height behind until Office remounts.
+ const closing=!open&&base.floors.find(f=>f.id===OFFICE_CANTEEN_ID)
+ if(closing){
+  const offset=(closing.height??base.width*864/1536)*.90
+  const floors=base.floors.filter(f=>f.id!==OFFICE_CANTEEN_ID).map(f=>({...f,y:f.y>=closing.y?f.y-offset:f.y}))
+  const byId=new Map(floors.map(f=>[f.id,f]))
+  const actors=base.actors.map(a=>{const old=base.floors.find(f=>f.id===a.floorId),next=byId.get(a.floorId);return old&&next?{...a,y:a.y+next.y-old.y}:a})
+  base={...base,floors,actors,height:base.height-offset}
+ }
  const floors=base.floors.map(f=>({...f,actorKeys:[...f.actorKeys]})),overrides=new Map(guests.map(a=>[a.key,a]))
  let height=base.height
  if(open&&!floors.some(f=>f.id===OFFICE_CANTEEN_ID)) {

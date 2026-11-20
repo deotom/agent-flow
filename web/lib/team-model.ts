@@ -120,11 +120,15 @@ export interface AttentionItem { id: string; agentId: string; kind: 'waiting' | 
 export interface TeamRow { agent: TeamAgentRow; task: TeamTaskRow | null; depth: number; statusText: string; parentName: string | null; workingChildren: number; orphan: boolean }
 export interface TeamView { rows: TeamRow[]; attention: AttentionItem[]; counts: TeamCounts; hiddenFinished: number; lead: TeamAgentRow | null }
 
+/** Delivery updates on old assignments do not make them the current job. */
+export function compareTeamTaskRecency(a:TeamTaskRow,b:TeamTaskRow):number{
+ return (b.startedAt??b.completedAt??b.updatedAt??0)-(a.startedAt??a.completedAt??a.updatedAt??0) || (b.updatedAt??0)-(a.updatedAt??0)
+}
 function latestTaskByChild(tasks: TeamTaskRow[]): Map<string, TeamTaskRow> {
   const latest = new Map<string, TeamTaskRow>()
   for (const task of tasks) {
     const known = latest.get(task.childId)
-    if (!known || (task.updatedAt ?? 0) >= (known.updatedAt ?? 0)) latest.set(task.childId, task)
+    if (!known || compareTeamTaskRecency(task,known)<=0) latest.set(task.childId, task)
   }
   return latest
 }

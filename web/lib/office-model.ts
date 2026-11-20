@@ -4,6 +4,7 @@ import { buildTeamView, describeActivity, isWorking, type TeamScope } from './te
 import { agentWorkStation } from './office-stations'
 import { officeLeisureForSpot } from './office-leisure'
 import { roomActorSpots, roomLeadRestPoint } from './office-room-design'
+import {officeCollaborationPreferenceKey,officeCollaborationRemote,type OfficeCollaborationOverrides} from './office-collaboration'
 
 export const officeKey = (sessionId: string, agentId: string): string => JSON.stringify([sessionId, agentId])
 
@@ -106,7 +107,7 @@ export function officeTeamOrder(sessionIds: readonly string[], previous: readonl
   return order.length === previous.length && order.every((id,i) => id === previous[i]) ? previous : order
 }
 
-export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: TeamScope, showQuiet: boolean, identities: ReadonlyMap<string, number>, width = 450, parties: ReadonlySet<string> = new Set(), teamOrder: readonly string[] = []): OfficeScene {
+export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: TeamScope, showQuiet: boolean, identities: ReadonlyMap<string, number>, width = 450, parties: ReadonlySet<string> = new Set(), teamOrder: readonly string[] = [], collaborationOverrides:OfficeCollaborationOverrides = {}): OfficeScene {
   const order = new Map(officeTeamOrder(snapshots.map(s=>s.sessionId),teamOrder).map((id,i)=>[id,i]))
   const sorted = [...new Map(snapshots.map(s => [s.sessionId, s])).values()].sort((a,b) => order.get(a.sessionId)!-order.get(b.sessionId)!)
   const quietTeams = sorted.filter(s => quiet(s) && !(parties.has(s.sessionId) && s.agents.some(a => a.status === 'done'))), floors: OfficeFloor[] = [], actors: OfficeActor[] = [], resting: OfficeActor[] = [], guests: OfficeActor[] = []
@@ -122,24 +123,32 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
     const rows = buildTeamView(snap, scope).rows
     const ordered = [...rows].sort((a,b) => Number(b.agent.role === 'lead' && !b.agent.parentId)-Number(a.agent.role === 'lead' && !a.agent.parentId))
     const rootLead = (a: TeamAgentRow) => a.role === 'lead' && !a.parentId
+    const collaboration=ordered.filter(row=>row.agent.role==='worker').map(row=>({
+      key:officeKey(snap.sessionId,row.agent.id),preferenceKey:officeCollaborationPreferenceKey(snap.sessionId,row.agent.id,row.task?.id),sessionId:snap.sessionId,
+      agent:{...row.agent,name:officeDisplayName(row.agent.name)},task:row.task,appearance:officeAppearance(identities.get(officeKey(snap.sessionId,row.agent.id))??0),
+      remote:officeCollaborationRemote(row.agent,row.task,snap.sessionId,collaborationOverrides),
+    }))
+    const remoteKeys=new Set(collaboration.filter(member=>member.remote).map(member=>member.key))
     const done = (a: TeamAgentRow) => a.status === 'done' || a.status === 'cancelled' || ((a.status === 'failed' || a.status === 'idle') && !rootLead(a))
     const teamQuiet = quiet(snap)
     const partying = teamQuiet && parties.has(snap.sessionId) && snap.agents.some(a => a.status === 'done')
     if (partying) partyTitles.push(clean(snap.title) || 'Team')
     // Limited desks go to whoever most needs to be seen: root lead, waiting, failed, working, then idle.
     const rank = (r: (typeof ordered)[number]) => r.agent.role === 'lead' && !r.agent.parentId ? 0 : r.agent.status.startsWith('waiting_') ? 1 : r.agent.status === 'failed' ? 2 : isWorking(r.agent.status) ? 3 : 4
-    const desks = ordered.filter(r => !done(r.agent)).sort((a,b) => rank(a)-rank(b))
+    const desks = ordered.filter(r => !done(r.agent)&&!remoteKeys.has(officeKey(snap.sessionId,r.agent.id))).sort((a,b) => rank(a)-rank(b))
     const room = officeWorkRoom(snap.sessionId, desks.length)
     const slots = OFFICE_SLOTS[room], height = width * slots.aspect
     const id = JSON.stringify(['team',snap.sessionId]), included = showQuiet || !quiet(snap)
     const working = snap.agents.filter(a => isWorking(a.status)).length, waiting = snap.agents.filter(a => a.status.startsWith('waiting_')).length
     const project = clean(snap.project ?? ''), title = [project, clean(snap.title)].filter((v,i,a) => v && a.indexOf(v)===i).join(' · ') || 'Team'
-    if (included) floors.push({ id, sessionId:snap.sessionId, title, board:officeBoard(snap, clean(snap.title) || title, clean), subtitle:[working ? `${working} working` : '', waiting ? `${waiting} needs you` : ''].filter(Boolean).join(' · '), working, waiting, overflow:Math.max(0,desks.length-slots.chairs.length), color:teamColor(snap.sessionId), y, height, room, actorKeys:desks.map(r => officeKey(snap.sessionId,r.agent.id)), kind:'team' })
+    const online=collaboration.filter(member=>member.remote&&activeInOffice(member.agent)).length
+    if (included) floors.push({ id, sessionId:snap.sessionId, title, collaboration, board:officeBoard(snap, clean(snap.title) || title, clean), subtitle:[working ? `${working} working` : '', waiting ? `${waiting} needs you` : '',online?`${online} online`:''].filter(Boolean).join(' · '), working, waiting, overflow:Math.max(0,desks.length-slots.chairs.length), color:teamColor(snap.sessionId), y, height, room, actorKeys:desks.map(r => officeKey(snap.sessionId,r.agent.id)), kind:'team' })
     const mainFloor=floors.find(f=>f.id===id)
     const actorSpots=mainFloor?roomActorSpots(mainFloor,width):slots.chairs.map(([sx,sy])=>({x:sx*width,y:y+sy*height}))
     const teamResting: OfficeActor[] = []
     for (const row of ordered) {
       const terminal = done(row.agent), slot = desks.indexOf(row), key = officeKey(snap.sessionId,row.agent.id)
+      if(remoteKeys.has(key))continue
       if (!terminal && !included) continue
       const spot = actorSpots[Math.max(0,slot) % actorSpots.length]
       const activity = row.agent.activities.at(-1), station=agentWorkStation(row.agent)
@@ -234,7 +243,7 @@ export function officeEvents(previous: readonly TeamSnapshot[] | null, next: rea
       const parentValid=t.parentId === agent.parentId && t.parentId !== agent.id && current.agents.some(a=>a.id===t.parentId)
       const parentKey=parentValid?officeKey(current.sessionId,t.parentId):null
       const at=now
-      events.push({id:JSON.stringify([current.sessionId,t.id,kind,t.status,t.delivery,t.updatedAt ?? t.completedAt ?? t.startedAt ?? 0]),kind,actorKey:officeKey(current.sessionId,agent.id),parentKey,at})
+      events.push({id:JSON.stringify([current.sessionId,t.id,kind,t.status,t.delivery,t.updatedAt ?? t.completedAt ?? t.startedAt ?? 0]),taskId:t.id,sourceAt:t.updatedAt??t.completedAt??t.startedAt,kind,actorKey:officeKey(current.sessionId,agent.id),parentKey,at})
     }
     // Status changes without a task are intentionally not reported as task events.
   }

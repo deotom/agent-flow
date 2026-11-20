@@ -262,3 +262,29 @@ test('classifies native provider tools once instead of rescanning every task for
   assert.ok(team.event.payload)
   assert.ok(providerReads<20_000,`provider membership rescanned tasks ${providerReads} times`)
 })
+
+
+test('late delivery on an older delegation cannot finish a reused worker that is running a newer job',()=>{
+ const data=fixture(),old=data.subagents[0]
+ Object.assign(old,{started_at:'2026-11-20T05:00:00Z',completed_at:'2026-11-20T06:14:30Z',updated_at:'2026-11-20T06:16:48Z',completion_delivery_state:'delivered'})
+ data.subagents.push(row({subagent_id:'task2',thread_id:'lead',child_thread_id:'worker',provider_thread_id:'p-worker',status:'running',driver:'codex',started_at:'2026-11-20T06:16:00Z',updated_at:'2026-11-20T06:16:09Z'}, {title:'Current implementation',prompt:'Current work',role:'implementation'}))
+ data.runs.push(row({run_id:'resumed',thread_id:'worker',ordinal:2,status:'running',provider_thread_id:'p-worker'}))
+ const result=projectT3Teams(data,null).find(t=>t.session.id==='t3:lead')!,team=result.event.payload.team as TeamSnapshot,worker=team.agents.find(a=>a.id==='t3-agent:worker')!
+ assert.equal(worker.status,'thinking')
+ assert.equal(worker.name,'Current implementation')
+ assert.equal(worker.task,'Current work')
+ assert.equal(worker.completedAt,null)
+ assert.equal(worker.taskRole,'implementation')
+ assert.equal((result.event.payload.agents as T3Row[]).find(a=>a.id==='t3-agent:worker')!.state,'thinking')
+ assert.equal(team.tasks.find(t=>t.id==='t3-delegation:task1')!.delivery,'delivered','historical delivery evidence is retained')
+ assert.equal(team.tasks.find(t=>t.id==='t3-delegation:task2')!.status,'working')
+})
+
+test('a live child run overrides only a successful old wrapper, preserving explicit cancellation',()=>{
+ const data=fixture();data.runs.push(row({run_id:'resumed',thread_id:'worker',ordinal:2,status:'running'}))
+ let result=projectT3Teams(data,null).find(t=>t.session.id==='t3:lead')!
+ assert.equal((result.event.payload.team as TeamSnapshot).agents.find(a=>a.id==='t3-agent:worker')!.status,'thinking')
+ data.subagents[0].status='cancelled'
+ result=projectT3Teams(data,null).find(t=>t.session.id==='t3:lead')!
+ assert.equal((result.event.payload.team as TeamSnapshot).agents.find(a=>a.id==='t3-agent:worker')!.status,'cancelled')
+})

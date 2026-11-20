@@ -34,7 +34,11 @@ export interface TeamActivity {
   startedAt: number | null
 }
 
+export type TeamTaskRole = 'implementation' | 'research' | 'review' | 'design' | 'test' | 'general'
+
 export interface TeamAgentRow {
+  /** Explicit source job role when available; never guessed from the name. */
+  taskRole?: TeamTaskRole
   /** Same ID as the session_snapshot agent row and therefore the canvas node. */
   id: string
   /** Explicit parent from T3 IDs. Null only for the lead. */
@@ -72,6 +76,7 @@ export interface TeamAgentRow {
 export type TeamDelivery = 'none' | 'pending' | 'delivered' | 'received' | 'discarded' | 'unknown'
 
 export interface TeamTaskRow {
+  taskRole?: TeamTaskRole
   id: string
   childId: string
   parentId: string

@@ -181,7 +181,7 @@ poll(): void {
         FROM orchestration_v2_projection_threads`).all()
       const subagents = db.prepare(`SELECT subagent_id, thread_id, run_id, parent_node_id, provider, provider_thread_id,
         child_thread_id, status, started_at, completed_at, updated_at, driver, completion_delivery_state,
-        json_object('title', json_extract(payload_json, '$.title'), 'model', json_extract(payload_json, '$.model'),
+        json_object('title', json_extract(payload_json, '$.title'), 'model', json_extract(payload_json, '$.model'), 'role', json_extract(payload_json, '$.role'),
           'prompt', json_extract(payload_json, '$.prompt'), 'result', json_extract(payload_json, '$.result'),
           'completionDelivery', json_object('observedByRunId', json_extract(payload_json, '$.completionDelivery.observedByRunId'))) AS payload_json
         FROM orchestration_v2_projection_subagents`).all()

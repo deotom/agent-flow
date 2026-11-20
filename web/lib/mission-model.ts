@@ -6,6 +6,7 @@
  * The canvas draws this view; it does not decide semantics itself.
  */
 import type { TeamActivity, TeamAgentRow, TeamSnapshot, TeamTaskRow } from './team-types'
+import {compareTeamTaskRecency} from './team-model'
 
 /** Delivery stage of the link from a parent (delegator) to a child. */
 export type MissionStage =
@@ -177,7 +178,7 @@ export function buildMissionView(snapshot: TeamSnapshot, visible?: ReadonlySet<s
   const latestTask = new Map<string, TeamTaskRow>()
   for (const task of snapshot.tasks) {
     const known = latestTask.get(task.childId)
-    if (!known || (task.updatedAt ?? 0) >= (known.updatedAt ?? 0)) latestTask.set(task.childId, task)
+    if (!known || compareTeamTaskRecency(task,known)<=0) latestTask.set(task.childId, task)
   }
   // A shown agent keeps its delegation chain, so the path from the lead stays drawable.
   let shown: ReadonlySet<string> | undefined = visible

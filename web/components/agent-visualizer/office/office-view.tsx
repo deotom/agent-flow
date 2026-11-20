@@ -2,6 +2,8 @@
 
 import {useOfficeSound} from './use-office-sound'
 import {OfficeGardenInfill} from './office-garden-infill'
+import {OfficeRemoteMeeting,type OfficeDisplayMode} from './office-remote-meeting'
+import {officeCollaboratorDisplayed,parseOfficeCollaborationOverrides,setOfficeCollaborationOverride} from '../../../lib/office-collaboration'
 import type {OfficeSelectionCue} from '../../../lib/office-selection-gesture'
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
@@ -12,7 +14,9 @@ import type { OfficeActor, OfficeEvent, OfficePet, OfficeScene, OfficeWorkStatio
 import { assignOfficeIdentities, buildOfficeScene, currentOfficeBoard, officeEvents, officeKey, officeTeamOrder, officeTeamQuiet } from '../../../lib/office-model'
 import { createOfficeTrip, mergeOfficeEvents, officeAllowsMotion, officeCanResumeTrip, officeDepartureScene, officePresenceEvents, populatedOfficeTeams, officeTripFrame, officeWorkTripFrame, parseOfficeIdentities, type OfficeTrip } from '../../../lib/office-motion'
 import { deriveOfficeParties, emptyOfficePartyHistory } from '../../../lib/office-parties'
-import { drawOfficeFrame, officeAmbient } from './office-art'
+import { drawOfficeAvatar, drawOfficeFrame, officeAmbient } from './office-art'
+import {mergeOfficeHolograms,pruneOfficeHolograms,officeHologramFrames,type OfficeHologramState} from '../../../lib/office-hologram'
+import {drawOfficeHolograms} from './office-hologram-art'
 import { drawOfficeDaylight } from './office-daylight-art'
 import { officeDaylight } from '../../../lib/office-daylight'
 import { officeWorkEvents, officeWorkPulse, officeWorkStation, OFFICE_STATION_LABELS } from '../../../lib/office-work'
@@ -57,6 +61,8 @@ interface OfficeViewProps {
   animationMode: AnimationMode
   now: number
 }
+const COLLABORATION_STORAGE='agent-flow.office.collaboration.v1'
+const readCollaboration=()=>{try{return parseOfficeCollaborationOverrides(localStorage.getItem(COLLABORATION_STORAGE))}catch{return parseOfficeCollaborationOverrides(null)}}
 const IDENTITY_STORAGE = 'agent-flow-office-identities-v1'
 const TEAM_ORDER_STORAGE = 'agent-flow-office-team-order-v1'
 const readTeamOrder = (): readonly string[] => {
@@ -87,6 +93,14 @@ type Moving = { actor: OfficeActor; caption: string; elevatorY: number | null; s
 type Pending = { event: OfficeEvent; before: OfficeScene }
 
 export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam, live, connection, visible, animationMode, now }: OfficeViewProps) {
+  const [collaborationOverrides,setCollaborationOverrides]=useState(readCollaboration)
+  const changeCollaboration=(key:string,mode:OfficeDisplayMode)=>{
+    const member=scene.floors.flatMap(floor=>floor.collaboration??[]).find(member=>member.preferenceKey===key)
+    if(!member||travellingKeys.has(member.key)||active.current?.actorKey===member.key||arrivalTrips.current.has(member.key)||leisureTrips.current.has(member.key)||daily.current?.guests.has(member.key))return
+    const next=setOfficeCollaborationOverride(collaborationOverrides,key,mode)
+    setCollaborationOverrides(next)
+    try{localStorage.setItem(COLLABORATION_STORAGE,JSON.stringify(next))}catch{/* Keep the display choice in memory. */}
+  }
   const [savedIdentities, setSavedIdentities] = useState(readIdentities)
   const [savedTeamOrder,setSavedTeamOrder] = useState(readTeamOrder)
   const teamOrder = useMemo(()=>officeTeamOrder(snapshots.filter(s=>!officeTeamQuiet(s)).map(s=>s.sessionId),savedTeamOrder),[snapshots,savedTeamOrder])
@@ -128,7 +142,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const partyHistory = useMemo(() => deriveOfficeParties(partyLog.current, snapshots, now), [snapshots, now])
   useEffect(() => { partyLog.current = partyHistory }, [partyHistory])
   const parties = partyHistory.parties
-  const scene = useMemo(() => buildOfficeScene(snapshots, scope, showQuiet, identities, sceneWidth, parties, teamOrder), [snapshots, scope, showQuiet, identities, sceneWidth, parties, teamOrder])
+  const scene = useMemo(() => buildOfficeScene(snapshots, scope, showQuiet, identities, sceneWidth, parties, teamOrder,collaborationOverrides), [snapshots, scope, showQuiet, identities, sceneWidth, parties, teamOrder,collaborationOverrides])
   const daily=useRef<OfficeDailyRuntime|null>(null)
   if(!daily.current){let saved:unknown;try{saved=JSON.parse(localStorage.getItem(OFFICE_DAILY_STORAGE)??'null')}catch{}daily.current=new OfficeDailyRuntime(saved)}
   const [dailyVersion,setDailyVersion]=useState(0)
@@ -151,6 +165,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const peekCanvas = useRef<HTMLCanvasElement>(null)
   const lastPainted = useRef<Moving|null>(null)
   const painted = useRef(false)
+  const paintedCollaboration=useRef(collaborationOverrides)
   const reconnecting = useRef(false)
   const objectCue = useRef<{actorKey:string;kind:OfficeLeisureAction;until:number}|null>(null)
   const leadOrigins=useRef(new Map<string,OfficeActor>())
@@ -165,6 +180,19 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const active = useRef<OfficeTrip | null>(null)
   const baseline = useRef<{ snapshots: readonly TeamSnapshot[]; scene: OfficeScene; enabled: boolean; scope: TeamScope; showQuiet: boolean } | null>(null)
   const motionClock = useRef(0)
+  const holograms=useRef<OfficeHologramState>({cues:[],seenEventIds:[]})
+  const hologramClock=useRef({at:0,last:Date.now(),active:false})
+  const hologramBaseline=useRef<{snapshots:readonly TeamSnapshot[];scope:TeamScope;showQuiet:boolean;watching:boolean}|null>(null)
+  const hologramNow=()=>{
+    const clock=hologramClock.current,wall=Date.now()
+    if(clock.active)clock.at+=Math.max(0,wall-clock.last)
+    clock.last=wall
+    return clock.at
+  }
+  useEffect(()=>{
+    hologramClock.current.last=Date.now()
+    hologramClock.current.active=visible&&pageVisible&&live&&!paused
+  },[visible,pageVisible,live,paused])
   const nextWorkAt = useRef(0)
   const objectCadence=officeLivelinessPolicy(liveliness,officeDaylight(new Date(now)).night).objectCadenceMultiplier
   const priorObjectCadence=useRef(objectCadence)
@@ -272,6 +300,17 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     baseline.current = { snapshots, scene, enabled, scope, showQuiet }
   }, [snapshots, scene, enabled, live, scope, showQuiet])
 
+  // Realtime evidence also works with effects off; no separate animation loop.
+  useEffect(()=>{
+    const previous=hologramBaseline.current,watching=visible&&pageVisible&&live&&!paused
+    const hadCue=holograms.current.cues.length>0
+    const observed=watching&&previous?.watching&&previous.scope===scope&&previous.showQuiet===showQuiet&&previous.snapshots!==snapshots
+      ?officeEvents(previous.snapshots,snapshots,Date.now()):[]
+    holograms.current=watching?mergeOfficeHolograms(holograms.current,observed,scene,hologramNow(),Date.now()):{...holograms.current,cues:[]}
+    hologramBaseline.current={snapshots,scope,showQuiet,watching}
+    if(hadCue||holograms.current.cues.length)paint(lastPainted.current)
+  },[snapshots,scene,scope,showQuiet,visible,pageVisible,live,paused])
+
   const paint = (movement: Moving | null) => {
     const element = canvas.current, context = element?.getContext('2d')
     if (!element || !context) return
@@ -291,6 +330,8 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     })
     for(const actor of daily.current!.actors(input.scene,motionClock.current))if(!actors.some(a=>a.key===actor.key))actors.push(actor)
     if(movement&&!actors.some(actor=>actor.key===movement.actor.key))actors.push(movement.actor)
+    const remoteKeys=new Set(input.sourceScene.floors.flatMap(f=>(f.collaboration??[]).filter(member=>member.remote).map(member=>member.key)))
+    for(let index=actors.length-1;index>=0;index--)if(remoteKeys.has(actors[index].key))actors.splice(index,1)
     context.setTransform(ratio,0,0,ratio,0,0)
     const skyElement=skyCanvas.current, skyContext=skyElement?.getContext('2d')
     const surfaceHeight=input.scene.floors.find(f=>f.kind==='lounge')?.height??0
@@ -336,6 +377,12 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
       leisureKeys,
       tripKey: input.enabled ? active.current?.actorKey ?? null : null, greetKey: input.enabled ? greeting : null }
     const offsets = drawOfficeFrame(context, { ...input.scene, actors:actors.filter(a=>publicIds.has(a.floorId)) },options)
+    if(holograms.current.cues.length){
+      const hologramScene={...input.scene,quietTeams:input.sourceScene.quietTeams,actors:actors.filter(a=>publicIds.has(a.floorId)),floors:input.scene.floors.map(f=>({...f,collaboration:input.sourceScene.floors.find(current=>current.id===f.id)?.collaboration}))}
+      const clock=hologramNow()
+      holograms.current=pruneOfficeHolograms(holograms.current,hologramScene,clock)
+      drawOfficeHolograms(context,officeHologramFrames(holograms.current,hologramScene,clock,input.enabled),drawOfficeAvatar)
+    }
     const annex=input.scene.floors.find(f=>f.id===input.peekId&&f.annexOf),peek=peekCanvas.current,peekContext=peek?.getContext('2d')
     if(annex&&peek&&peekContext){
       const ph=Math.max(1,annex.height??0)
@@ -366,9 +413,14 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   // A restored/hidden pane must never leave a newly mounted canvas transparent.
   // The RAF owns moving actors. A clock/snapshot repaint must not flash them back to a desk.
   useEffect(() => {
-    if (!live && painted.current) return
+    const displayChanged=paintedCollaboration.current!==collaborationOverrides
+    paintedCollaboration.current=collaborationOverrides
+    // A manual display choice also applies while stale or while another actor
+    // is travelling; preserve that actor's current frame instead of its desk.
+    if(displayChanged){paint(lastPainted.current);return}
+    if (!live && painted.current&&!displayChanged) return
     if (!enabled || (!active.current&&!queue.current.length)) paint(null)
-  }, [visualScene, now, enabled, live, selectedKey, petEvent, peekId,architectureArt])
+  }, [visualScene, now, enabled, live, selectedKey, petEvent, peekId,architectureArt,collaborationOverrides])
   useEffect(()=>{if(architectureArt)paint(lastPainted.current)},[architectureArt])
   const roomPaintKey=JSON.stringify([visualScene.width,visualScene.height,...visualScene.floors.filter(f=>f.kind==='team').map(f=>[f.id,f.sessionId,f.title,f.room,f.y,f.height,f.constructing])])
   useEffect(()=>{
@@ -539,6 +591,9 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   })
   for(const actor of daily.current!.actors(visualScene,motionClock.current))if(!allDisplayed.some(a=>a.key===actor.key))allDisplayed.push(actor)
   if(moving&&!allDisplayed.some(a=>a.key===moving.actor.key))allDisplayed.push(moving.actor)
+  const remoteKeys=new Set(scene.floors.flatMap(f=>(f.collaboration??[]).filter(member=>member.remote).map(member=>member.key)))
+  for(let index=allDisplayed.length-1;index>=0;index--)if(remoteKeys.has(allDisplayed[index].key))allDisplayed.splice(index,1)
+  const travellingKeys=new Set([active.current?.actorKey,...arrivalTrips.current.keys(),...leisureTrips.current.keys(),...daily.current!.guests.keys(),...allDisplayed.filter(actor=>officeInsideLift(visualScene,actor)).map(actor=>actor.key)].filter((key):key is string=>Boolean(key)))
   const publicFloors=visualScene.floors.filter(f=>!f.annexOf)
   const publicIds=new Set(publicFloors.filter(f=>!f.constructing).map(f=>f.id))
   const displayed=allDisplayed.filter(a=>publicIds.has(a.floorId))
@@ -566,6 +621,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const stationPeople=inspectedFloor&&stationSelection?officeStationUsers(scene,inspectedFloor,stationSelection.kind):[]
   const selectedInfo=officeAgentInfo(snapshots,selectedKey)
   const selectedActor=allDisplayed.find(actor=>actor.key===selectedKey)
+  const selectedRemote=scene.floors.flatMap(f=>f.collaboration??[]).find(member=>member.key===selectedKey&&member.remote&&officeCollaboratorDisplayed(member))
   const doorTraffic=officeDoorTraffic(visualScene,allDisplayed,doorTrips(),motionClock.current)
   const selectedBoard=inspectedFloor?.sessionId&&stationSelection?.kind==='planning'?officePlanningInfo(snapshots,inspectedFloor.sessionId):null
   const rememberTrigger=()=>{const element=document.activeElement;inspectorTrigger.current=element instanceof HTMLElement&&element!==document.body?element:null;focusInspector.current=true;discovery.dismiss()}
@@ -592,7 +648,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     setStationSelection({sessionId,kind})
   }
   const revealAgent=(key:string)=>{
-    const target=officeRevealTarget({...visualScene,actors:allDisplayed},key)
+    const target=officeRevealTarget({...visualScene,actors:allDisplayed,floors:visualScene.floors.map(floor=>({...floor,collaboration:scene.floors.find(current=>current.id===floor.id)?.collaboration}))},key)
     if(!target)return false
     setPeekId(target.peekId)
     if(target.peekId)lastDoor.current=[...(viewport.current?.querySelectorAll<HTMLButtonElement>('.of-annex-door')??[])].find(button=>button.dataset.annexId===target.peekId)??null
@@ -685,6 +741,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
                 <button type="button" className="of-board-hit" tabIndex={peekFloor?.sessionId===floor.sessionId?-1:0} aria-label={`Inspect planning board, ${floor.title}`} onClick={()=>floor.sessionId&&inspectStation(floor.sessionId,'planning')}/>
               </div>
             })}
+            {visualScene.floors.filter(f=>f.kind==='team'&&!f.constructing).map(floor=><OfficeRemoteMeeting key={`remote-${floor.id}`} floor={{...floor,collaboration:scene.floors.find(current=>current.id===floor.id)?.collaboration}} buildingHeight={visualScene.height} overrides={collaborationOverrides} live={live} selectedKey={selectedKey} hidden={peekFloor?.sessionId===floor.sessionId} travellingKeys={travellingKeys} onSelect={inspectAgent} onChange={changeCollaboration}/>)}
             <canvas ref={canvas} role="img" aria-label={`Office with ${displayed.filter(a=>!a.hidden).length} visible agents from ${snapshots.length} T3 teams. Choose an agent for details. ${vendorLabel}.`} />
             <button ref={hatchButton} type="button" className="of-hatch-hit" aria-label="Open garden lift" aria-expanded="false" onClick={()=>{const car=officeLiftFrame(lift.current!,motionClock.current),hatch=officeNavigation(current.current.scene).hatch;if(Math.abs(car.y-hatch.y)<2*current.current.scene.width/450&&car.doorsOpen>.5)closeOfficeLiftGardenDoor(lift.current!,current.current.scene,motionClock.current);else callOfficeLiftToGarden(lift.current!,current.current.scene,motionClock.current);paint(lastPainted.current)}} style={{left:`${(officeNavigation(visualScene).shaftX-28*visualScene.width/450)/visualScene.width*100}%`,width:`${56/450*100}%`,top:`${((officeLanding(visualScene,'lounge')?.y??0)-96*visualScene.width/450)/visualScene.height*100}%`,height:`${100*visualScene.width/450/visualScene.height*100}%`}}/>
             {publicFloors.filter(f=>f.kind==='break'||f.kind==='lounge').flatMap(floor=>{
@@ -770,7 +827,8 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
           <dt>สถานะงาน</dt><dd>{!live?'Last known: ':''}{STATUS_LABEL[selectedInfo.agent.status]}</dd>
           {selectedInfo.agent.requestKind&&<><dt>ชนิดคำขอ</dt><dd>{selectedInfo.agent.requestKind}</dd></>}
           <dt>งาน</dt><dd>{selectedInfo.task?.name||selectedInfo.assignment||'No task reported'}</dd>
-          {selectedActor&&<><dt>ในฉาก</dt><dd>{selectedActor.activity} · {officeActorLocation(selectedActor,visualScene)}</dd></>}
+          {selectedRemote&&<><dt>ในฉาก</dt><dd>แสดงบนจอประชุมออนไลน์ · {STATUS_LABEL[selectedRemote.agent.status]}</dd></>}
+          {!selectedRemote&&selectedActor&&<><dt>ในฉาก</dt><dd>{selectedActor.activity} · {officeActorLocation(selectedActor,visualScene)}</dd></>}
         </dl>
         {selectedInfo.assignment&&selectedInfo.task?.name&&selectedInfo.task.name!==selectedInfo.assignment&&<details><summary>รายละเอียดงานเต็ม</summary><p>{selectedInfo.assignment}</p></details>}
         {selectedInfo.task?.result&&<details><summary>ผลลัพธ์ล่าสุด</summary><p>{selectedInfo.task.result}</p></details>}

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {OfficeDailyRuntime} from '../lib/office-daily-runtime'
 import {createOfficeLift,advanceOfficeLift,reserveOfficeLiftTrip} from '../lib/office-lift'
 import {createOfficeTrip,officeTripFrame} from '../lib/office-motion'
-import {OFFICE_CANTEEN_ID,OFFICE_DAILY_SEATS} from '../lib/office-daily-scene'
+import {OFFICE_CANTEEN_ID,OFFICE_DAILY_SEATS,projectOfficeDailyScene} from '../lib/office-daily-scene'
 import {emptyOfficeDailyLedger} from '../lib/office-daily-events'
 import type {OfficeActor,OfficeFloor,OfficeScene} from '../lib/office-types'
 const floor = (id:string,y:number,kind:OfficeFloor['kind']='team',annexOf?:string):OfficeFloor => ({id,y,height:200,kind,annexOf,sessionId:'team',title:id,subtitle:'',color:'',actorKeys:[]})
@@ -15,6 +15,15 @@ const scene:OfficeScene={width:450,height:1000,totalAgents:1,finishedCount:1,qui
 
 const noon=new Date(2026,10,14,12,1)
 const input=(runtime:OfficeDailyRuntime,source=scene,at=0,weather:'clear'|'rain'='clear',blocked=false)=>({source,scene:runtime.project(source),date:noon,at,weather,blocked,busyKeys:new Set<string>()})
+it('closing a projected canteen returns its height and lower floors without a mode switch',()=>{
+ const base={...scene,floors:[floor('lounge',0,'lounge'),floor('office',180),floor('quiet',360,'quiet')],height:544}
+ const opened=projectOfficeDailyScene(base,{canteenOpen:true})
+ const runtime=new OfficeDailyRuntime()
+ const closed=runtime.project(opened)
+ assert.deepEqual(closed.floors,base.floors)
+ assert.equal(closed.height,base.height)
+ assert.deepEqual(runtime.project(closed),closed,'reprojection does not retain or accumulate a blank storey')
+})
 it('walks lunch guests to genuinely free garden seats when a party starts mid-meal',()=>{
  const source={...scene,actors:[actor,{...actor,key:'second',agent:{...actor.agent,id:'second'}}]}
  const runtime=new OfficeDailyRuntime(),lift=createOfficeLift(source)
@@ -185,6 +194,26 @@ it('keeps canteen geometry stable when a new office arrives and removes it while
  runtime.step({...input(runtime,many,1,'clear'),blocked:true,lift})
  assert.equal(runtime.canteenOpen,false)
  assert.equal(runtime.project(many).floors.some(f=>f.id===OFFICE_CANTEEN_ID),false)
+})
+
+it('compacts retained rooms added below the canteen while a garden guest remains active',()=>{
+ const many={...scene,actors:[actor,{...actor,key:'second',agent:{...actor.agent,id:'second'}}]}
+ const runtime=new OfficeDailyRuntime(),lift=createOfficeLift(scene)
+ runtime.step({...input(runtime,many,0,'rain'),lift})
+ const added={...many,floors:[...many.floors,floor('new-room',800)]}
+ runtime.step({...input(runtime,added,1,'rain'),blocked:true,lift})
+ const opened=runtime.project(added),canteen=opened.floors.find(f=>f.id===OFFICE_CANTEEN_ID)!,room=opened.floors.find(f=>f.id==='new-room')!
+ assert.ok(room.y>canteen.y)
+ const guests=[...runtime.guests.values()]
+ guests[0].destination='garden';guests[0].indoorNeeded=false;guests[0].trip=null;guests[0].physical={...actor,floorId:'lounge',x:100,y:100};guests[0].phase='eating';guests[0].until=999999
+ runtime.guests.delete(guests[1].actorKey)
+ runtime.step({...input(runtime,added,2,'clear'),blocked:true,lift})
+ const closed=runtime.project(added)
+ assert.equal(runtime.guests.size,1)
+ assert.equal(runtime.canteenOpen,false)
+ assert.equal(closed.floors.find(f=>f.id==='new-room')!.y,room.y-canteen.height!*.9)
+ assert.ok(closed.height<opened.height)
+ assert.deepEqual(runtime.project(added),closed)
 })
 
 it('yields an unboarded routine reservation to a real arrival and reports the invalidated suffix',()=>{

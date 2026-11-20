@@ -29,6 +29,8 @@ const capped = (value: unknown): string | null => {
   const result = text(value)
   return result ? result.slice(0, 2000) : null
 }
+const jobMoment = (task: T3Row): number => optionalTimestamp(task.started_at) ?? optionalTimestamp(task.completed_at) ?? timestamp(task.updated_at)
+const taskRole = (value: unknown): TeamAgentRow['taskRole'] => ['implementation','research','review','design','test','general'].includes(text(value)) ? text(value) as TeamAgentRow['taskRole'] : undefined
 function normalized(value: string): string {
   // T3's Windows paths can be read by a remote host too.
   const result = value.replace(/\\/g, '/').replace(/\/+$/, '')
@@ -216,7 +218,8 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
       // previous run is still working, so a still-running run wins over a newer finished one.
       const latest = runs.find(run => running(run.status)) ?? runs[0]
       const provider = data.providerThreads.find(p => p.provider_thread_id === (payload.activeProviderThreadId || row.active_provider_thread_id || latest?.provider_thread_id))
-      const task = taskRows.filter(t => t.child_thread_id === id).sort((a, b) => timestamp(b.updated_at) - timestamp(a.updated_at))[0]
+      // Delivery can touch an old delegation after this child starts another job.
+      const task = taskRows.filter(t => t.child_thread_id === id).sort((a, b) => jobMoment(b)-jobMoment(a) || timestamp(b.updated_at)-timestamp(a.updated_at))[0]
       const items = (itemsByThread.get(id) ?? []).filter(item => (!latest || item.run_id === latest.run_id)
         && !nativeProviders.has(item.provider_thread_id))
       const tools = items.filter(item => toolTypes.has(text(item.type)))
@@ -229,7 +232,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
       const blocked = data.requests.some(request => request.thread_id === id && ['pending', 'open', 'requested'].includes(text(request.status)))
       const openRequest = data.requests.filter(request => request.thread_id === id && ['pending', 'open', 'requested'].includes(text(request.status)))
         .sort((a, b) => (optionalTimestamp(b.created_at) ?? 0) - (optionalTimestamp(a.created_at) ?? 0))[0]
-      const status = task?.status || latest?.status
+      const status = task && !(terminalSuccess.has(text(task.status)) && running(latest?.status)) ? task.status : latest?.status
       const model = text(object(payload.modelSelection).model) || text(object(payloadFor(latest || {}).modelSelection).model) || text(task && payloadFor(task).model) || undefined
       // Background commands keep the agent busy on the canvas after its run ended.
       const background = backgroundActivities(provider, payloadFor)
@@ -268,13 +271,13 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
         id: nodeForThread.get(id)!, parentId: task ? taskParent(task) ?? null : parentId ? nodeForThread.get(parentId) ?? null : null,
         role: id === rootId ? 'lead' : 'worker', name: text(task && payloadFor(task).title) || text(row.title),
         runtime: teamRuntime(provider?.driver, provider?.provider, row.default_provider) ?? null, model: model ?? null,
-        status: shownStatus, task: capped(task && payloadFor(task).prompt), activities: shownStatus === 'background' ? background : activities,
+        status: shownStatus, taskRole: taskRole(task && payloadFor(task).role), task: capped(task && payloadFor(task).prompt), activities: shownStatus === 'background' ? background : activities,
         requestKind: openRequest ? requestKind || null : null,
         context: usedTokens > 0 && maxTokens > 0 ? { used: usedTokens, max: maxTokens } : null,
         toolCallCount: itemCount(tools), hasThread: true,
         startedAt: task ? optionalTimestamp(task.started_at) ?? optionalTimestamp(row.created_at) : optionalTimestamp(row.created_at),
         updatedAt: Math.max(optionalTimestamp(row.updated_at) ?? 0, optionalTimestamp(task?.updated_at) ?? 0) || null,
-        completedAt: optionalTimestamp(task?.completed_at) ?? optionalTimestamp(latest?.completed_at),
+        completedAt: running(status) ? null : optionalTimestamp(task?.completed_at) ?? optionalTimestamp(latest?.completed_at),
       })
     }
     for (const task of taskRows) {
@@ -310,7 +313,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
       const teamStatus: TeamAgentRow['status'] = background.length && baseStatus === 'done' ? 'background' : baseStatus
       teamAgents.push({ id: nodeForThread.get(`task:${text(task.subagent_id)}`)!, parentId: taskParent(task) ?? null,
         role: 'worker', name: text(p.title) || 'Subagent', runtime: teamRuntime(task.driver, task.provider) ?? null,
-        model: text(p.model) || null, status: teamStatus, task: capped(p.prompt), activities: teamStatus === 'background' ? background : activities,
+        model: text(p.model) || null, status: teamStatus, taskRole: taskRole(p.role), task: capped(p.prompt), activities: teamStatus === 'background' ? background : activities,
         requestKind: openRequest ? requestKind || null : null,
         context: usedTokens > 0 && maxTokens > 0 ? { used: usedTokens, max: maxTokens } : null,
         toolCallCount: itemCount(items), hasThread: false, startedAt: optionalTimestamp(task.started_at),
@@ -336,7 +339,7 @@ export function projectT3Teams(data: T3Projection, workspaces: string[] | null, 
       const status: TeamTaskRow['status'] = terminalFailure.has(state) ? 'failed' : terminalCancelled.has(state) ? 'cancelled'
         : terminalSuccess.has(state) ? 'done' : 'working'
       return { id: `t3-delegation:${text(task.subagent_id)}`, childId, parentId: taskParent(task) ?? nodeForThread.get(text(task.thread_id))!,
-        name: text(p.title) || 'Subagent', model: text(p.model) || null, task: capped(p.prompt), result: capped(p.result), status,
+        name: text(p.title) || 'Subagent', model: text(p.model) || null, taskRole: taskRole(p.role), task: capped(p.prompt), result: capped(p.result), status,
         delivery: mapT3Delivery(text(task.completion_delivery_state) || delivery.state, delivery.observedByRunId),
         startedAt: optionalTimestamp(task.started_at), completedAt: optionalTimestamp(task.completed_at), updatedAt: optionalTimestamp(task.updated_at) }
     })

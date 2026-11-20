@@ -39,7 +39,17 @@ export interface OfficeActor extends OfficePoint {
   pod?: boolean
   pose?: OfficePose
 }
+export interface OfficeCollaborationMember {
+  key: string
+  preferenceKey: string
+  sessionId: string
+  agent: TeamAgentRow
+  task: TeamTaskRow | null
+  appearance: OfficeAppearance
+  remote: boolean
+}
 export interface OfficeFloor {
+  collaboration?: OfficeCollaborationMember[]
   id: string
   sessionId: string | null
   title: string
@@ -77,6 +87,8 @@ export interface OfficeScene {
 }
 export interface OfficeEvent {
   id: string
+  taskId?: string
+  sourceAt?: number | null
   kind: 'assigned' | 'finished' | 'sent' | 'received' | 'arrived' | 'left' | 'activity' | 'routine'
   station?: OfficeWorkStation
   actorKey: string
