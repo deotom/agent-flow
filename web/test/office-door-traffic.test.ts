@@ -5,7 +5,7 @@ import {officeInteriorDoor} from '../lib/office-navigation'
 import type {OfficeActor,OfficeScene} from '../lib/office-types'
 import type {OfficeTrip} from '../lib/office-motion'
 const scene:OfficeScene={width:450,height:900,actors:[],quietTeams:[],finishedCount:0,totalAgents:0,floors:[{id:'team',kind:'team',sessionId:'s',title:'Office',subtitle:'',color:'',actorKeys:[],y:228,height:253},{id:'rest',annexOf:'team',kind:'break',sessionId:'s',title:'Rest',subtitle:'',color:'',actorKeys:[],y:228,height:253}]}
-const door=officeInteriorDoor(scene,'rest')!
+const door=officeInteriorDoor(scene,'rest','annex')!
 const actor={key:'a',sessionId:'s',floorId:'rest',x:door.x,y:door.y,pose:{walk:true}} as OfficeActor
 const trip={actorKey:'a',startedAt:10,endsAt:1000,segments:[{floorId:'rest'},{floorId:'team'}]} as OfficeTrip
 it('opens the actual transit door without needing a private-room camera switch',()=>{

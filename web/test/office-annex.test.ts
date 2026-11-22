@@ -9,7 +9,12 @@ const team=(resting:boolean):TeamSnapshot=>({sessionId:'s',title:'Team',active:t
  {id:'lead',parentId:null,role:'lead',name:'Lead',runtime:null,model:null,status:'running',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1,updatedAt:1,completedAt:null},
  {id:'worker',parentId:'lead',role:'worker',name:'Worker',runtime:null,model:null,status:resting?'done':'running',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1,updatedAt:1,completedAt:null},
 ]})
-const scene=(resting:boolean)=>{const t=team(resting);return buildOfficeScene([t],'active',false,assignOfficeIdentities(t.agents.map(a=>officeKey(t.sessionId,a.id))))}
+const scene=(resting:boolean,extraWorkers=0)=>{
+ const t=team(resting)
+ const extra=Array.from({length:extraWorkers},(_,i)=>({...t.agents[1],id:`extra-${i}`,status:'running' as const}))
+ t.agents=[...t.agents,...extra]
+ return buildOfficeScene([t],'active',false,assignOfficeIdentities(t.agents.map(a=>officeKey(t.sessionId,a.id))))
+}
 
 test('doorway crossing gently occludes and reveals the walker on either side',()=>{
  for(const [before,next] of [[scene(false),scene(true)],[scene(true),scene(false)]]){
@@ -28,17 +33,19 @@ test('rest rooms are same-floor annexes and add no building height or external l
  assert.equal(rest.height,work.height)
  assert.deepEqual(officeNavigation(rest).landings.map(l=>l.id),[main.id])
  assert.deepEqual(officeInteriorDoor(rest,annex.id),officeInteriorDoor(rest,main.id))
- assert.deepEqual(officeLanding(rest,annex.id),officeInteriorDoor(rest,main.id))
+ assert.deepEqual(officeLanding(rest,annex.id),officeInteriorDoor(rest,annex.id,'annex'))
 })
 
 test('workers enter their own annex through the office door, without climbing, and return through it',()=>{
- for(const [before,next] of [[scene(false),scene(true)],[scene(true),scene(false)]]){
+ for(const extraWorkers of [0,4])for(const resting of [false,true]){
+  const before=scene(resting,extraWorkers),next=scene(!resting,extraWorkers)
   const key=officeKey('s','worker'),old=before.actors.find(a=>a.key===key)!,actor=next.actors.find(a=>a.key===key)!
   const trip=createOfficeTrip({id:'room',kind:'finished',actorKey:key,parentKey:actor.parentKey,at:0},before,next,0)!
-  const door=officeInteriorDoor(next,actor.floorId)!
   assert.ok(trip.segments.length>2)
   assert.equal(trip.segments.some(s=>s.kind==='ride'),false)
-  assert.ok(trip.segments.some(s=>s.to.x===door.x&&s.to.y===door.y))
+  const crossing=trip.segments.filter(s=>s.opacity)
+  assert.deepEqual(crossing.map(s=>s.floorId),[old.floorId,actor.floorId])
+  assert.deepEqual(crossing.map(s=>s.to),[officeInteriorDoor(before,old.floorId,'annex'),officeInteriorDoor(next,actor.floorId,'annex')])
   assert.equal(officeTripFrame(trip,0).floorId,old.floorId)
   assert.equal(officeTripFrame(trip,trip.endsAt).floorId,actor.floorId)
   for(let t=0;t<trip.endsAt;t+=100){const frame=officeTripFrame(trip,t);assert.ok([old.floorId,actor.floorId].includes(frame.floorId!));assert.equal(frame.pose.climb,false)}
@@ -72,7 +79,7 @@ test('an arrival that finishes en route enters the annex via its parent office',
  const actorBefore=officeActorsWithArrivals(before,initial,1000).find(a=>a.key===key)!
  const rest=scene(true),advanced=advanceOfficeArrivals(initial,rest,1000),actorAfter=officeActorsWithArrivals(rest,advanced.trips,1000).find(a=>a.key===key)!
  assert.equal(actorBefore.x,actorAfter.x);assert.equal(actorBefore.y,actorAfter.y)
- const trip=advanced.trips.get(key)!,annex=rest.floors.find(f=>f.kind==='break')!,door=officeInteriorDoor(rest,annex.id)!
- assert.ok(trip.segments.some(s=>s.to.x===door.x&&s.to.y===door.y))
+ const trip=advanced.trips.get(key)!,annex=rest.floors.find(f=>f.kind==='break')!,door=officeInteriorDoor(rest,annex.id,'annex')!
+ assert.ok(trip.segments.some(s=>s.floorId===annex.id&&s.to.x===door.x&&s.to.y===door.y))
  assert.equal(officeTripFrame(trip,trip.endsAt).floorId,annex.id)
 })

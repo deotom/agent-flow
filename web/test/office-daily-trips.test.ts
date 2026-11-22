@@ -24,7 +24,7 @@ it('walks out of an annex through its parent door and uses the phased shared lif
  assert.equal(officeTripFrame(trip,trip.endsAt).floorId,'canteen')
  assert.equal(officeTripFrame(trip,trip.endsAt).done,true)
  assert.deepEqual(trip.segments.filter(s=>s.liftPhase).map(s=>s.liftPhase),['boarding','closing','riding','opening','alighting'])
- const door=officeInteriorDoor(scene,'private')!
+ const door=officeInteriorDoor(scene,'private','annex')!
  assert.ok(trip.segments.some(s=>s.floorId==='private'&&s.to.x===door.x&&s.to.y===door.y))
  assert.deepEqual(trip.segments.filter(s=>s.opacity).map(s=>[s.floorId,s.opacity]),[['private',[1,0]],['office',[0,1]]])
  assert.ok(trip.segments.filter(s=>s.kind==='ride').every(s=>s.from.x===officeNavigation(scene).shaftX&&s.to.x===officeNavigation(scene).shaftX))

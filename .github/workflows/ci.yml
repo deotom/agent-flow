@@ -32,6 +32,15 @@ jobs:
       - name: Extension typecheck
         run: pnpm --filter agent-flow run lint
 
+      - name: Extension test typecheck
+        run: pnpm --filter agent-flow run lint:test
+
+      - name: Build desktop test assets
+        run: pnpm run build:desktop
+
+      - name: Desktop tests
+        run: npm --prefix desktop test
+
       - name: Web tests
         run: pnpm --dir web test
 

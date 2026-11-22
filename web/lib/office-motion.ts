@@ -61,12 +61,22 @@ export function createOfficeTravelPath(sourceScene:OfficeScene,next:OfficeScene,
     const sourceFloor=cursorScene.floors.find(f=>f.id===cursorFloor)??next.floors.find(f=>f.id===cursorFloor)
     const targetFloor=next.floors.find(f=>f.id===toFloor)
     if(sourceFloor?.annexOf&&cursorFloor!==toFloor){
-      const threshold=officeInteriorDoor(cursorScene,sourceFloor.id)??officeInteriorDoor(next,sourceFloor.id)
-      if(threshold){walk({x:cursor.x,y:threshold.y});walk(threshold);leg(cursor,280,'hold',[1,0]);cursorFloor=sourceFloor.annexOf;cursorScene=next;leg(cursor,280,'hold',[0,1])}
+      const threshold=officeInteriorDoor(cursorScene,sourceFloor.id,'annex')??officeInteriorDoor(next,sourceFloor.id,'annex')
+      if(threshold){
+        walk({x:cursor.x,y:threshold.y});walk(threshold);leg(cursor,280,'hold',[1,0])
+        cursorFloor=sourceFloor.annexOf
+        cursor=officeInteriorDoor(next,cursorFloor)??officeInteriorDoor(cursorScene,cursorFloor)??threshold
+        cursorScene=next
+        leg(cursor,280,'hold',[0,1])
+      }
     }
     if(targetFloor?.annexOf&&cursorFloor!==toFloor){
-      const threshold=officeInteriorDoor(next,targetFloor.id)
-      if(threshold){travel(threshold,targetFloor.annexOf);leg(cursor,280,'hold',[1,0]);cursorFloor=toFloor;cursorScene=next;leg(cursor,280,'hold',[0,1]);walk({x:to.x,y:threshold.y});walk(to);return}
+      const threshold=officeInteriorDoor(next,targetFloor.id,'annex')
+      if(threshold){
+        travel(officeInteriorDoor(next,targetFloor.annexOf)??threshold,targetFloor.annexOf);leg(cursor,280,'hold',[1,0])
+        cursorFloor=toFloor;cursorScene=next;cursor=threshold
+        leg(cursor,280,'hold',[0,1]);walk({x:to.x,y:threshold.y});walk(to);return
+      }
     }
     const target=targetFloor?.kind==='lounge'?{x:liftX-28*nav.scale,y:nav.hatch.y}:officeAisle(next,toFloor)??{x:liftX-28*nav.scale,y:to.y}
     const targetDoor=officeLanding(next,toFloor)??target

@@ -1,6 +1,6 @@
 import {drawOfficeRoomCurios} from './office-room-curios-art'
 import type {OfficeFloor,OfficeScene} from '../../../lib/office-types'
-import {roomDesignFor,roomLeadRestPoint,type OfficeRoomTheme} from '../../../lib/office-room-design'
+import {OFFICE_WORKROOM_WALL_CROP,OFFICE_WORKROOM_WALL_DEPTH,roomDesignFor,roomLeadRestPoint,type OfficeRoomTheme} from '../../../lib/office-room-design'
 
 export interface OfficeRoomArt {shell:CanvasImageSource;props:CanvasImageSource;breakRoom:CanvasImageSource;stations?:CanvasImageSource;stationAngles?:CanvasImageSource}
 type Ctx=CanvasRenderingContext2D
@@ -15,7 +15,7 @@ export function drawOfficeRoomShell(c:Ctx,scene:OfficeScene,floor:OfficeFloor,ar
  const w=scene.width,h=floor.height??w*.5625,y=floor.y
  const source=art.shell as CanvasImageSource&{naturalWidth?:number;naturalHeight?:number;width?:number;height?:number}
  const sw=source.naturalWidth??source.width??1000,sh=source.naturalHeight??source.height??563
- const wall=sh*.64,soil=sh*.21,top=wall*w/sw,bottom=soil*w/sw
+ const wall=sh*OFFICE_WORKROOM_WALL_CROP,soil=sh*.21,top=w*OFFICE_WORKROOM_WALL_DEPTH,bottom=soil*w/sw
  c.drawImage(art.shell,0,0,sw,wall,0,y,w,top)
  c.drawImage(art.shell,0,wall,sw,sh-wall-soil,0,y+top,w,Math.max(1,h-top-bottom))
  c.drawImage(art.shell,0,sh-soil,sw,soil,0,y+h-bottom,w,bottom)

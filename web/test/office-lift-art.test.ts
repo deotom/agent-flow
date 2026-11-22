@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {officeDoorBounds,officeInteriorDoor,officeNavigation,officeInsideLift} from '../lib/office-navigation'
 import {drawOfficeInteriorDoors} from '../components/agent-visualizer/office/office-door-art'
 import {drawOfficeShaft} from '../components/agent-visualizer/office/office-shaft-art'
+import {drawOfficeRoomShell} from '../components/agent-visualizer/office/office-room-design-art'
 import type {OfficeArchitectureArt,OfficeScene} from '../lib/office-types'
 const fixture=():OfficeScene=>({width:450,height:800,actors:[],quietTeams:[],totalAgents:0,finishedCount:0,floors:[
  {id:'surface',kind:'lounge',sessionId:null,title:'',subtitle:'',color:'',y:0,height:250,actorKeys:[]},
@@ -38,13 +39,29 @@ it('slides separate leaf crops fully out of the cabin aperture instead of reveal
   assert.ok(right<=nav.shaftX-14||left>=nav.shaftX+14,'fully open leaves cannot cover the passenger')
  }
 })
-it('shares a flush back-wall doorway between main and private views',()=>{
- const scene=fixture(),point={x:450*.825,y:410}
- assert.deepEqual(officeInteriorDoor(scene,'main'),point);assert.deepEqual(officeInteriorDoor(scene,'rest'),point)
- assert.deepEqual(officeInteriorDoor({...scene,floors:[scene.floors[2]]},'rest'),point)
+it('anchors each side of the doorway to its own wall',()=>{
+ const scene=fixture(),workroom={x:450*.825,y:412.144},annex={x:450*.825,y:410}
+ assert.deepEqual(officeInteriorDoor(scene,'main'),workroom);assert.deepEqual(officeInteriorDoor(scene,'rest'),workroom)
+ assert.deepEqual(officeInteriorDoor(scene,'rest','annex'),annex)
+ assert.deepEqual(officeInteriorDoor({...scene,floors:[scene.floors[2]]},'rest'),annex)
  const bounds=officeDoorBounds(scene,'main')!;assert.ok(bounds.x+bounds.width<officeNavigation(scene).left)
  const {ctx,calls}=recorder();drawOfficeInteriorDoors(ctx,scene,'rest',art)
  assert.ok(calls.some(c=>c.op==='drawImage'&&c.args[0]===art.doorOpen))
+})
+it('keeps the workroom door and its click target at the wall seam as the floor grows',()=>{
+ for(const width of [380,450,700])for(const aspect of [.75,.66,.5625]){
+  const scene={...fixture(),width}
+  const main={...scene.floors[1],y:310,height:width*aspect}
+  scene.floors=[main,{...scene.floors[2],y:main.y,height:main.height}]
+  const {ctx,calls}=recorder(),shell={width:1000,height:563} as HTMLCanvasElement
+  drawOfficeRoomShell(ctx,scene,main,{shell,props:shell,breakRoom:shell})
+  drawOfficeInteriorDoors(ctx,scene,null,art)
+  const floorboards=calls.filter(call=>call.op==='drawImage'&&call.args[0]===shell)[1]
+  const door=calls.find(call=>call.op==='drawImage'&&call.args[0]===art.doorClosed)!
+  const bounds=officeDoorBounds(scene,'rest')!
+  assert.ok(Math.abs(door.args[2]+door.args[4]-floorboards.args[6])<1e-9)
+  assert.deepEqual(door.args.slice(1),[bounds.x,bounds.y,bounds.width,bounds.height])
+ }
 })
 it('shows lift doors at each actual landing and a garden pavilion above the earth',()=>{
  const scene=fixture(),nav=officeNavigation(scene),{ctx,calls}=recorder();drawOfficeShaft(ctx,scene,true,art)

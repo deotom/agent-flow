@@ -1,4 +1,5 @@
 import type {OfficeScene,OfficePoint,OfficeActor} from './office-types'
+import {OFFICE_WORKROOM_WALL_DEPTH} from './office-room-design'
 const SHAFT_X_RATIO=.938
 
 /** The lift travels behind its service wall; labels follow the same occlusion. */
@@ -6,12 +7,13 @@ export function officeInsideLift(scene:OfficeScene,actor:Pick<OfficeActor,'x'|'p
  return Boolean(actor.pose?.inLift||actor.pose?.climb||(actor.pose?.walk&&actor.x>=scene.width*SHAFT_X_RATIO-22*scene.width/450))
 }
 
-/** Parent office and its private annex use the same interior threshold. */
-export function officeInteriorDoor(scene:OfficeScene,floorId:string):OfficePoint|null {
+/** The workroom wall stays fixed while the private cutaway scales to the room height. */
+export function officeInteriorDoor(scene:OfficeScene,floorId:string,side:'workroom'|'annex'='workroom'):OfficePoint|null {
  const floor=scene.floors.find(f=>f.id===floorId)
- const parent=floor?.annexOf?(scene.floors.find(f=>f.id===floor.annexOf)??floor):floor
- if(!parent||(parent.kind!=='team'&&!parent.annexOf))return null
- return {x:scene.width*.825,y:parent.y+(parent.height??75)*.64}
+ const room=floor?.annexOf&&side==='workroom'?(scene.floors.find(f=>f.id===floor.annexOf)??floor):floor
+ if(!room||(room.kind!=='team'&&!room.annexOf))return null
+ const depth=room.annexOf?(room.height??75)*.64:scene.width*OFFICE_WORKROOM_WALL_DEPTH
+ return {x:scene.width*.825,y:room.y+depth}
 }
 
 /** Painted extent and pointer target of the inset back-wall door. */
@@ -26,7 +28,7 @@ export function officeDoorBounds(scene:OfficeScene,floorId:string){
 export function officeLanding(scene:OfficeScene,floorId:string):OfficePoint|null {
  const f=scene.floors.find(f=>f.id===floorId)
  if(!f)return null
- if(f.annexOf)return officeInteriorDoor(scene,floorId)
+ if(f.annexOf)return officeInteriorDoor(scene,floorId,'annex')
  const scale=scene.width/450,shaftX=scene.width*SHAFT_X_RATIO,h=f.height??75
  return f.kind==='lounge'?{x:shaftX,y:f.y+h*.74}:{x:shaftX-28*scale,y:f.y+h*.79}
 }

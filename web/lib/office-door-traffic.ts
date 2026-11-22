@@ -9,10 +9,15 @@ export function officeDoorTraffic(scene:OfficeScene,actors:readonly OfficeActor[
   if(!floor.annexOf||floor.constructing)continue
   const parent=scene.floors.find(room=>room.id===floor.annexOf)
   if(!parent||parent.constructing)continue
-  const point=officeInteriorDoor(scene,floor.id)
-  if(!point)continue
+  const point=officeInteriorDoor(scene,parent.id)
+  const annexPoint=officeInteriorDoor(scene,floor.id,'annex')
+  if(!point||!annexPoint)continue
   const keys=new Set(trips.filter((trip):trip is OfficeTrip=>!!trip&&trip.startedAt<=at&&at<trip.endsAt&&trip.segments.some(s=>s.floorId===floor.id)&&trip.segments.some(s=>s.floorId===floor.annexOf)).map(trip=>trip.actorKey))
-  if(actors.some(actor=>keys.has(actor.key)&&!actor.hidden&&!actor.pose?.inLift&&(actor.floorId===floor.id||actor.floorId===floor.annexOf)&&Math.abs(actor.x-point.x)<20*scale&&Math.abs(actor.y-point.y)<35*scale))open.add(floor.id)
+  if(actors.some(actor=>{
+   if(!keys.has(actor.key)||actor.hidden||actor.pose?.inLift)return false
+   const threshold=actor.floorId===floor.id?annexPoint:actor.floorId===parent.id?point:null
+   return threshold&&Math.abs(actor.x-threshold.x)<20*scale&&Math.abs(actor.y-threshold.y)<35*scale
+  }))open.add(floor.id)
  }
  return open
 }

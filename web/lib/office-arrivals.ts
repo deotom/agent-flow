@@ -28,12 +28,16 @@ function retarget(trip:OfficeTrip,actor:OfficeActor,scene:OfficeScene,now:number
   const frame=officeTripFrame(trip,now)
   let cursor=frame.point,cursorFloor=frame.floorId??trip.actor.floorId
   const segments:OfficeTripSegment[]=[]
-  const leg=(to:OfficePoint,kind:OfficeTripSegment['kind'],duration:number,liftPhase?:OfficeTripSegment['liftPhase'])=>{segments.push({from:{...cursor},to:{...to},kind,duration,floorId:cursorFloor,liftPhase});cursor={...to}}
+  const leg=(to:OfficePoint,kind:OfficeTripSegment['kind'],duration:number,liftPhase?:OfficeTripSegment['liftPhase'],opacity?:OfficeTripSegment['opacity'])=>{segments.push({from:{...cursor},to:{...to},kind,duration,floorId:cursorFloor,liftPhase,opacity});cursor={...to}}
   const walk=(to:OfficePoint)=>{const d=Math.hypot(to.x-cursor.x,to.y-cursor.y);if(d>.01)leg(to,'walk',Math.max(150,d/(75*nav.scale)*1000))}
   const source=scene.floors.find(f=>f.id===cursorFloor)
   if(source?.annexOf){
-    const threshold=officeInteriorDoor(scene,source.id)
-    if(threshold){walk({x:cursor.x,y:threshold.y});walk(threshold);leg(cursor,'hold',280);cursorFloor=source.annexOf;leg(cursor,'hold',280)}
+    const threshold=officeInteriorDoor(scene,source.id,'annex')
+    if(threshold){
+      walk({x:cursor.x,y:threshold.y});walk(threshold);leg(cursor,'hold',280,undefined,[1,0])
+      cursorFloor=source.annexOf;cursor=officeInteriorDoor(scene,cursorFloor)??threshold
+      leg(cursor,'hold',280,undefined,[0,1])
+    }
   }
   if(frame.pose.inLift||cursorFloor!==publicFloor||(Math.abs(cursor.x-nav.shaftX)<.01&&Math.abs(cursor.y-landing.y)>.01)){
     if(!frame.pose.inLift){
@@ -52,11 +56,12 @@ function retarget(trip:OfficeTrip,actor:OfficeActor,scene:OfficeScene,now:number
   }
   if(targetFloor?.annexOf){
     const threshold=officeInteriorDoor(scene,targetFloor.id)!
-    walk({x:cursor.x,y:landing.y});walk(threshold);leg(cursor,'hold',280)
-    cursorFloor=actor.floorId;leg(cursor,'hold',280)
+    walk({x:cursor.x,y:landing.y});walk(threshold);leg(cursor,'hold',280,undefined,[1,0])
+    cursorFloor=actor.floorId;cursor=officeInteriorDoor(scene,targetFloor.id,'annex')!
+    leg(cursor,'hold',280,undefined,[0,1])
   }else cursorFloor=actor.floorId
   walk({x:actor.x,y:aisle.y});walk(actor);leg(actor,'hold',300)
-  if(frame.pose.opacity!==undefined&&frame.pose.opacity<1&&segments.length)segments[0].opacity=[frame.pose.opacity,1]
+  if(frame.pose.opacity!==undefined&&frame.pose.opacity<1&&segments.length)segments[0].opacity=[frame.pose.opacity,segments[0].opacity?.[1]??1]
   return {...trip,actor,segments,startedAt:now,endsAt:now+segments.reduce((n,s)=>n+s.duration,0),shaftX:nav.shaftX,rungPitch:nav.rungPitch}
 }
 

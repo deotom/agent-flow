@@ -361,7 +361,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     const wardrobeTheme=officeWardrobeTheme(new Date(input.wallNow)),unit=input.scene.width/450
     const wardrobe=officeWardrobeTransitionFrame(wardrobeStore.current,actors.map(actor=>{
       const floor=input.scene.floors.find(f=>f.id===actor.floorId)
-      const doorway=floor?.annexOf?officeInteriorDoor(input.scene,floor.id):officeLanding(input.scene,actor.floorId)
+      const doorway=officeLanding(input.scene,actor.floorId)
       const action=actor.pose?.objectAction??actor.objectAction
       return {key:actor.key,theme:wardrobeTheme,slot:actor.appearance.slot,outdoor:floor?.kind==='lounge',inLift:actor.pose?.inLift,hidden:actor.hidden||(actor.pose?.opacity??1)<.8,
         atEntrance:Boolean(doorway&&Math.abs(actor.x-doorway.x)<35*unit&&Math.abs(actor.y-doorway.y)<35*unit),

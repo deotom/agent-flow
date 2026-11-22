@@ -5,6 +5,9 @@ const officeRoomSeed=(id:string)=>[...id].reduce((h,c)=>Math.imul(h^c.charCodeAt
 export type OfficeRoomTheme='studio'|'operations'|'research'|'quality'
 export interface OfficeRoomDesign {theme:OfficeRoomTheme;variant:number;accent:string;detail:number;large:boolean}
 export interface OfficeRoomStation extends OfficePoint {kind:Exclude<OfficeWorkStation,'planning'>;width:number;height:number;facing:'front'|'left'|'right';work:OfficePoint;depth:number}
+// The workroom shell is 1000 × 563. Only the floorboards stretch in deeper rooms.
+export const OFFICE_WORKROOM_WALL_CROP=.64
+export const OFFICE_WORKROOM_WALL_DEPTH=OFFICE_WORKROOM_WALL_CROP*563/1000
 const themes:readonly OfficeRoomTheme[]=['studio','operations','research','quality']
 const hue:Record<OfficeRoomTheme,number>={studio:22,operations:169,research:82,quality:217}
 /** Title is the stable mission/project label. Tool activity and live counters never affect decor. */
