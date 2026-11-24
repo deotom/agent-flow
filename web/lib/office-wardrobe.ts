@@ -7,6 +7,7 @@ export interface OfficeWardrobeLook extends OfficeWardrobeTheme {
   accent: string
   trim: string
   variant: number
+  outdoor: boolean
 }
 const accents:Record<Season,readonly string[]>={
   hot:['#bb823e','#478c83','#ae6154'],
@@ -25,5 +26,5 @@ export function officeWardrobeFor(theme:OfficeWardrobeTheme,slot:number,outdoor:
   const variant=Number.isFinite(slot)?((Math.trunc(slot)%3)+3)%3:0
   // Even dry rainy-season hours retain a light protective shoulder layer outdoors.
   const layer=theme.season==='hot'?'light':theme.season==='cool'?'knit':outdoor?'rain-poncho':'cardigan'
-  return {...theme,layer,accent:accents[theme.season][variant],trim:theme.holiday?holidayTrim[theme.holiday]:'#d7bb7f',variant}
+  return {...theme,layer,accent:accents[theme.season][variant],trim:theme.holiday?holidayTrim[theme.holiday]:'#d7bb7f',variant,outdoor}
 }

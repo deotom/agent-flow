@@ -30,6 +30,10 @@ export function drawOfficeNightSky(c: Ctx, scene: OfficeScene, date: Date, time:
   moon(c, sky, scene.width, H, scene.width / 450)
 }
 
+export const DESKTOP_BACKGROUND_SKY_EVENTS: ReadonlySet<SkyEvent['kind']> = new Set([
+  'balloon', 'plane', 'night-plane', 'birds', 'shooting-star', 'rainbow', 'ufo',
+])
+
 export function drawOfficeSky(c: Ctx, scene: OfficeScene, time: number, date: Date, override?: OfficeSky): OfficeSky | null {
   const lawn = scene.floors.find(f => f.kind === 'lounge'), H = lawn?.height ?? 0
   // Needs a real 2D context (gradients); recording test contexts skip the sky.
@@ -42,9 +46,21 @@ export function drawOfficeSky(c: Ctx, scene: OfficeScene, time: number, date: Da
   if (dim) { c.fillStyle = `rgba(40,48,66,${dim})`; c.fillRect(0, 0, w, H) }
   weather(c, sky, w, H, k, time)
   if (sky.holiday) holiday(c, sky, w, H, k, time, desktop)
-  if (sky.event && time && !(desktop && sky.event.kind==='balloon')) skyEvent(c, sky.event, w, H, k, time, desktop)
+  if (sky.event && time && !(desktop && DESKTOP_BACKGROUND_SKY_EVENTS.has(sky.event.kind))) skyEvent(c, sky.event, w, H, k, time, desktop)
   c.restore()
   return sky
+}
+
+/** Distant sky events (planes, birds, stars, rainbow, ufo, balloon) & New Year fireworks fly behind the garden tree canopy. */
+export function drawOfficeSkyBackgroundEvents(c: Ctx, scene: OfficeScene, time: number, date: Date, override?: OfficeSky): void {
+  const lawn = scene.floors.find(f => f.kind === 'lounge')
+  if (!lawn?.desktopArt || !lawn.height || time <= 0) return
+  const sky = override ?? skyFor(date), w = scene.width, H = lawn.height, k = w / 450
+  c.save()
+  c.beginPath(); c.rect(0, 0, w, H * .88); c.clip()
+  if (sky.holiday === 'new-year' && (sky.phase === 'night' || sky.phase === 'dusk')) fireworks(c, w, H, k, time)
+  if (sky.event && DESKTOP_BACKGROUND_SKY_EVENTS.has(sky.event.kind)) skyEvent(c, sky.event, w, H, k, time, true)
+  c.restore()
 }
 
 /** The Desktop balloon flies through the sky behind the masked garden scenery. */
@@ -149,7 +165,7 @@ function weather(c: Ctx, sky: OfficeSky, w: number, H: number, k: number, time: 
 function holiday(c: Ctx, sky: OfficeSky, w: number, H: number, k: number, time: number, desktop = false) {
   const night = sky.phase === 'night' || sky.phase === 'dusk'
   switch (sky.holiday) {
-    case 'new-year': return night ? fireworks(c, w, H, k, time) : bunting(c, w, H, k, ['#e8473f', '#f2c94c', '#3f8ee8', '#5cc272'])
+    case 'new-year': return night ? (desktop ? undefined : fireworks(c, w, H, k, time)) : bunting(c, w, H, k, ['#e8473f', '#f2c94c', '#3f8ee8', '#5cc272'])
     case 'songkran': bunting(c, w, H, k, ['#3fb4e8', '#7fd3f5', '#f2c94c', '#ff8fb1']); return !night && time ? water(c, w, H, k, time) : undefined
     case 'loy-krathong': return night ? lanterns(c, w, H, k, time) : bunting(c, w, H, k, ['#f2a03f', '#f2c94c', '#e86a3f'])
     case 'halloween': pumpkins(c, w, H, k, night, desktop); return night && time ? bats(c, w, H, k, time) : undefined

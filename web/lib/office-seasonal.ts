@@ -2,6 +2,25 @@ import { officeSky, type Holiday, type Season } from './office-sky'
 import type { OfficeLeisureAction, OfficeFloor } from './office-types'
 
 export interface OfficeSeasonalActivity { label: string; action: OfficeLeisureAction }
+export type OfficeHolidayGardenAction = 'krathong' | 'water-play' | 'sparkler' | 'gift-carol' | 'trick-treat' | 'flower-gift'
+export interface OfficeGardenHolidayActivity { holiday: Holiday; prop: OfficeHolidayGardenAction; activity: string }
+
+const gardenFestivals: Record<Holiday, { prop: OfficeHolidayGardenAction; captions: readonly [string, string] }> = {
+  'loy-krathong': { prop: 'krathong', captions: ['is floating a krathong in the garden', 'is lighting a Loy Krathong lantern'] },
+  songkran: { prop: 'water-play', captions: ['is celebrating Songkran with jasmine water', 'is splashing water in the garden'] },
+  christmas: { prop: 'gift-carol', captions: ['is exchanging Christmas gifts', 'is singing Christmas carols'] },
+  halloween: { prop: 'trick-treat', captions: ['is sharing Halloween treats', "is carrying a jack-o'-lantern"] },
+  'new-year': { prop: 'sparkler', captions: ['is lighting a New Year sparkler', 'is celebrating the New Year'] },
+  valentine: { prop: 'flower-gift', captions: ['is gifting Valentine flowers', 'is sharing Valentine chocolates'] },
+}
+
+export function officeGardenHolidayActivity(date: Date, slot = 0): OfficeGardenHolidayActivity | null {
+  const holiday = officeSky(date).holiday
+  if (!holiday) return null
+  const entry = gardenFestivals[holiday]
+  const index = Number.isFinite(slot) ? ((Math.trunc(slot) % 2) + 2) % 2 : 0
+  return { holiday, prop: entry.prop, activity: entry.captions[index] }
+}
 const festivals: Record<Holiday, OfficeSeasonalActivity> = {
   'new-year': { label: 'New Year · celebration snacks', action: 'snack' },
   songkran: { label: 'Songkran · water play', action: 'water' },

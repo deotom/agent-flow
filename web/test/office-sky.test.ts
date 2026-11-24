@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { gardenWetness, moonAge, officeClouds, officeSky, officeSkyIcon, skyEvent, skyHoliday, skyPhase, skySeason, skyWeather, SKY_EVENT_SLOT_MS } from '../lib/office-sky'
-import { drawOfficeSky, drawOfficeSkyBalloon } from '../components/agent-visualizer/office/office-sky-art'
+import { DESKTOP_BACKGROUND_SKY_EVENTS, drawOfficeSky, drawOfficeSkyBackgroundEvents, drawOfficeSkyBalloon } from '../components/agent-visualizer/office/office-sky-art'
 import type {OfficeScene} from '../lib/office-types'
 
 const at = (y: number, m: number, d: number, h = 12, min = 0, s = 0) => new Date(y, m - 1, d, h, min, s)
@@ -20,6 +20,80 @@ test('paints the Desktop balloon only on the sky layer behind the garden',()=>{
  scene.floors[0].desktopArt=false
  drawOfficeSky(canvas,scene,1,date,sky)
  assert.equal(ellipses,6)
+})
+
+test('routes distant Desktop sky events and New Year night fireworks behind the garden foliage layer',()=>{
+ const noop=()=>{}
+ const grad={addColorStop:noop}
+ const mkCtx=()=>{
+  const ops:string[]=[]
+  let fillStyle='',strokeStyle=''
+  const rec=(op:string)=>(...args:unknown[])=>{ops.push(`${op}:${String(fillStyle)}:${String(strokeStyle)}:${args.map(v=>typeof v==='number'?v.toFixed(2):String(v)).join(',')}`)}
+  const c={
+   set fillStyle(v:string){fillStyle=v},
+   get fillStyle(){return fillStyle},
+   set strokeStyle(v:string){strokeStyle=v},
+   get strokeStyle(){return strokeStyle},
+   lineWidth:1,globalAlpha:1,lineCap:'butt',lineJoin:'miter',
+   save:noop,restore:noop,beginPath:noop,closePath:noop,rect:noop,clip:noop,
+   translate:noop,rotate:noop,scale:noop,setLineDash:noop,
+   moveTo:rec('moveTo'),lineTo:rec('lineTo'),quadraticCurveTo:rec('quad'),bezierCurveTo:rec('bezier'),arcTo:noop,
+   fill:rec('fill'),fillRect:rec('fillRect'),stroke:rec('stroke'),ellipse:rec('ellipse'),arc:rec('arc'),
+   createLinearGradient:()=>grad,createRadialGradient:()=>grad,
+  } as unknown as CanvasRenderingContext2D
+  return {c,ops}
+ }
+ const desktopScene=():OfficeScene=>({
+  width:450,height:500,
+  floors:[{id:'lounge',kind:'lounge',sessionId:null,title:'Garden',subtitle:'',color:'#abc',y:0,height:188,actorKeys:[],desktopArt:true}],
+  actors:[],quietTeams:[],totalAgents:0,finishedCount:0,
+ })
+ const date=at(2026,11,23)
+ const backgroundKinds=['balloon','plane','night-plane','birds','shooting-star','rainbow','ufo'] as const
+ for(const kind of backgroundKinds){
+  assert.ok(DESKTOP_BACKGROUND_SKY_EVENTS.has(kind),`${kind} is in DESKTOP_BACKGROUND_SKY_EVENTS`)
+  const phase=kind==='night-plane'||kind==='shooting-star'||kind==='ufo'?'night' as const:'day' as const
+  const baseSky={...officeSky(date),phase,weather:'clear' as const,holiday:null,event:null}
+  const eventSky={...baseSky,event:{kind,seed:.5,progress:kind==='shooting-star'?.6:.5}}
+  const fgBase=mkCtx(),fgEv=mkCtx(),bgEv=mkCtx()
+  drawOfficeSky(fgBase.c,desktopScene(),1,date,baseSky)
+  drawOfficeSky(fgEv.c,desktopScene(),1,date,eventSky)
+  drawOfficeSkyBackgroundEvents(bgEv.c,desktopScene(),1,date,eventSky)
+  assert.deepEqual(fgEv.ops,fgBase.ops,`foreground sky skips Desktop background event ${kind}`)
+  assert.ok(bgEv.ops.length>0,`background sky layer paints Desktop event ${kind}`)
+ }
+ const foregroundKinds=['cat','butterflies','fireflies','leaves','kite','drone'] as const
+ for(const kind of foregroundKinds){
+  assert.ok(!DESKTOP_BACKGROUND_SKY_EVENTS.has(kind),`${kind} stays on foreground sky`)
+  const phase=kind==='fireflies'?'night' as const:'day' as const
+  const baseSky={...officeSky(date),phase,weather:'clear' as const,holiday:null,event:null}
+  const eventSky={...baseSky,event:{kind,seed:.5,progress:.5}}
+  const fgBase=mkCtx(),fgEv=mkCtx(),bgEv=mkCtx()
+  drawOfficeSky(fgBase.c,desktopScene(),1,date,baseSky)
+  drawOfficeSky(fgEv.c,desktopScene(),1,date,eventSky)
+  drawOfficeSkyBackgroundEvents(bgEv.c,desktopScene(),1,date,eventSky)
+  assert.ok(fgEv.ops.length>fgBase.ops.length,`foreground sky still paints ${kind}`)
+  assert.equal(bgEv.ops.length,0,`background sky layer skips foreground event ${kind}`)
+ }
+ const nyDate=at(2026,1,1,21)
+ const nyBase={...officeSky(nyDate),phase:'night' as const,weather:'clear' as const,holiday:null,event:null}
+ const nyHoliday={...nyBase,holiday:'new-year' as const}
+ const nyFgBase=mkCtx(),nyFgHol=mkCtx(),nyBgHol=mkCtx()
+ drawOfficeSky(nyFgBase.c,desktopScene(),1,nyDate,nyBase)
+ drawOfficeSky(nyFgHol.c,desktopScene(),1,nyDate,nyHoliday)
+ drawOfficeSkyBackgroundEvents(nyBgHol.c,desktopScene(),1,nyDate,nyHoliday)
+ assert.deepEqual(nyFgHol.ops,nyFgBase.ops,'foreground sky skips Desktop New Year night fireworks')
+ assert.ok(nyBgHol.ops.length>0,'background sky layer paints Desktop New Year night fireworks')
+ const webScene=desktopScene()
+ webScene.floors[0].desktopArt=false
+ const planeSky={...officeSky(date),phase:'day' as const,weather:'clear' as const,holiday:null,event:{kind:'plane' as const,seed:.5,progress:.5}}
+ const planeBase={...planeSky,event:null}
+ const webBase=mkCtx(),webPlane=mkCtx(),webBg=mkCtx()
+ drawOfficeSky(webBase.c,webScene,1,date,planeBase)
+ drawOfficeSky(webPlane.c,webScene,1,date,planeSky)
+ drawOfficeSkyBackgroundEvents(webBg.c,webScene,1,date,planeSky)
+ assert.ok(webPlane.ops.length>webBase.ops.length,'non-Desktop garden still paints plane in drawOfficeSky')
+ assert.equal(webBg.ops.length,0,'background layer does not paint non-Desktop plane')
 })
 
 test('keeps the garden wet through rain and dries it by local time after a wet hour',()=>{

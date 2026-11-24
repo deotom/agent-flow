@@ -25,6 +25,8 @@ it('keeps indoor rainy dress light and adds actual shoulder protection outdoors'
   assert.equal(officeWardrobeFor(officeWardrobeTheme(new Date(2026,3,1,12)),7,false).layer,'light')
   assert.equal(officeWardrobeFor(officeWardrobeTheme(new Date(2026,10,1,12)),7,false).layer,'knit')
   assert.deepEqual(officeWardrobeFor(theme,7,true),officeWardrobeFor(theme,7,true))
+  assert.equal(officeWardrobeFor(theme,7,false).outdoor,false)
+  assert.equal(officeWardrobeFor(theme,7,true).outdoor,true)
   assert.notEqual(officeWardrobeFor(theme,7,true).accent,officeWardrobeFor(theme,8,true).accent)
   assert.ok(Number.isFinite(officeWardrobeFor(theme,NaN,true).variant))
 })
@@ -63,4 +65,43 @@ it('dresses painted garments with compact collar and chest accents instead of si
   drawOfficeWardrobe(plain.c,appearance,cool,false,true)
   assert.equal(scarfed.paths.length,0)
   assert.ok(plain.paths.length>0)
+})
+
+it('paints distinct festive outdoor collar garments for all 6 holidays within chest bounds',()=>{
+  const holidayDates=[
+    new Date(2026,10,24,12), // loy-krathong
+    new Date(2026,3,14,12),  // songkran
+    new Date(2026,11,25,12), // christmas
+    new Date(2026,9,31,12),  // halloween
+    new Date(2027,0,1,12),   // new-year
+    new Date(2026,1,14,12),  // valentine
+  ]
+  const signatures=new Set<string>()
+  for(const d of holidayDates){
+    const pts:{x:number;y:number}[]=[]
+    const ops:string[]=[]
+    let fillStyle='',strokeStyle=''
+    const noop=()=>{}
+    const track=(op:string)=>(...args:number[])=>{
+      ops.push(`${op}:${fillStyle}:${strokeStyle}:${args.map(v=>v.toFixed(2)).join(',')}`)
+      if(op==='moveTo'||op==='lineTo'||op==='fillRect'||op==='ellipse') pts.push({x:args[0],y:args[1]})
+    }
+    const c={
+      set fillStyle(v:string){fillStyle=v},get fillStyle(){return fillStyle},
+      set strokeStyle(v:string){strokeStyle=v},get strokeStyle(){return strokeStyle},
+      lineWidth:1,globalAlpha:1,lineCap:'butt',lineJoin:'miter',
+      save:noop,restore:noop,beginPath:noop,closePath:noop,translate:noop,rotate:noop,scale:noop,setLineDash:noop,
+      moveTo:track('moveTo'),lineTo:track('lineTo'),quadraticCurveTo:noop,bezierCurveTo:noop,
+      fillRect:track('fillRect'),ellipse:track('ellipse'),arc:track('arc'),
+      fill(){ops.push(`fill:${fillStyle}`)},stroke(){ops.push(`stroke:${strokeStyle}`)},
+    } as unknown as CanvasRenderingContext2D
+    const look=officeWardrobeFor(officeWardrobeTheme(d),appearance.slot,true)
+    assert.equal(look.outdoor,true)
+    drawOfficeWardrobe(c,appearance,look,false,true)
+    assert.ok(pts.length>0)
+    assert.ok(pts.every(p=>p.y>=-39&&p.y<=-28&&Math.abs(p.x)<=8))
+    assert.ok(pts.reduce((s,p)=>s+p.x,0)/pts.length>0)
+    signatures.add(ops.join('|'))
+  }
+  assert.equal(signatures.size,6)
 })

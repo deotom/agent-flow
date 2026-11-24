@@ -18,7 +18,7 @@ import { drawOfficeAvatar, drawOfficeFrame, officeAmbient } from './office-art'
 import {mergeOfficeHolograms,pruneOfficeHolograms,officeHologramFrames,type OfficeHologramState} from '../../../lib/office-hologram'
 import {drawOfficeHolograms} from './office-hologram-art'
 import { drawOfficeDaylight } from './office-daylight-art'
-import { drawOfficeSkyBalloon } from './office-sky-art'
+import { drawOfficeSkyBackgroundEvents } from './office-sky-art'
 import { officeDaylight, officeDesktopGardenLighting } from '../../../lib/office-daylight'
 import { officeWorkEvents, officeWorkPulse, officeWorkStation } from '../../../lib/office-work'
 import {officeActorAtWorkPlace,officeSceneAtWorkPlaces,officeWorkPresenceTarget,rememberOfficeWorkPlace,type OfficeWorkPlace} from '../../../lib/office-work-presence'
@@ -27,7 +27,7 @@ import { roomDesktopPlanningDesk } from '../../../lib/office-room-design'
 import { officeLeisureObjects, nearestLeisureActor, createOfficeLeisureTrip, OFFICE_OBJECT_NAMES } from '../../../lib/office-leisure'
 import { officeInteriorDoor, officeDoorBounds, officeInsideLift, officeLanding, officeNavigation } from '../../../lib/office-navigation'
 import { officeSky, officeSkyIcon } from '../../../lib/office-sky'
-import { officeSeasonalActivity, officeSeasonalObjects } from '../../../lib/office-seasonal'
+import { officeGardenHolidayActivity, officeSeasonalActivity, officeSeasonalObjects } from '../../../lib/office-seasonal'
 import {createOfficeLift,officeGardenLiftButton,toggleOfficeGardenLift,reserveOfficeLiftTrip,officeLiftFrame,restoreOfficeLiftCall,shiftOfficeLiftTime,cancelOfficeLiftTrips,type OfficeLiftState} from '../../../lib/office-lift'
 import { addOfficeArrivals, advanceOfficeArrivals, officeActorsWithArrivals } from '../../../lib/office-arrivals'
 import { useOfficeLayout } from './use-office-layout'
@@ -410,7 +410,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     const ratio = Math.max(1, Math.min(4, Math.ceil((element.clientWidth || input.scene.width) * (window.devicePixelRatio || 1) / input.scene.width * 4) / 4))
     const w = Math.round(input.scene.width * ratio), h = Math.round(input.scene.height * ratio)
     if (element.width !== w || element.height !== h) { element.width = w; element.height = h }
-    const dailyActors=daily.current!.actors(input.scene,motionClock.current)
+    const dailyActors=daily.current!.actors(input.scene,motionClock.current,wallDate)
     const overrides=new Map([...leadOrigins.current,...[...leisureVisual.current].map(([key,value])=>[key,value.actor] as const)])
     for(const actor of dailyActors)overrides.set(actor.key,actor)
     const meeting=officeMeetingActor(active.current,input.scene,motionClock.current)
@@ -439,7 +439,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
       if(skyElement.width!==w||skyElement.height!==Math.round(surfaceHeight*ratio)){skyElement.width=w;skyElement.height=Math.round(surfaceHeight*ratio)}
       skyContext.setTransform(ratio,0,0,ratio,0,0)
       drawOfficeDaylight(skyContext,input.scene,wallDate,elapsed.current)
-      if(input.enabled)drawOfficeSkyBalloon(skyContext,input.scene,elapsed.current,wallDate)
+      if(input.enabled)drawOfficeSkyBackgroundEvents(skyContext,input.scene,elapsed.current,wallDate)
     }
     const sharingPeer=daily.current!.sharingPeer(input.scene,motionClock.current,actors)
     const greeting = greet.current && greet.current.until > elapsed.current ? greet.current.key : sharingPeer
@@ -710,7 +710,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   }, [visualScene,moving,visualTick])
   const restByKey=new Map([...leadOrigins.current,...restMoving.map(m=>[m.actor.key,m.actor] as const)])
   if(enabled&&baseline.current?.enabled&&baseline.current.scene!==scene)for(const change of officeLeadRestTransitions(baseline.current.scene,scene))if(!restByKey.has(change.actorKey))restByKey.set(change.actorKey,officeActorAtWorkPlace(baseline.current.scene,change.from,workPlaces.current.get(change.actorKey)))
-  const dailyActors=daily.current!.actors(visualScene,motionClock.current)
+  const dailyActors=daily.current!.actors(visualScene,motionClock.current,new Date(now))
   for(const actor of dailyActors)restByKey.set(actor.key,actor)
   const meeting=officeMeetingActor(active.current,visualScene,motionClock.current)
   if(meeting)restByKey.set(meeting.key,meeting)
@@ -723,9 +723,12 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     const newTeams=new Set(priorDisplay.snapshots.length?snapshots.filter(s=>!priorIds.has(s.sessionId)).map(s=>s.sessionId):[])
     displayedArrivals=addOfficeArrivals(displayedArrivals,officePresenceEvents(priorDisplay.scene,scene,populatedOfficeTeams(priorDisplay.snapshots),Date.now(),newTeams),priorDisplay.scene,scene,motionClock.current,structuredClone(lift.current!))
   }
+  const wallDateNow=new Date(now)
   const allDisplayed=officeActorsWithArrivals(visualScene,displayedArrivals,motionClock.current).map(actor=>{
     const override=moving?.actor.key===actor.key?moving.actor:restByKey.get(actor.key)
-    return override?{...override,agent:actor.agent,task:actor.task}:(displayedArrivals.has(actor.key)?actor:officeActorAtWorkPlace(visualScene,actor,workPlaces.current.get(actor.key)))
+    const base=override?{...override,agent:actor.agent,task:actor.task}:(displayedArrivals.has(actor.key)?actor:officeActorAtWorkPlace(visualScene,actor,workPlaces.current.get(actor.key)))
+    const festive=base.party&&base.floorId==='lounge'?officeGardenHolidayActivity(wallDateNow,base.appearance.slot):null
+    return festive?{...base,activity:festive.activity}:base
   })
   for(const actor of dailyActors)if(!allDisplayed.some(a=>a.key===actor.key))allDisplayed.push(actor)
   if(moving&&!allDisplayed.some(a=>a.key===moving.actor.key))allDisplayed.push(moving.actor)

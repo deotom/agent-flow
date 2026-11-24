@@ -691,4 +691,15 @@ it('draws lunch eating trays after avatars and keeps Desktop ambient fireflies/b
   drawOfficeFrame(idleOut,scene([leadTeamFloor],[idleLead]),options({motion:false,time:3,avatarArt:parts}))
   assert.ok(!idleOut.calls.some(call=>call.fill==='#efe0b8'),'idle Desktop root lead does not hold a forced book at the Lead table')
   assert.ok(!idleOut.calls.some(call=>call.fill==='#fff0cf'),'idle Desktop root lead does not hold an automatic mug at the Lead table')
+
+  const restingGarden={key:'guest',sessionId:'s',agent:{status:'idle' as const,role:'member' as const,runtime:null,activities:[]},task:null,parentKey:null,
+    appearance:officeAppearance(0),floorId:'lounge',zone:'lounge' as const,stand:true,x:140,y:145} as unknown as OfficeScene['actors'][number]
+  const loyOut=ctx()
+  drawOfficeFrame(loyOut,scene([desktopGarden],[restingGarden]),options({motion:false,time:3,date:new Date(2026,10,24,20),avatarArt:parts,roomArt}))
+  assert.ok(loyOut.calls.some(call=>call.fill==='#4a8248'),'Loy Krathong garden actor holds a lotus krathong base')
+  assert.ok(loyOut.calls.some(call=>call.fill==='#ffd269'),'Loy Krathong garden actor shows krathong candlelight')
+  assert.ok(loyOut.calls.every(call=>call.args.every(a=>typeof a!=='number'||Number.isFinite(a))),'holiday garden frame emits no NaN coordinates')
+  const plainOut=ctx()
+  drawOfficeFrame(plainOut,scene([desktopGarden],[restingGarden]),options({motion:false,time:3,date:new Date(2026,10,22,20),avatarArt:parts,roomArt}))
+  assert.ok(!plainOut.calls.some(call=>call.fill==='#4a8248'),'non-holiday garden actor does not hold a krathong')
 })

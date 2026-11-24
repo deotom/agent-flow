@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { officeSeasonalActivity, officeSeasonalObjects } from '../lib/office-seasonal'
+import { officeGardenHolidayActivity, officeSeasonalActivity, officeSeasonalObjects } from '../lib/office-seasonal'
 import { skyEventKinds, skyEvent, skyPhase, skyWeather } from '../lib/office-sky'
 import { skyFor } from '../components/agent-visualizer/office/office-sky-art'
 
@@ -18,6 +18,29 @@ test('activities follow the local calendar and seasons without changing real job
   assert.equal(object.kind,'water');assert.equal(object.x,54);assert.equal(object.y,497.5)
   assert.deepEqual(officeSeasonalObjects({...floor,desktopArt:true},450,new Date(2026,3,13,12)),[])
   assert.deepEqual(officeSeasonalObjects({...floor,kind:'team'},450,new Date()),[])
+})
+
+test('maps every holiday to distinct garden props and varied visitor captions while returning null outside holidays',()=>{
+  assert.equal(officeGardenHolidayActivity(new Date(2026,6,12,12)),null)
+  const holidayDates=[
+    new Date(2026,10,24,12), // loy-krathong
+    new Date(2026,3,14,12),  // songkran
+    new Date(2026,11,25,12), // christmas
+    new Date(2026,9,31,12),  // halloween
+    new Date(2027,0,1,12),   // new-year
+    new Date(2026,1,14,12),  // valentine
+  ]
+  const props=new Set<string>()
+  for(const d of holidayDates){
+    const a=officeGardenHolidayActivity(d,0)
+    const b=officeGardenHolidayActivity(d,1)
+    assert.ok(a&&a.activity.length>0)
+    assert.ok(b&&b.activity.length>0)
+    assert.equal(a.prop,b.prop)
+    assert.notEqual(a.activity,b.activity)
+    props.add(a.prop)
+  }
+  assert.equal(props.size,6)
 })
 
 test('event pools reflect the season and time of day', () => {

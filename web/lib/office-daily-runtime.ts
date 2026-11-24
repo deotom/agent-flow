@@ -6,6 +6,7 @@ import {officeTripFrame,type OfficeTrip} from './office-motion'
 import {cancelOfficeLiftTrips,reserveOfficeLiftTrip,type OfficeLiftState} from './office-lift'
 import {officeNavigation} from './office-navigation'
 import {skyWeather,type Weather} from './office-sky'
+import {officeGardenHolidayActivity} from './office-seasonal'
 import {emptyOfficeOutingSchedule,planOfficeRestOutings,markOfficeRestOutingAdmission,type OfficeOutingAction} from './office-rest-outings'
 import {createOfficeOutingTrip,createOfficeShopServiceTrip,officeOutingVendorPoint} from './office-outing-trips'
 import {officeDaylight} from './office-daylight'
@@ -67,7 +68,7 @@ export class OfficeDailyRuntime {
   return projected
  }
 
- actors(scene:OfficeScene,at:number):OfficeActor[] {
+ actors(scene:OfficeScene,at:number,date?:Date):OfficeActor[] {
   const surface=scene.floors.find(f=>f.kind==='lounge')
   const gardenPlaces=surface&&officeGardenPlaces(surface)
   return [...this.guests.values()].map(g=>{
@@ -78,6 +79,7 @@ export class OfficeDailyRuntime {
    const eating=g.phase==='eating'&&!g.returnNeeded
    const sharing=g.outing?.sharingUntil!==undefined&&at<g.outing.sharingUntil
    const action=g.outing?.action
+   const holidayGarden=date&&eating&&!sharing&&g.destination==='garden'?officeGardenHolidayActivity(date,canonical.appearance.slot):null
    const standing=action==='stretch'||(g.destination==='garden'&&gardenPlaces?.[g.seat]?.[2]===true)
    const smooth=(value:number)=>{const k=Math.max(0,Math.min(1,value));return k*k*(3-2*k)}
    const seatBlend=eating?Math.min(smooth((at-(g.restStartedAt??at))/350),smooth((g.until-at)/350)):0
@@ -87,7 +89,7 @@ export class OfficeDailyRuntime {
    const outingActivity=action==='snack'?'is enjoying a snack':action==='drink'?'is enjoying a warm drink':action==='stretch'?'is stretching their legs':'is watching the stars'
    return {...canonical,...g.physical,...(frame?frame.point:{}),floorId:frame?.floorId??g.physical.floorId,
     agent:canonical.agent,task:canonical.task,hidden:false,zone:g.returnNeeded?canonical.zone:'lounge',party:false,stand:Boolean(walking||waiting||eating&&standing),
-    activity:sharing?(g.outing?.sharingWith?'is sharing snacks with a teammate':'is putting the snacks away'):eating?(g.outing?outingActivity:g.kind==='lunch'?'is enjoying lunch':g.kind==='coffee'?'is taking a coffee break':'is having afternoon tea'):g.trip?.caption??(g.returnNeeded?'is returning':g.shop?.stage==='waiting'?'is waiting at the shop':'is waiting for a short break'),
+    activity:sharing?(g.outing?.sharingWith?'is sharing snacks with a teammate':'is putting the snacks away'):eating?(holidayGarden?holidayGarden.activity:g.outing?outingActivity:g.kind==='lunch'?'is enjoying lunch':g.kind==='coffee'?'is taking a coffee break':'is having afternoon tea'):g.trip?.caption??(g.returnNeeded?'is returning':g.shop?.stage==='waiting'?'is waiting at the shop':'is waiting for a short break'),
     pose:sharing?{sit:!standing,hand:false,offer:.6,mug:false,objectAction:'snack'}:walking?{...frame.pose,...(action==='drink'?{mug:true}:{})}:waiting?{walk:false,sit:false}:eating?{...restPose,seatBlend}:{sit:false,mug:false}}
   })
  }

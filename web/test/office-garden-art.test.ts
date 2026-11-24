@@ -1,6 +1,6 @@
 import { it } from 'node:test'
 import assert from 'node:assert/strict'
-import { drawOfficeGarden, drawOfficeGardenActorShadow } from '../components/agent-visualizer/office/office-garden-art'
+import { drawOfficeGarden, drawOfficeGardenActorShadow, drawOfficeHolidayGarden } from '../components/agent-visualizer/office/office-garden-art'
 import { officeDaylight } from '../lib/office-daylight'
 import type { OfficeScene, OfficeFloor } from '../lib/office-types'
 
@@ -56,4 +56,36 @@ it('is stable for the same local day, animates optionally and skips every indoor
   assert.deepEqual(a.calls,b.calls)
   assert.notDeepEqual(a.calls,moving.calls)
   for(const kind of ['team','break','quiet'] as const){const r=recorder();drawOfficeGarden(r.c,scene(kind),date,2);assert.equal(r.calls.length,0)}
+})
+
+it('renders distinct holiday garden decor left of the lift across all 6 holidays and skips non-holidays and indoor floors',()=>{
+  const nonHoliday=new Date(2026,10,12,12)
+  const plain=recorder(),sc=scene()
+  const before=structuredClone(sc)
+  drawOfficeHolidayGarden(plain.c,sc,nonHoliday,1)
+  assert.equal(plain.calls.length,0)
+  assert.deepEqual(sc,before)
+  const holidayDates=[
+    new Date(2026,10,24,19), // loy-krathong
+    new Date(2026,3,14,12),  // songkran
+    new Date(2026,11,25,12), // christmas
+    new Date(2026,9,31,19),  // halloween
+    new Date(2027,0,1,20),   // new-year
+    new Date(2026,1,14,12),  // valentine
+  ]
+  const rendered:unknown[][]=[]
+  for(const d of holidayDates){
+    const r=recorder()
+    drawOfficeHolidayGarden(r.c,sc,d,1)
+    assert.ok(r.calls.length>0,`holiday garden paints decor for ${d.toISOString()}`)
+    const xs=r.calls.filter(c=>c.op==='translate'||c.op==='fillRect'||c.op==='ellipse'||c.op==='moveTo'||c.op==='lineTo').map(c=>Number(c.args[0])).filter(Number.isFinite)
+    assert.ok(xs.every(x=>x<sc.width*.80),`holiday garden stays clear of Desktop lift (max x=${Math.max(...xs)})`)
+    for(const prev of rendered) assert.notDeepEqual(r.calls,prev)
+    rendered.push(r.calls)
+    for(const kind of ['team','break','quiet'] as const){
+      const indoor=recorder()
+      drawOfficeHolidayGarden(indoor.c,scene(kind),d,1)
+      assert.equal(indoor.calls.length,0)
+    }
+  }
 })

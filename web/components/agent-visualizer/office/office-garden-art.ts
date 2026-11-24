@@ -1,5 +1,5 @@
 import type { OfficeScene } from '../../../lib/office-types'
-import { gardenWetness, officeSky, skyPhase, type Season } from '../../../lib/office-sky'
+import { gardenWetness, officeSky, skyPhase, type Holiday, type Season } from '../../../lib/office-sky'
 import { officeDaylight } from '../../../lib/office-daylight'
 
 type Ctx=CanvasRenderingContext2D
@@ -131,6 +131,126 @@ function rabbit(c:Ctx,time:number){
   oval(c,5.2,-5.7,.55,blink?.18:.65,'#594d40');oval(c,7.2,-4.3,.6,.45,'#c6948a')
 }
 
+function lannaLantern(c:Ctx,sway:number,lit:boolean,hue:string,glow:string){
+  c.save();c.rotate(sway)
+  stroke(c,[[0,0],[0,5]],'#6b4b2f',.9)
+  if(lit)oval(c,0,12,11,11,`${glow}33`)
+  oval(c,0,11.5,4.8,6.5,lit?glow:hue)
+  stroke(c,[[-4.5,11.5],[4.5,11.5]],'#5c3b1e88',.7)
+  stroke(c,[[-3.8,8.5],[3.8,8.5]],'#5c3b1e88',.6)
+  stroke(c,[[-3.8,14.5],[3.8,14.5]],'#5c3b1e88',.6)
+  c.fillStyle='#8c5c2e';c.fillRect(-3,5,6,1.6);c.fillRect(-2.6,17.5,5.2,1.6)
+  stroke(c,[[-1.2,19],[-1.6,23],[0,19],[0,24],[1.2,19],[1.6,23]],'#f2c96d',.7)
+  c.restore()
+}
+function buntingSwag(c:Ctx,x0:number,y0:number,x1:number,y1:number,sag:number,count:number,colors:readonly string[],time:number){
+  const midX=(x0+x1)/2,midY=(y0+y1)/2+sag
+  c.strokeStyle='#6d5034';c.lineWidth=.8;c.beginPath();c.moveTo(x0,y0);c.quadraticCurveTo(midX,midY,x1,y1);c.stroke()
+  for(let i=0;i<count;i++){
+    const t=(i+.5)/count,px=(1-t)*(1-t)*x0+2*(1-t)*t*midX+t*t*x1,py=(1-t)*(1-t)*y0+2*(1-t)*t*midY+t*t*y1
+    const flutter=time?Math.sin(time*1.8+i)*.6:0
+    c.beginPath();c.moveTo(px-2.6,py);c.lineTo(px+2.6,py);c.lineTo(px+flutter,py+5.4);c.closePath()
+    c.fillStyle=colors[i%colors.length];c.fill()
+  }
+}
+
+/** Subtle per-holiday garden props and overhead accents, kept clear of the right lift shaft. */
+export function drawOfficeHolidayGarden(c:Ctx,scene:OfficeScene,date:Date,time:number,overrideHoliday?:Holiday|null):void{
+  const garden=scene.floors.find(f=>f.kind==='lounge'),h=garden?.height??0
+  if(!garden||!h)return
+  const sky=officeSky(date),holiday=overrideHoliday===undefined?sky.holiday:overrideHoliday
+  if(!holiday)return
+  const desktop=Boolean(garden.desktopArt),lit=gardenLampsOn(date),w=scene.width,k=w/450
+  const place=(x:number,y:number,draw:()=>void)=>{c.save();c.translate(x*w,garden.y+y*h);c.scale(k,k);draw();c.restore()}
+  c.save()
+  c.beginPath();c.rect(0,garden.y,w*(desktop?.80:.82),h*.89);c.clip()
+  const focalX=desktop?.415:.23,focalY=desktop?.84:.735
+  const canopyX0=w*(desktop?.18:.14),canopyY0=garden.y+h*(desktop?.36:.28)
+  const stallX0=w*(desktop?.46:.40),stallX1=w*(desktop?.68:.66),stallY=garden.y+h*(desktop?.43:.34)
+  if(holiday==='loy-krathong'){
+    buntingSwag(c,stallX0,stallY,stallX1,stallY,7*k,9,['#f6b642','#f28b40','#ffe17d'],time)
+    for(const [i,[lx,ly,hue,glow]] of ([[.14,.32,'#f29b38','#ffd37d'],[.24,.36,'#eb7d4b','#ffe299'],[.48,.43,'#f6b848','#ffe594'],[.57,.44,'#e88b5a','#ffd479'],[.66,.43,'#f6b848','#ffe594']] as const).entries()){
+      place(lx,ly,()=>lannaLantern(c,time?Math.sin(time*1.3+i*1.1)*.08:0,lit,hue,glow))
+    }
+    place(focalX,focalY,()=>{
+      oval(c,0,-2,15,4.2,'#5d432e');oval(c,0,-3,13.2,3.1,'#3f7380')
+      for(const [kx,ky,petal] of [[-5,-3.2,'#f29db5'],[5,-2.6,'#ffd56b']] as const){
+        const bob=time?Math.sin(time*2+kx)*.5:0
+        oval(c,kx,ky+bob,4.2,1.6,'#538748')
+        oval(c,kx-1.5,ky-1.2+bob,1.5,1.1,petal);oval(c,kx+1.5,ky-1.2+bob,1.5,1.1,petal)
+        c.fillStyle='#ffe8c2';c.fillRect(kx-.5,ky-4+bob,1,2.5)
+        oval(c,kx+(time?Math.sin(time*5+kx)*.3:0),ky-5.2+bob,1.2,1.6,'#ffd269')
+      }
+    })
+  }else if(holiday==='songkran'){
+    buntingSwag(c,canopyX0,canopyY0,stallX1,stallY,12*k,12,['#59c3d4','#f2ca50','#ef7ca2','#74cb7c'],time)
+    buntingSwag(c,stallX0,stallY,stallX1,stallY,6*k,8,['#f2ca50','#59c3d4','#ef7ca2'],time)
+    place(focalX,focalY,()=>{
+      oval(c,0,-2,11,4,'#9d7536');oval(c,0,-4,11,3.2,'#d4ad64');oval(c,0,-4.4,9.5,2.2,'#7fc2d4')
+      for(const [px,py,col] of [[-4,-4.5,'#fff9eb'],[0,-4,'#f6c94d'],[4,-4.8,'#fff9eb'],[2,-3.6,'#f697b5']] as const)oval(c,px,py,1.3,1,col)
+      if(time){const sp=(time*2)%1;oval(c,-6+sp*12,-7-Math.sin(sp*Math.PI)*4,1,1,'#bcecf8')}
+    })
+  }else if(holiday==='christmas'){
+    buntingSwag(c,stallX0,stallY,stallX1,stallY,6*k,9,['#3d7850','#c2524c','#e8c566'],time)
+    for(let i=0;i<7;i++){
+      const bx=stallX0+(stallX1-stallX0)*(i+.5)/7,by=stallY+Math.sin((i+.5)/7*Math.PI)*6*k
+      const on=!time||Math.sin(time*3+i*1.4)>-.4
+      oval(c,bx,by,1.8*k,1.8*k,on?(i%2?'#ffd875':'#ff7666'):'#6b553e')
+    }
+    place(focalX,focalY,()=>{
+      c.fillStyle='#6d4528';c.fillRect(-2,-6,4,6)
+      c.beginPath();c.moveTo(0,-27);c.lineTo(-10,-5);c.lineTo(10,-5);c.closePath();c.fillStyle='#3b764e';c.fill()
+      c.beginPath();c.moveTo(0,-21);c.lineTo(-12,-5);c.lineTo(12,-5);c.closePath();c.fillStyle='#2f6340';c.fill()
+      oval(c,0,-28,2.2,2.2,'#ffe084')
+      for(const [dx,dy,col] of [[-3,-15,'#ef6e66'],[4,-11,'#f2ca58'],[-4,-8,'#78b8e6']] as const)oval(c,dx,dy,1.5,1.5,col)
+      c.fillStyle='#c45258';c.fillRect(9,-6,6,6);c.fillStyle='#efd17a';c.fillRect(11.3,-6,1.4,6)
+      c.fillStyle='#d1a554';c.fillRect(-15,-5,6,5);c.fillStyle='#6fa379';c.fillRect(-12.7,-5,1.4,5)
+    })
+  }else if(holiday==='halloween'){
+    buntingSwag(c,stallX0,stallY,stallX1,stallY,6*k,8,['#7b5ea7','#d9843b','#46344e'],time)
+    for(const [i,[gx,gy]] of [[.17,.35],[.27,.39]].entries()){
+      place(gx,gy,()=>{
+        const sway=time?Math.sin(time*1.6+i)*.1:0
+        c.save();c.rotate(sway);stroke(c,[[0,0],[0,5]],'#4b3a54',.8)
+        oval(c,0,10,4.2,5,'#f4efe2');oval(c,-1.3,9,.6,.8,'#3a2d40');oval(c,1.3,9,.6,.8,'#3a2d40')
+        c.restore()
+      })
+    }
+    place(focalX,focalY,()=>{
+      for(const [px,r] of [[-4.5,6.2],[5.5,4.6]] as const){
+        oval(c,px,-r*.68,r,r*.76,'#d97834')
+        c.fillStyle='#5c7542';c.fillRect(px-.7,-r*1.5,1.4,2.2)
+        oval(c,px-2,-r*.8,1,1,'#ffe07d');oval(c,px+2,-r*.8,1,1,'#ffe07d')
+      }
+    })
+  }else if(holiday==='new-year'){
+    buntingSwag(c,canopyX0,canopyY0,stallX1,stallY,10*k,11,['#f2cb63','#fff2b8','#e87b6b','#6dc2e6'],time)
+    buntingSwag(c,stallX0,stallY,stallX1,stallY,6*k,9,['#f2cb63','#fff2b8','#d9874c'],time)
+    place(focalX,focalY,()=>{
+      c.fillStyle='#d4a64a';c.fillRect(-10,-7,8,7);c.fillStyle='#fff3c4';c.fillRect(-6.8,-7,1.5,7)
+      c.fillStyle='#c45b58';c.fillRect(1,-6,8,6);c.fillStyle='#f4d47c';c.fillRect(4.3,-6,1.5,6)
+      const pulse=time?.6+.4*Math.sin(time*6):1
+      oval(c,-6,-10,2.5*pulse,2.5*pulse,'#fff2a6');oval(c,5,-9,2.2*pulse,2.2*pulse,'#ffd269')
+    })
+  }else if(holiday==='valentine'){
+    buntingSwag(c,stallX0,stallY,stallX1,stallY,6*k,8,['#f284a4','#fbd2dc','#d4557a'],time)
+    for(const [i,[hx,hy]] of [[.49,.45],[.64,.45]].entries()){
+      place(hx,hy,()=>{
+        c.save();c.rotate(time?Math.sin(time*1.4+i)*.08:0)
+        stroke(c,[[0,0],[0,4]],'#8d5267',.8)
+        oval(c,-1.5,6.5,2.2,2.2,'#eb6d93');oval(c,1.5,6.5,2.2,2.2,'#eb6d93')
+        c.beginPath();c.moveTo(-3.6,7.4);c.lineTo(3.6,7.4);c.lineTo(0,11.6);c.closePath();c.fillStyle='#eb6d93';c.fill()
+        c.restore()
+      })
+    }
+    place(focalX,focalY,()=>{
+      oval(c,0,-2.5,8.5,3.2,'#9c6c49')
+      for(const [rx,ry,col] of [[-4,-5.5,'#e35d81'],[0,-6.5,'#f48fb1'],[4,-5.5,'#e35d81'],[-2,-4,'#f8bbd0'],[2,-4,'#c9496e']] as const)oval(c,rx,ry,2.5,2,col)
+    })
+  }
+  c.restore()
+}
+
 /** Small wildlife and plant accents live on grass margins, clear of furniture and the hatch. */
 export function drawOfficeGarden(c:Ctx,scene:OfficeScene,date:Date,time:number,light=officeDaylight(date)):void{
   const garden=scene.floors.find(f=>f.kind==='lounge'),h=garden?.height??0
@@ -146,6 +266,7 @@ export function drawOfficeGarden(c:Ctx,scene:OfficeScene,date:Date,time:number,l
     const paintLamp=lit?drawLitGardenLamp:drawUnlitGardenLamp
     for(const [x,y] of paintedLampCenters)paintLamp(c,x*w,garden.y+y*h,k,h/195)
   }
+  if(sky.holiday)drawOfficeHolidayGarden(c,scene,date,time,sky.holiday)
   const desktop=Boolean(garden.desktopArt)
   c.globalAlpha=(Number.isFinite(c.globalAlpha)?c.globalAlpha:1)*(afterDark?.7:1)
   c.beginPath();c.rect(w*(desktop?.02:.025),garden.y+h*(desktop?.60:.61),w*(desktop?.77:.795),h*(desktop?.275:.145));c.clip()

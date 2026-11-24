@@ -122,6 +122,59 @@ function collarWrap(c:Ctx,cx:number,back:boolean,color:string,depth:number){
   c.fillStyle='#2a17150f';c.fill()
   c.strokeStyle='#4b3025a0';c.lineWidth=.6;c.stroke()
 }
+/** Festive collar/lapel attire kept within the collar-to-upper-chest zone (y ∈ [-38.5, -29], |x| <= 8). */
+function drawPaintedHolidayGarment(c:Ctx,look:OfficeWardrobeLook,cx:number,back:boolean,profile:boolean){
+  const {holiday,variant,trim}=look
+  if(!holiday)return
+  if(holiday==='loy-krathong'){
+    const silk=['#b85a6f','#4e7c8a','#c88a42'][variant%3]
+    collarWrap(c,cx,back,silk,2.8)
+    seam(c,[[cx-3.4,-35.6],[cx,-34.6],[cx+3.4,-35.6]],'#e3be68',.9)
+    if(!back){
+      const sx=cx+(profile?2.4:1.8)
+      seam(c,[[sx-1,-35.2],[sx+1,-30.2]],silk,2.2)
+      seam(c,[[sx-1,-35.2],[sx+1,-30.2]],'#e3be68',.6)
+    }
+  }else if(holiday==='songkran'){
+    collarWrap(c,cx,back,'#4ca5ad',2.3)
+    for(const dx of [-3.2,-1.6,0,1.6,3.2]){
+      const by=-36.4+(back?.2:.8)*(1-Math.abs(dx)/4)
+      c.beginPath();c.ellipse(cx+dx,by,.7,.7,0,0,Math.PI*2);c.fillStyle=Math.abs(dx)<1?'#f5cb4c':'#fff8eb';c.fill()
+    }
+    if(!back){
+      const gx=cx+(profile?2.2:1.2)
+      seam(c,[[gx-.6,-34.8],[gx+.6,-30.4]],'#fff8eb',1.2)
+      c.beginPath();c.ellipse(gx+.6,-30.2,.8,.8,0,0,Math.PI*2);c.fillStyle='#e882a6';c.fill()
+    }
+  }else if(holiday==='christmas'){
+    collarWrap(c,cx,back,'#b8423f',3.1)
+    seam(c,[[cx-4.2,-34.8],[cx,-33.8],[cx+4.2,-34.8]],'#f5ead4',1)
+    if(!back){
+      const bx=cx+(profile?2.2:1.6)
+      seam(c,[[bx-.6,-34.5],[bx+.6,-30]],'#b8423f',2)
+      seam(c,[[bx-.6,-30],[bx+.8,-29.6]],'#f5ead4',1)
+      c.beginPath();c.ellipse(bx,-34.5,.8,.8,0,0,Math.PI*2);c.fillStyle='#e4be63';c.fill()
+    }
+  }else if(holiday==='halloween'){
+    collarWrap(c,cx,back,'#5f4478',2.9)
+    for(const dx of [-3.4,0,3.4]){
+      seam(c,[[cx+dx-.9,-35],[cx+dx,-33.8],[cx+dx+.9,-35]],'#d68238',.8)
+    }
+  }else if(holiday==='new-year'){
+    collarWrap(c,cx,back,'#2e3a4a',2.3)
+    const bx=cx+(profile?2.2:1.4)
+    seam(c,[[bx-1.8,-35.6],[bx+1.8,-34],[bx+1.8,-35.6],[bx-1.8,-34]],'#e4be63',1)
+    c.beginPath();c.ellipse(bx,-34.8,.85,.85,0,0,Math.PI*2);c.fillStyle='#fff1c4';c.fill()
+  }else{
+    collarWrap(c,cx,back,'#d96c8c',2.5)
+    if(!back){
+      const rx=cx+(profile?2.3:1.4)
+      seam(c,[[rx-.9,-35.2],[rx+1.1,-33.8]],'#f8c6d4',.9)
+      c.beginPath();c.ellipse(rx,-32.4,.9,.9,0,0,Math.PI*2);c.fillStyle=trim;c.fill()
+    }
+  }
+}
+
 /**
  * Painted Desktop garments are hand-painted rasters, so the season shows as a few
  * small accents at the collar and chest instead of strips over the cloth. Local
@@ -132,6 +185,10 @@ function drawPaintedSeasonAccents(c:Ctx,a:OfficeAppearance,look:OfficeWardrobeLo
   const cx=profile?2:back?.4:1
   // Below the painted chin, where the collar meets the neck.
   c.translate(0,1.3)
+  if(look.holiday&&look.outdoor){
+    drawPaintedHolidayGarment(c,look,cx,back,profile)
+    return
+  }
   if(look.layer==='knit'){
     // A compact knitted scarf, unless the actor already wears an identity scarf.
     if(a.gear!=='scarf'){

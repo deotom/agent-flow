@@ -13,7 +13,8 @@ import {officeRestConversations} from '../../../lib/office-communication'
 import {drawOfficeOutingArt,drawOfficeOutingParcel} from './office-outing-art'
 import {officeHandContacts} from '../../../lib/office-contacts'
 import {officeSharedRest} from '../../../lib/office-shared-rest'
-import {skyWeather} from '../../../lib/office-sky'
+import {officeSky,skyWeather,type Holiday} from '../../../lib/office-sky'
+import {officeGardenHolidayActivity,type OfficeHolidayGardenAction} from '../../../lib/office-seasonal'
 import {officeAppearance} from '../../../lib/office-model'
 import {officeWardrobeTheme,officeWardrobeFor,type OfficeWardrobeLook} from '../../../lib/office-wardrobe'
 import {drawOfficePaintedWorkwear,drawOfficeWardrobe,traceOfficeWorkwear} from './office-wardrobe-art'
@@ -53,7 +54,7 @@ function oval(c: Ctx, x:number,y:number,rx:number,ry:number,color:string,outline
 function round(c:Ctx,x:number,y:number,w:number,h:number,color:string,r=4){c.beginPath();c.roundRect(x,y,w,h,r);c.fillStyle=color;c.fill();c.strokeStyle='#4b3025';c.lineWidth=1.4;c.stroke()}
 
 /** Life poses layered on the base pose; all optional so callers can stay minimal. */
-export interface OfficeAvatarPose extends OfficePose { workwear?:boolean; wardrobeTransition?:OfficeWardrobeTransitionLook;wardrobe?:OfficeWardrobeLook;objectAction?:OfficeLeisureAction; stretch?: number; lean?: number; doze?: boolean; slump?: boolean; scratch?: boolean; wave?: boolean; turn?: number; cup?: boolean; face?: 1 | -1; hop?: number; runtime?: Runtime | null; party?: boolean; portrait?:boolean }
+export interface OfficeAvatarPose extends OfficePose { workwear?:boolean; wardrobeTransition?:OfficeWardrobeTransitionLook;wardrobe?:OfficeWardrobeLook;objectAction?:OfficeLeisureAction; holiday?:Holiday|null; holidayProp?:OfficeHolidayGardenAction|null; stretch?: number; lean?: number; doze?: boolean; slump?: boolean; scratch?: boolean; wave?: boolean; turn?: number; cup?: boolean; face?: 1 | -1; hop?: number; runtime?: Runtime | null; party?: boolean; portrait?:boolean }
 const shopkeeper:OfficeAppearance={...officeAppearance(0),slot:7001,kind:'human',hair:'#4d3329',skin:'#e6b18c',shirt:'#375e54',pants:'#5f4a36',gear:'cap',outfit:'overalls',cut:'crop',face:'round'}
 /** Micro-motion offsets for a pose at a given time; all zero when time is frozen at 0. */
 function idleMotion(time:number,p:OfficeAvatarPose){
@@ -119,6 +120,119 @@ function drawOfficeHead(c:Ctx,a:OfficeAppearance,back:boolean,doze:boolean){
   if(gear==='earrings'){oval(c,-13,-35,3,4,'#edc76c');oval(c,19,-35,2,3,'#edc76c')}
   if(gear==='scarf'){round(c,-14,-33,29,6,'#edc477',3);round(c,7,-32,6,17,'#edc477',2)}
 }
+function drawHolidayHeadwear(c:Ctx,holiday:Holiday,slot:number,back:boolean,time:number){
+  const alt=(((Math.trunc(slot)||0)%2)+2)%2===1
+  c.save()
+  if(holiday==='loy-krathong'){
+    if(!alt){
+      // Floral wreath/band with jasmine and gold marigold blossom.
+      c.beginPath();c.ellipse(0,-58,12.5,3.2,0,Math.PI,0);c.strokeStyle='#f7f0db';c.lineWidth=2.6;c.stroke()
+      for(const [fx,fy,col] of [[-9,-58,'#f4b63f'],[-3,-60.5,'#fff7e2'],[4,-60.5,'#f4b63f'],[10,-57.5,'#f29bb2']] as const)oval(c,fx,fy,2.1,2.1,col,false)
+    }else if(!back){
+      // Delicate side floral tuck & golden hairpin.
+      c.strokeStyle='#e8c15a';c.lineWidth=1.5;c.beginPath();c.moveTo(6,-57);c.lineTo(14,-61);c.stroke()
+      oval(c,8.5,-58.5,2.5,2.5,'#f6b840',false);oval(c,11.5,-56.5,2,2,'#fff7e2',false)
+    }
+  }else if(holiday==='songkran'){
+    if(alt&&!back){
+      // Festive tinted sunglasses.
+      round(c,-1,-49,9.5,6.8,'#42b9c7bb',2.5);round(c,10.5,-49,9.5,6.8,'#42b9c7bb',2.5)
+      c.beginPath();c.moveTo(8.5,-45.5);c.lineTo(10.5,-45.5);c.strokeStyle='#3c2a1e';c.lineWidth=1.1;c.stroke()
+    }else{
+      c.beginPath();c.ellipse(0,-58,12.5,3,0,Math.PI,0);c.strokeStyle='#6cc984';c.lineWidth=2.4;c.stroke()
+      for(const [fx,fy,col] of [[-8,-58.5,'#f26f96'],[-2,-60.8,'#f7ca45'],[5,-60.5,'#5ec6d4'],[10,-57.5,'#f26f96']] as const)oval(c,fx,fy,2.3,2.3,col,false)
+    }
+  }else if(holiday==='christmas'){
+    if(!alt){
+      // Crimson Santa hat with soft cream cuff and pompom.
+      c.save();c.translate(1,-60);c.rotate(.14)
+      c.beginPath();c.moveTo(-11,0);c.lineTo(11,0);c.quadraticCurveTo(6,-13,-4,-16);c.closePath()
+      c.fillStyle='#c44440';c.fill();c.strokeStyle='#4b302599';c.lineWidth=.9;c.stroke()
+      round(c,-12,-2.2,24,4.8,'#f6eedb',2.4)
+      oval(c,-5,-16.5,3,3,'#f6eedb',false)
+      c.restore()
+    }else{
+      for(const s of [-1,1] as const){
+        c.strokeStyle='#7a5130';c.lineWidth=1.8;c.beginPath();c.moveTo(s*6,-58);c.lineTo(s*10,-70);c.moveTo(s*8.5,-65);c.lineTo(s*13,-67);c.moveTo(s*8,-64);c.lineTo(s*5,-68);c.stroke()
+      }
+      oval(c,0,-58,2.2,2.2,'#c84c48',false)
+    }
+  }else if(holiday==='halloween'){
+    if(!alt){
+      // Mini pointed witch hat.
+      c.save();c.translate(1,-60);c.rotate(-.1)
+      c.beginPath();c.ellipse(0,0,14,3.2,0,0,Math.PI*2);c.fillStyle='#463452';c.fill()
+      c.beginPath();c.moveTo(-8,0);c.lineTo(8,0);c.lineTo(-1,-17);c.closePath();c.fillStyle='#574166';c.fill();c.strokeStyle='#2f2038';c.lineWidth=.8;c.stroke()
+      c.beginPath();c.moveTo(-7,-2.2);c.lineTo(7,-2.2);c.strokeStyle='#e0863a';c.lineWidth=2;c.stroke()
+      c.restore()
+    }else{
+      for(const s of [-1,1] as const){
+        c.beginPath();c.moveTo(s*5,-58);c.lineTo(s*13,-60);c.lineTo(s*11,-70);c.closePath()
+        c.fillStyle='#42334c';c.fill();c.strokeStyle='#e0863a';c.lineWidth=.7;c.stroke()
+      }
+    }
+  }else if(holiday==='new-year'){
+    c.save();c.translate(0,-60)
+    c.beginPath();c.moveTo(-10,0);c.lineTo(-9,-9);c.lineTo(-4,-5);c.lineTo(0,-12);c.lineTo(4,-5);c.lineTo(9,-9);c.lineTo(10,0);c.closePath()
+    c.fillStyle='#f0c456';c.fill();c.strokeStyle='#7a531d';c.lineWidth=.9;c.stroke()
+    const glow=time&&Math.sin(time*5)>0?'#fff7cc':'#ffd66b'
+    oval(c,0,-13.5,2.2,2.2,glow,false)
+    c.restore()
+  }else{
+    if(!alt){
+      for(const s of [-1,1] as const){
+        const hx=s*7,hy=-64
+        oval(c,hx-1.2,hy,1.8,1.8,'#eb6d93',false);oval(c,hx+1.2,hy,1.8,1.8,'#eb6d93',false)
+        c.beginPath();c.moveTo(hx-2.8,hy+.8);c.lineTo(hx+2.8,hy+.8);c.lineTo(hx,hy+4.2);c.closePath();c.fillStyle='#eb6d93';c.fill()
+      }
+    }else if(!back){
+      oval(c,9.5,-58,2.6,2.3,'#e35d81',false);oval(c,12,-57,1.8,1.8,'#f7a8bf',false)
+    }
+  }
+  c.restore()
+}
+
+function drawHolidayProp(c:Ctx,prop:OfficeHolidayGardenAction,hands:ReturnType<typeof officeHandContacts>,time:number){
+  const {x:rx,y:ry}=hands.right, {x:sx,y:sy}=hands.shared
+  c.save()
+  if(prop==='krathong'){
+    c.translate(sx,sy+1)
+    c.beginPath();c.ellipse(0,2,8.5,3.4,0,0,Math.PI*2);c.fillStyle='#4a8248';c.fill();c.lineWidth=.8;c.strokeStyle='#2f522e99';c.stroke()
+    for(const [dx,dy,col] of [[-4,-1,'#f29bb2'],[0,-2,'#ffd166'],[4,-1,'#f29bb2']] as const)oval(c,dx,dy,2,1.5,col,false)
+    c.fillStyle='#fff2cf';c.fillRect(-.8,-8,1.6,7)
+    const flicker=time?Math.sin(time*9)*.6:0
+    oval(c,flicker,-9.8,3.6,3.6,'#ffc75755',false);oval(c,flicker,-9.8,1.4,2.1,'#ffd269',false)
+  }else if(prop==='water-play'){
+    c.translate(rx+2,ry-1)
+    c.beginPath();c.ellipse(0,1,6.5,4.2,0,0,Math.PI);c.fillStyle='#c49b50';c.fill();c.lineWidth=.8;c.strokeStyle='#5a3e1a99';c.stroke()
+    oval(c,0,1,6.5,2.2,'#82cbd9',false)
+    oval(c,-2,.8,1.1,.8,'#fff9eb',false);oval(c,2.2,1.2,1,.8,'#f7ca45',false)
+    if(time){const s=(time*3)%1;oval(c,5+s*7,-2-Math.sin(s*Math.PI)*5,1.1,1.1,'#aee5f5',false)}
+  }else if(prop==='sparkler'){
+    c.translate(rx+1,ry-1);c.rotate(-.35)
+    c.strokeStyle='#8c7963';c.lineWidth=1.2;c.beginPath();c.moveTo(0,2);c.lineTo(2,-13);c.stroke()
+    const tipX=2,tipY=-14,r=3.5+(time?Math.sin(time*14)*1.4:0)
+    oval(c,tipX,tipY,r*1.8,r*1.8,'#ffd86644',false)
+    c.strokeStyle='#fff3b8';c.lineWidth=1
+    for(let i=0;i<6;i++){const a=i*Math.PI/3+(time?time*4:0);c.beginPath();c.moveTo(tipX,tipY);c.lineTo(tipX+Math.cos(a)*r,tipY+Math.sin(a)*r);c.stroke()}
+    oval(c,tipX,tipY,1.6,1.6,'#fffdf0',false)
+  }else if(prop==='gift-carol'){
+    c.translate(sx,sy+1)
+    round(c,-6,-5,12,10,'#c64d4b',1.8)
+    c.fillStyle='#efd17a';c.fillRect(-1,-5,2,10);c.fillRect(-6,-1,12,2)
+  }else if(prop==='trick-treat'){
+    c.translate(rx+2,ry+4)
+    c.strokeStyle='#3d2d3d';c.lineWidth=.9;c.beginPath();c.ellipse(0,-4,4.2,3.5,0,Math.PI,0);c.stroke()
+    oval(c,0,1,5.6,4.8,'#de7e36')
+    oval(c,-2,0,1,1,'#ffe07d',false);oval(c,2,0,1,1,'#ffe07d',false)
+  }else{
+    c.translate(sx,sy+1);c.rotate(-.18)
+    c.beginPath();c.moveTo(0,6);c.lineTo(-5,-4);c.lineTo(5,-4);c.closePath();c.fillStyle='#f3dfd0';c.fill();c.strokeStyle='#8e645699';c.lineWidth=.8;c.stroke()
+    for(const [fx,fy,col] of [[-2.8,-5,'#e35d81'],[0,-6.5,'#f48fb1'],[2.8,-5,'#e35d81']] as const)oval(c,fx,fy,2.2,2.1,col,false)
+  }
+  c.restore()
+}
+
 function drawLeisureProp(c:Ctx,kind:OfficeLeisureAction,hands:ReturnType<typeof officeHandContacts>,time:number,roomBody=false){
  const {x:rx,y:ry}=hands.right
  if(kind==='book'){
@@ -601,7 +715,7 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
     contacts.shared={x:(contacts.left.x+contacts.right.x)/2,y:(contacts.left.y+contacts.right.y)/2}
   }
   // Painted room figures at rest let their hands hang close to the trim torso.
-  const relaxed=roomBody&&!p.walk&&!p.climb&&!p.liftWait&&!raised&&!p.objectAction&&!p.typing&&!p.scratch&&!p.offer&&!stretch&&
+  const relaxed=roomBody&&!p.walk&&!p.climb&&!p.liftWait&&!raised&&!p.objectAction&&!p.holidayProp&&!p.typing&&!p.scratch&&!p.offer&&!stretch&&
     !p.supportHands&&!p.dressing&&!p.mug&&!p.cup&&!p.carry&&!p.workGesture&&!reading&&!notebook
   if(relaxed){
     if(sideView){contacts.left={...contacts.left,x:3};contacts.right={...contacts.right,x:.8}}
@@ -620,6 +734,14 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
     if(p.objectAction==='book'){
       contacts.left={x:-7.8,y:-22.5+m.left}
       contacts.right={x:8.6,y:-22.5+m.right}
+    }else if(p.holidayProp==='krathong'||p.holidayProp==='gift-carol'||p.holidayProp==='flower-gift'){
+      contacts.left={x:sideView?4:-7,y:-23+m.left*.5}
+      contacts.right={x:sideView?11:8,y:-23+m.right*.5}
+    }else if(p.holidayProp){
+      contacts.left=sideView?{x:2.2,y:-19}:{x:seated?-9.5:-10.5,y:(seated?-15.5:-20)+m.left}
+      contacts.right=p.holidayProp==='sparkler'
+        ? {x:sideView?11:13.5,y:-41+(time?Math.sin(time*5)*1.5:0)}
+        : {x:sideView?9.5:12.5,y:-23+m.right}
     }else if(stretch>0){
       contacts.left={x:mix(sideView?2.5:-10.5,sideView?4:-12.5,stretch),y:mix(-20,-56,stretch)}
       contacts.right={x:mix(sideView?1:11,sideView?7:12.5,stretch),y:mix(-20,-56,stretch)}
@@ -743,7 +865,9 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
       drawOfficeHead(c,a,Boolean(headBack),p.doze??false)
       c.restore()
     }
-    if(p.party&&!p.lead){
+    if(p.holiday&&!p.portrait){
+      drawHolidayHeadwear(c,p.holiday,a.slot,Boolean(headBack),time)
+    }else if(p.party&&!p.lead){
       // Striped party cone with a pompom, tilted a little.
       const hues=['#ff7aa8','#7bc8ff','#ffd35a','#8be08b'],hue=hues[a.slot%hues.length]
       c.save();c.translate(3,-60);c.rotate(.18);c.beginPath();c.moveTo(-7,0);c.lineTo(7,0);c.lineTo(0,-19);c.closePath();c.fillStyle=hue;c.fill()
@@ -795,6 +919,7 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
     else drawLeisureProp(c,p.objectAction,hands,time,roomBody)
     c.restore()
   }
+  if(p.holidayProp&&!p.walk&&!p.climb)drawHolidayProp(c,p.holidayProp,hands,time)
   if(p.carry){
     if(p.climb)round(c,-10,-31,20,18,'#967450',4)
     else if(roomBody){
@@ -975,6 +1100,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
   c.clearRect(0,0,scene.width,scene.height)
   const scale=scene.width/450,time=o.motion?o.time:0
   const wardrobeTheme=officeWardrobeTheme(o.date),floorsById=new Map(scene.floors.map(floor=>[floor.id,floor]))
+  const gardenHoliday=officeSky(o.date).holiday
   const daylight=officeDaylight(o.date),surface=scene.floors.find(f=>f.kind==='lounge')
   drawOfficeSky(c,scene,time,o.date)
   drawOfficeGarden(c,scene,o.date,time,daylight)
@@ -1047,9 +1173,14 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     const t=time?time+phaseOf(actor.key):0
     const floor=floorsById.get(actor.floorId)
     const inMeeting=Boolean(actor.pose?.meeting)
-    const basePose={wardrobeTransition:o.wardrobeLooks?.get(actor.key),dressing:o.wardrobeLooks?.get(actor.key)?.dressing,wardrobe:officeWardrobeFor(wardrobeTheme,actor.appearance.slot,floor?.kind==='lounge'),sit:!moving&&!inMeeting&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving&&!inMeeting,hand:o.live&&waiting&&!inMeeting,
-      mug:!inMeeting&&actor.zone==='lounge'&&!moving&&(life.objectAction==='coffee'||(!life.objectAction&&!(floor?.desktopArt&&floor.kind==='team'&&actor.agent.role==='lead'&&!actor.parentKey))),objectAction:inMeeting?undefined:life.objectAction,lead:actor.agent.role==='lead'||actor.pod,cup:!inMeeting&&life.cup,stretch:inMeeting?0:life.stretch,lean:inMeeting?0:life.lean,doze:!inMeeting&&life.doze,
-      slump:!inMeeting&&life.slump,scratch:!inMeeting&&life.scratch,wave:(inMeeting?false:life.wave)||interaction?.speaking,turn:interaction?(interaction.speaking ? .25 : -.2):life.turn,face:life.face,hop:inMeeting?0:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose,...sharedPoses.get(actor.key),...(interaction?{face:interaction.face}:{}),...(vendorExchange?.actorKey===actor.key?{face:1 as const,offer:.8,mug:false,hand:false,typing:false,objectAction:undefined,sit:false}:{}),climb:false}
+    const inGarden=floor?.kind==='lounge'
+    const outingGuest=o.dailyArt?.guests.find(guest=>guest.actorKey===actor.key)
+    const holdingLunchOrParcel=eatingKeys.has(actor.key)||(outingGuest?.action==='snack'&&Boolean(outingGuest?.collected))
+    const holidayActivity=inGarden&&gardenHoliday?officeGardenHolidayActivity(o.date,actor.appearance.slot):null
+    const holidayProp=holidayActivity&&!moving&&!inMeeting&&!holdingLunchOrParcel&&!actor.pose?.walk&&!actor.pose?.inLift&&!actor.pose?.carry&&!actor.pose?.stretch&&!actor.pose?.lookUp&&!actor.pose?.offer&&life.objectAction!=='water'&&!life.stretch?holidayActivity.prop:null
+    const basePose={wardrobeTransition:o.wardrobeLooks?.get(actor.key),dressing:o.wardrobeLooks?.get(actor.key)?.dressing,wardrobe:officeWardrobeFor(wardrobeTheme,actor.appearance.slot,inGarden),sit:!moving&&!inMeeting&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving&&!inMeeting,hand:o.live&&waiting&&!inMeeting,
+      mug:!holidayProp&&!inMeeting&&actor.zone==='lounge'&&!moving&&(life.objectAction==='coffee'||(!life.objectAction&&!(floor?.desktopArt&&floor.kind==='team'&&actor.agent.role==='lead'&&!actor.parentKey))),objectAction:inMeeting||holidayProp?undefined:life.objectAction,holiday:inGarden?gardenHoliday:null,holidayProp,lead:actor.agent.role==='lead'||actor.pod,cup:!holidayProp&&!inMeeting&&life.cup,stretch:inMeeting?0:life.stretch,lean:inMeeting?0:life.lean,doze:!inMeeting&&life.doze,
+      slump:!inMeeting&&life.slump,scratch:!inMeeting&&life.scratch,wave:(inMeeting?false:life.wave)||interaction?.speaking,turn:interaction?(interaction.speaking ? .25 : -.2):life.turn,face:life.face,hop:inMeeting?0:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose,...sharedPoses.get(actor.key),...(interaction?{face:interaction.face}:{}),...(vendorExchange?.actorKey===actor.key?{face:1 as const,offer:.8,mug:false,hand:false,typing:false,objectAction:undefined,holidayProp:null,sit:false}:{}),climb:false}
     const seated=basePose.sit&&!officeStandsAtStation(floor,actor,basePose)
     const larger=!floor?.desktopArt&&o.avatarArt&&actor.appearance.kind==='human'&&!basePose.meeting&&!seated&&
       (actor.zone==='desk'||basePose.walk||basePose.liftBlend!==undefined)
