@@ -79,7 +79,7 @@ export const BREAK_ROOMS: Readonly<Record<OfficeBreakRoom, readonly BreakSpot[]>
 }
 export function officeBreakSpots(room:OfficeBreakRoom,desktopArt:boolean):readonly BreakSpot[]{
   return desktopArt&&room==='room-break-reading'
-    ? [[.24,.76,0],[.57,.80,0],[.13,.85,1],[.72,.84,1]]
+    ? [[.275,.742,0],[.346,.720,0],[.642,.750,0],[.132,.615,1],[.756,.755,1]]
     : BREAK_ROOMS[room]
 }
 const BREAK_VARIANTS = Object.keys(BREAK_ROOMS) as OfficeBreakRoom[]

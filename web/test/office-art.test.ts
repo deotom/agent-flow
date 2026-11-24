@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { drawOfficeAvatar, drawOfficeFrame, officeAmbient, officePaintedWearScale, officeStandingHip } from '../components/agent-visualizer/office/office-art'
+import { officeActorSupport } from '../lib/office-support'
 import type { OfficeAppearance, OfficePaintOptions, OfficePose, OfficeScene } from '../lib/office-types'
 import { officeAppearance } from '../lib/office-model'
 import { officeNavigation } from '../lib/office-navigation'
@@ -624,4 +625,25 @@ it('keeps speaking round-table profile hands tucked and gesturing forward over t
   assert.ok(loungeIdle.calls.some(call=>call.op==='fill'&&call.fill==='#fff0cf'),'baseline lounge actor holds a mug when not in a meeting')
   drawOfficeFrame(tableListener,{...room,actors:[lead,{...worker,pose:{meeting:true}}]},options({motion:false,time:0,avatarArt:parts}))
   assert.ok(!tableListener.calls.some(call=>call.op==='fill'&&call.fill==='#fff0cf'),'round-table meeting suppresses lounge mugs on transferred done workers')
+})
+it('calibrates Desktop break-room and garden seating heights and draws all upgraded leisure and party props',()=>{
+  const {parts}=paintedWardrobeAtlas()
+  const breakFloor={id:'b',sessionId:'s',title:'Break',subtitle:'',color:'#fff',kind:'break' as const,room:'room-break-reading' as const,annexOf:'team',desktopArt:true,y:200,height:300,actorKeys:[]}
+  const gardenFloor={id:'g',sessionId:null,title:'Garden',subtitle:'',color:'#fff',kind:'lounge' as const,desktopArt:true,y:0,height:200,actorKeys:[]}
+  const sofaActor={key:'a',sessionId:'s',agent:{status:'done' as const,role:'worker' as const,runtime:null,activities:[]},task:null,parentKey:null,
+    appearance:officeAppearance(0),floorId:'b',zone:'lounge' as const,x:450*.275,y:200+300*.742} as unknown as OfficeScene['actors'][number]
+  const armchairActor={...sofaActor,key:'p',x:450*.642,y:200+300*.750} as unknown as OfficeScene['actors'][number]
+  const benchActor={...sofaActor,key:'g1',floorId:'g',x:450*.238,y:148} as unknown as OfficeScene['actors'][number]
+  const sc={width:450,height:500,floors:[gardenFloor,breakFloor],actors:[sofaActor,armchairActor,benchActor],quietTeams:[],totalAgents:3,finishedCount:3}
+  const sofa=officeActorSupport(sc,sofaActor,{sit:true},1,sofaActor)
+  const arm=officeActorSupport(sc,armchairActor,{sit:true},1,armchairActor)
+  const bench=officeActorSupport(sc,benchActor,{sit:true},1,benchActor)
+  assert.equal(sofa.seatProfile,false);assert.equal(sofa.seatHeight,17);assert.equal(sofa.face,1)
+  assert.equal(arm.seatProfile,true);assert.equal(arm.seatHeight,16);assert.equal(arm.face,-1)
+  assert.equal(bench.seatHeight,16)
+  for(const pose of [{objectAction:'water' as const},{sit:true,objectAction:'snack' as const},{objectAction:'music' as const},{sit:true,objectAction:'game' as const},{party:true}] as const){
+    const painter=ctx()
+    drawOfficeAvatar(painter,{...officeAppearance(0),outfit:'jacket'},0,0,1.5,{workwear:true,...pose},parts)
+    for(const call of painter.calls)for(const v of call.args)assert.ok(typeof v!=='number'||Number.isFinite(v))
+  }
 })

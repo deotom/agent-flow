@@ -6,7 +6,7 @@ export function officeActorDepthScale(scene:Pick<OfficeScene,'floors'>,actor:Pic
  const floor=scene.floors.find(f=>f.id===actor.floorId),height=floor?.height
  if(!floor||!height||!Number.isFinite(height)||!Number.isFinite(actor.y))return 1
  const t=Math.max(0,Math.min(1,((actor.y-floor.y)/height-.52)/.30))
- if(floor.desktopArt&&floor.kind==='team')return .87+.10*t*t*(3-2*t)
+ if(floor.desktopArt&&(floor.kind==='team'||floor.kind==='break'))return .87+.10*t*t*(3-2*t)
  return .78+.26*t*t*(3-2*t)
 }
 

@@ -62,13 +62,24 @@ export function drawOfficeDailyArt(c:Ctx,scene:OfficeScene,date:Date,state:Offic
  const surface=scene.floors.find(f=>f.kind==='lounge')
  if(surface&&stage&&weather!=='rain'&&weather!=='storm'){
   const h=surface.height??w*.56
-  // A compact lunch stall uses the painted buffet, including parcels and return trays.
-  if(stage==='meal')drawRoomProp(c,art,5,w*.025,surface.y+h*.46,w*.19,w*.135)
-  if(stage==='delivery')buffetDetail(c,art,'parcel',w*.055,surface.y+h*.55,w*.073,w*.097)
-  if(stage==='cleanup')buffetDetail(c,art,'returns',w*.055,surface.y+h*.57,w*.085,w*.038)
+  if(surface.desktopArt){
+   // Keep daytime lunch cues compact on the painted café counter, clear of the tree trunk and bench.
+   if(stage==='delivery')buffetDetail(c,art,'parcel',w*.572,surface.y+h*.605-w*.022,w*.024,w*.022)
+   if(stage==='meal'){
+    const p=art.props as CanvasImageSource&{naturalWidth?:number;naturalHeight?:number}
+    const sw=(p.naturalWidth??1536)/3,sh=(p.naturalHeight??1024)/2
+    c.drawImage(art.props,sw*2+sw*.10,sh+sh*.36,sw*.55,sh*.15,w*.568,surface.y+h*.605-w*.018,w*.034,w*.014)
+   }
+   if(stage==='cleanup')buffetDetail(c,art,'returns',w*.572,surface.y+h*.605-w*.018,w*.03,w*.013)
+  }else{
+   // A compact lunch stall uses the painted buffet, including parcels and return trays.
+   if(stage==='meal')drawRoomProp(c,art,5,w*.025,surface.y+h*.46,w*.19,w*.135)
+   if(stage==='delivery')buffetDetail(c,art,'parcel',w*.055,surface.y+h*.55,w*.073,w*.097)
+   if(stage==='cleanup')buffetDetail(c,art,'returns',w*.055,surface.y+h*.57,w*.085,w*.038)
+  }
  }
  if(coffee||tea){
-  for(const floor of scene.floors.filter(f=>f.kind==='break'&&String(f.room)!=='room-canteen')){
+  for(const floor of scene.floors.filter(f=>f.kind==='break'&&String(f.room)!=='room-canteen'&&!f.desktopArt)){
    // Thermos/parcel detail from the buffet cell; no additional furniture over the lounge.
    const p=art.props as CanvasImageSource&{naturalWidth?:number;naturalHeight?:number}
    const sw=(p.naturalWidth??1536)/3,sh=(p.naturalHeight??1024)/2

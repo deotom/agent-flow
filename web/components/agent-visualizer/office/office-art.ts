@@ -120,7 +120,7 @@ function drawOfficeHead(c:Ctx,a:OfficeAppearance,back:boolean,doze:boolean){
   if(gear==='earrings'){oval(c,-13,-35,3,4,'#edc76c');oval(c,19,-35,2,3,'#edc76c')}
   if(gear==='scarf'){round(c,-14,-33,29,6,'#edc477',3);round(c,7,-32,6,17,'#edc477',2)}
 }
-function drawLeisureProp(c:Ctx,kind:OfficeLeisureAction,hands:ReturnType<typeof officeHandContacts>,time:number){
+function drawLeisureProp(c:Ctx,kind:OfficeLeisureAction,hands:ReturnType<typeof officeHandContacts>,time:number,roomBody=false){
  const {x:rx,y:ry}=hands.right
  if(kind==='book'){
   c.save();c.translate(hands.shared.x-1,hands.shared.y+22)
@@ -128,17 +128,65 @@ function drawLeisureProp(c:Ctx,kind:OfficeLeisureAction,hands:ReturnType<typeof 
   for(const y of [-24,-21,-18]){c.moveTo(-8,y);c.lineTo(-1,y);c.moveTo(5,y);c.lineTo(11,y)}c.stroke()
   c.restore()
  }else if(kind==='game'){
-  c.save();c.translate(hands.shared.x-1,hands.shared.y+22)
-  round(c,-12,-26,25,10,'#364856',4);c.strokeStyle='#c6d7d9';c.lineWidth=1.4;c.beginPath();c.moveTo(-9,-21);c.lineTo(-3,-21);c.moveTo(-6,-24);c.lineTo(-6,-18);c.stroke();oval(c,7,-23,1.6,1.6,'#cce0a4',false);oval(c,9,-19,1.6,1.6,'#edc47e',false)
-  c.restore()
+  if(roomBody){
+   c.save();c.translate(hands.shared.x,hands.shared.y+1)
+   c.beginPath();c.roundRect(-9.5,-4.5,19,8.5,2.8);c.fillStyle='#3c4a54';c.fill()
+   c.beginPath();c.roundRect(-8.5,-3.6,17,6.7,2);c.strokeStyle='#7b6248';c.lineWidth=.9;c.stroke()
+   c.beginPath();c.roundRect(-9.5,-4.5,19,8.5,2.8);c.lineWidth=.85;c.strokeStyle='#272e33a8';c.stroke()
+   c.beginPath();c.moveTo(-6.5,-1);c.lineTo(-3.5,-1);c.moveTo(-5,-2.5);c.lineTo(-5,.5);c.strokeStyle='#d6c59f';c.lineWidth=1.2;c.stroke()
+   c.beginPath();c.ellipse(4.5,-1.8,1.2,1.2,0,0,Math.PI*2);c.fillStyle='#c7dca2';c.fill()
+   c.beginPath();c.ellipse(6.8,.6,1.2,1.2,0,0,Math.PI*2);c.fillStyle='#edb96e';c.fill()
+   c.restore()
+  }else{
+   c.save();c.translate(hands.shared.x-1,hands.shared.y+22)
+   round(c,-12,-26,25,10,'#364856',4);c.strokeStyle='#c6d7d9';c.lineWidth=1.4;c.beginPath();c.moveTo(-9,-21);c.lineTo(-3,-21);c.moveTo(-6,-24);c.lineTo(-6,-18);c.stroke();oval(c,7,-23,1.6,1.6,'#cce0a4',false);oval(c,9,-19,1.6,1.6,'#edc47e',false)
+   c.restore()
+  }
  }else if(kind==='water'){
-  round(c,rx-6,ry+1,13,11,'#65a79f',3);oval(c,rx-9,ry+5,4,4,'#85bbb0');c.beginPath();c.moveTo(rx+5,ry+4);c.lineTo(rx+16,ry+1);c.lineTo(rx+18,ry+4);c.strokeStyle='#8ac4b9';c.lineWidth=3;c.stroke()
-  c.fillStyle='#93d4e9';for(let i=0;i<4;i++){const d=(time*12+i*3)%12;c.fillRect(rx+17+i,ry+5+d,1,2)}
+  if(roomBody){
+   c.save();c.translate(rx,ry)
+   c.beginPath();c.moveTo(-5,2);c.bezierCurveTo(-11,0,-11,9,-5,9);c.lineWidth=1.6;c.strokeStyle='#5c8d82';c.stroke()
+   c.beginPath();c.roundRect(-6,1,11.5,9.5,2.2);c.fillStyle='#5c8d82';c.fill()
+   c.beginPath();c.roundRect(-5.5,1.2,10.5,2.5,[2,2,0,0]);c.fillStyle='#83b4a7';c.fill()
+   c.beginPath();c.roundRect(1.5,1,4,9.5,[0,2.2,2.2,0]);c.fillStyle='#3d645b88';c.fill()
+   c.lineWidth=.85;c.strokeStyle='#3b2a1e99';c.beginPath();c.roundRect(-6,1,11.5,9.5,2.2);c.stroke()
+   c.beginPath();c.moveTo(5,5);c.lineTo(14.5,1.2);c.lineTo(15.2,3.4);c.lineTo(5.5,8);c.closePath()
+   c.fillStyle='#68998d';c.fill();c.lineWidth=.8;c.strokeStyle='#3b2a1e99';c.stroke()
+   c.beginPath();c.ellipse(15.4,2.4,1.6,2.2,-.3,0,Math.PI*2);c.fillStyle='#c49c56';c.fill();c.strokeStyle='#4b321e99';c.lineWidth=.75;c.stroke()
+   c.fillStyle='#93d4e9aa';for(let i=0;i<4;i++){const d=(time*12+i*3)%12;c.beginPath();c.ellipse(16.2+i*.9,4.5+d,.7,1.4,0,0,Math.PI*2);c.fill()}
+   c.restore()
+  }else{
+   round(c,rx-6,ry+1,13,11,'#65a79f',3);oval(c,rx-9,ry+5,4,4,'#85bbb0');c.beginPath();c.moveTo(rx+5,ry+4);c.lineTo(rx+16,ry+1);c.lineTo(rx+18,ry+4);c.strokeStyle='#8ac4b9';c.lineWidth=3;c.stroke()
+   c.fillStyle='#93d4e9';for(let i=0;i<4;i++){const d=(time*12+i*3)%12;c.fillRect(rx+17+i,ry+5+d,1,2)}
+  }
  }else if(kind==='music'){
-  oval(c,rx+4,ry+1,8,8,'#edc576');oval(c,rx+4,ry+1,5,5,'#b78b54');for(let i=0;i<4;i++)oval(c,rx+4+Math.cos(i*Math.PI/2)*7,ry+1+Math.sin(i*Math.PI/2)*7,1.5,1.5,'#e9e3cf',false)
+  if(roomBody){
+   c.save();c.translate(rx+2,ry)
+   c.beginPath();c.ellipse(0,0,7.2,7.2,0,0,Math.PI*2);c.fillStyle='#a66d3c';c.fill()
+   c.lineWidth=.85;c.strokeStyle='#4b302599';c.stroke()
+   c.beginPath();c.ellipse(0,0,5.2,5.2,0,0,Math.PI*2);c.fillStyle='#e8d8b2';c.fill()
+   c.beginPath();c.ellipse(-1,-1,2.8,2,0,0,Math.PI*2);c.fillStyle='#fff6dc66';c.fill()
+   for(let i=0;i<4;i++){const a=i*Math.PI/2+.35;c.beginPath();c.ellipse(Math.cos(a)*6.1,Math.sin(a)*6.1,1.3,1.3,0,0,Math.PI*2);c.fillStyle='#f0cd74';c.fill();c.lineWidth=.65;c.strokeStyle='#5a3c1f88';c.stroke()}
+   c.restore()
+  }else{oval(c,rx+4,ry+1,8,8,'#edc576');oval(c,rx+4,ry+1,5,5,'#b78b54');for(let i=0;i<4;i++)oval(c,rx+4+Math.cos(i*Math.PI/2)*7,ry+1+Math.sin(i*Math.PI/2)*7,1.5,1.5,'#e9e3cf',false)}
  }else if(kind==='snack'){
   const plate=hands.plate
-  oval(c,plate.x,plate.y,13,3,'#eee1be');for(const x of [-6,1,7])oval(c,plate.x+x,plate.y-3,3,3,'#b97d43');oval(c,rx+3,ry-3,3,3,'#c99658');c.fillStyle='#6c4a2f';c.fillRect(plate.x+1,plate.y-4,1,1)
+  if(roomBody){
+   c.save()
+   c.beginPath();c.ellipse(plate.x,plate.y,11,2.8,0,0,Math.PI*2);c.fillStyle='#f0e2c2';c.fill()
+   c.lineWidth=.85;c.strokeStyle='#4b302599';c.stroke()
+   c.beginPath();c.ellipse(plate.x,plate.y+.5,8,1.5,0,0,Math.PI);c.strokeStyle='#b89f78';c.lineWidth=.75;c.stroke()
+   for(const px of [-4.8,0,4.8]){
+    c.beginPath();c.ellipse(plate.x+px,plate.y-2.2,2.7,2.4,0,0,Math.PI*2);c.fillStyle='#c6894a';c.fill()
+    c.lineWidth=.7;c.strokeStyle='#5a361988';c.stroke()
+    c.beginPath();c.ellipse(plate.x+px-.6,plate.y-2.9,1.2,.8,0,0,Math.PI*2);c.fillStyle='#e3b172';c.fill()
+   }
+   c.beginPath();c.ellipse(rx+2,ry-2,2.5,2.2,0,0,Math.PI*2);c.fillStyle='#c6894a';c.fill();c.lineWidth=.7;c.strokeStyle='#5a361988';c.stroke()
+   c.beginPath();c.ellipse(rx+1.5,ry-2.6,1.1,.7,0,0,Math.PI*2);c.fillStyle='#e3b172';c.fill()
+   c.restore()
+  }else{
+   oval(c,plate.x,plate.y,13,3,'#eee1be');for(const x of [-6,1,7])oval(c,plate.x+x,plate.y-3,3,3,'#b97d43');oval(c,rx+3,ry-3,3,3,'#c99658');c.fillStyle='#6c4a2f';c.fillRect(plate.x+1,plate.y-4,1,1)
+  }
  }
 }
 
@@ -699,9 +747,16 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
     if(p.party&&!p.lead){
       // Striped party cone with a pompom, tilted a little.
       const hues=['#ff7aa8','#7bc8ff','#ffd35a','#8be08b'],hue=hues[a.slot%hues.length]
-      c.save();c.translate(3,-60);c.rotate(.18);c.beginPath();c.moveTo(-7,0);c.lineTo(7,0);c.lineTo(0,-19);c.closePath();c.fillStyle=hue;c.fill();c.strokeStyle='#4b3025';c.lineWidth=1.3;c.stroke()
+      c.save();c.translate(3,-60);c.rotate(.18);c.beginPath();c.moveTo(-7,0);c.lineTo(7,0);c.lineTo(0,-19);c.closePath();c.fillStyle=hue;c.fill()
+      if(roomBody){c.beginPath();c.moveTo(0,-19);c.lineTo(7,0);c.lineTo(1,0);c.closePath();c.fillStyle='rgba(40,20,16,0.18)';c.fill()}
+      c.strokeStyle=roomBody?'#4b3025a0':'#4b3025';c.lineWidth=roomBody?.85:1.3;c.stroke()
       c.beginPath();c.moveTo(-4.5,-6);c.lineTo(4.5,-6);c.moveTo(-2.4,-12);c.lineTo(2.4,-12);c.strokeStyle='#fff6';c.lineWidth=1.6;c.stroke()
-      oval(c,0,-20,2.6,2.6,'#fff7d6');c.restore()
+      if(roomBody){
+        c.beginPath();c.ellipse(0,-20,2.6,2.6,0,0,Math.PI*2);c.fillStyle='#fff7d6';c.fill()
+        c.beginPath();c.ellipse(.7,-19.6,1.3,1.5,0,0,Math.PI*2);c.fillStyle='#e6cfa0';c.fill()
+        c.beginPath();c.ellipse(0,-20,2.6,2.6,0,0,Math.PI*2);c.lineWidth=.75;c.strokeStyle='#4b302599';c.stroke()
+      }else oval(c,0,-20,2.6,2.6,'#fff7d6')
+      c.restore()
     }
     if(!art&&p.lead){c.fillStyle='#ffe08b';c.strokeStyle='#80511c';c.lineWidth=1.4;c.beginPath();c.moveTo(-8,-72);c.lineTo(-4,-68);c.lineTo(0,-75);c.lineTo(4,-68);c.lineTo(8,-72);c.lineTo(6,-64);c.lineTo(-6,-64);c.closePath();c.fill();c.stroke()}
     c.restore() // head
@@ -738,7 +793,7 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
       c.lineWidth=.65;c.strokeStyle='#9b815b';c.stroke()
       c.restore()
     }
-    else drawLeisureProp(c,p.objectAction,hands,time)
+    else drawLeisureProp(c,p.objectAction,hands,time,roomBody)
     c.restore()
   }
   if(p.carry){

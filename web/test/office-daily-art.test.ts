@@ -48,3 +48,12 @@ it('cleanup removes open food from dining tables but retains the four seats and 
  assert.equal(chairs(meal).length,4);assert.equal(chairs(cleanup).length,4)
  assert.notDeepEqual(meal,cleanup)
 })
+it('keeps Desktop clear-lunch cues on the café counter without covering the tree or break bookshelf',()=>{
+ const desktopSurface:OfficeFloor={...surface,desktopArt:true}
+ const desktopBreak:OfficeFloor={...canteen,id:'break-team',room:'room-break-reading',annexOf:'team',desktopArt:true}
+ const lunch=render(12,15,{weather:'clear'},[desktopSurface,desktopBreak])
+ assert.ok(lunch.some(call=>Number(call[5])>=450*.52&&Number(call[5])<=450*.64),'compact Desktop meal cue sits on the café counter')
+ assert.ok(!lunch.some(call=>Number(call[5])<450*.25&&Number(call[7])>=450*.15),'no legacy buffet covers the painted tree and bench')
+ const coffee=render(9,0,{kind:'coffee',weather:'clear'},[desktopSurface,desktopBreak])
+ assert.ok(!coffee.some(call=>Number(call[6])>=desktopBreak.y&&Number(call[5])<450*.2),'no legacy thermos covers the painted break-room bookshelf')
+})

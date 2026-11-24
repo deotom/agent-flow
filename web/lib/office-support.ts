@@ -18,7 +18,14 @@ export function officeStandsAtStation(floor:OfficeFloor|undefined,actor:OfficeAc
 export function officeActorSupport<T extends OfficePose>(scene:OfficeScene,actor:OfficeActor,p:T,scale:number,origin:OfficePoint,time=0,animateWork=true):T&OfficePose {
  const floor=scene.floors.find(f=>f.id===actor.floorId)
  const paintedSeat=floor?.kind==='break'||floor?.kind==='lounge'||actor.zone==='lounge'
- const pose={...p,...(paintedSeat?{seatBack:false}:{})}
+ const restSeat=floor?.desktopArt&&p.sit&&!p.walk&&!p.inLift&&!p.climb&&!p.meeting&&!p.rising
+  ?(floor.kind==='break'
+   ?(actor.x<scene.width*.45
+    ?{seatHeight:17,seatProfile:false,...(!actor.pose?.face&&!p.turn?{face:1 as const}:{})}
+    :{seatHeight:16,seatProfile:true,...(!actor.pose?.face&&!p.turn?{face:-1 as const}:{})})
+   :floor.kind==='lounge'?{seatHeight:16}:{})
+  :{}
+ const pose={...p,...restSeat,...(paintedSeat?{seatBack:false}:{})}
  if(!floor||(!p.rising&&!officeStandsAtStation(floor,actor,p)))return pose
  const kind=actor.workStation??agentWorkStation(actor.agent)
  const atPoint=({feet}:{feet:OfficePoint})=>Math.hypot(feet.x-actor.x,feet.y-actor.y)<.01

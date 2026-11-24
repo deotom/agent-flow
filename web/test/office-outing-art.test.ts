@@ -77,3 +77,14 @@ it('keeps every atlas crop and destination bounded at narrow and wide scene size
   }
  }
 })
+it('places Desktop daytime service parcels on the painted café counter rather than the legacy cart',()=>{
+ const desktopGarden:OfficeFloor={...garden,desktopArt:true}
+ const desktopHome:OfficeFloor={...home,desktopArt:true}
+ const calls:unknown[][]=[]
+ const ctx={drawImage:(...args:unknown[])=>calls.push(args)} as unknown as CanvasRenderingContext2D
+ const buyer=guest({phase:'eating',floorId:desktopGarden.id})
+ const scene:OfficeScene={width:450,height:800,floors:[desktopGarden,desktopHome],actors:[{key:buyer.actorKey} as OfficeActor],quietTeams:[],totalAgents:1,finishedCount:0}
+ drawOfficeOutingArt(ctx,scene,0,art,[buyer])
+ assert.equal(calls.length,1)
+ assert.ok(Number(calls[0][5])>=450*.52&&Number(calls[0][5])<=450*.64,'Desktop service parcel lands on the café countertop')
+})

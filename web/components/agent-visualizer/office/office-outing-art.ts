@@ -53,9 +53,8 @@ export function drawOfficeOutingArt(c:Ctx,scene:OfficeScene,time:number,art:Offi
   }
   if(guest.action==='snack'&&guest.collected&&guest.phase==='eating'&&!guest.night&&floor.kind==='lounge'&&!cartServed){
    const h=floor.height??w*.5625
-   // The original painted vendor cart is at 78% width. One small parcel on
-   // its real countertop signals service; no buffet, shopkeeper or new light.
-   detail(c,art,'parcel',w*.755,floor.y+h*.505-w*.025,w*.027,w*.025)
+   // The original painted vendor cart is at 78% width; Desktop places service parcels on the painted café counter.
+   detail(c,art,'parcel',floor.desktopArt?w*.572:w*.755,floor.y+(floor.desktopArt?h*.605:h*.505)-w*.025,w*.027,w*.025)
    cartServed=true
   }
   if(guest.action==='drink'&&guest.phase==='eating'&&floor.kind!=='lounge'){

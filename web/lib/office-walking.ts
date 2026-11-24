@@ -5,7 +5,7 @@ type Bounds = readonly [left:number, top:number, right:number, bottom:number]
 // Floor footprints in the painted rooms. The narrower gaps between adjacent
 // benches are furniture gaps, not passageways wide enough for a character.
 const workroom:readonly Bounds[] = [[.061,.759,.813,.907],[.133,.418,.643,.529],[.7,.546,.785,.621]]
-const readingRoom:readonly Bounds[] = [[.12,.58,.30,.717],[.35,.622,.64,.735]]
+const readingRoom:readonly Bounds[] = [[.18,.65,.41,.765],[.405,.69,.565,.79],[.560,.69,.73,.78]]
 const buildAndTerminal:readonly (readonly OfficePoint[])[] = [
  [{x:.065,y:.907},{x:.065,y:.62},{x:.108,y:.62},{x:.108,y:.57},{x:.366,y:.57},{x:.366,y:.62},{x:.406,y:.62},{x:.406,y:.907}],
  [{x:.443,y:.91},{x:.443,y:.71},{x:.454,y:.71},{x:.454,y:.639},{x:.762,y:.639},{x:.762,y:.71},{x:.799,y:.71},{x:.799,y:.91}],

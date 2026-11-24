@@ -15,7 +15,7 @@ export function officeLeisureObjects(floor:OfficeFloor,width:number){
  const list:(readonly [OfficeLeisureAction,number,number])[]=floor.kind==='lounge'?(floor.desktopArt?[['snack',.46,.755],['music',.57,.79],['coffee',.60,.76]]:[['snack',.34,.61],['music',.50,.61],['coffee',.78,.58]]):
  floor.room==='room-break-game'?[['game',.09,.72],['coffee',.63,.70]]:
  floor.room==='room-break-garden'?[['water',.84,.73],['book',.475,.60],['coffee',.22,.64]]:
- floor.room==='room-break-reading'?(floor.desktopArt?[['book',.33,.73],['coffee',.43,.75]]:[['book',.29,.645],['coffee',.77,.66]]):
+ floor.room==='room-break-reading'?(floor.desktopArt?[['book',.485,.568],['coffee',.195,.572]]:[['book',.29,.645],['coffee',.77,.66]]):
  [['coffee',.15,.74],['book',.70,.6],['game',.54,.75]]
  return list.map(([kind,x,y])=>({kind,x:x*width,y:floor.y+y*h}))
 }

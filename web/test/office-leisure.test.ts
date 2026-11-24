@@ -34,15 +34,15 @@ it('uses props during rest and parties while preserving real work ownership',()=
  }
 })
 
-it('puts seated readers on the painted chair and pouf and keeps the table reachable',()=>{
+it('puts seated readers on the painted sofa and armchair and keeps the bar and bookshelf reachable',()=>{
  const places=officeBreakSpots('room-break-reading',true)
  const seated=places.filter(([, ,standing])=>!standing)
- assert.equal(places.length,4)
- assert.equal(seated.length,2)
- assert.ok(seated.some(([x,y])=>x>.16&&x<.28&&y>.73&&y<.79))
- assert.ok(seated.some(([x,y])=>x>.54&&x<.62&&y>.77&&y<.83))
- assert.ok(places.every(([x,y,standing])=>!standing||y>.82&&(x<.17||x>.66)))
- const room={kind:'break' as const,room:'room-break-reading' as const,id:'reading',sessionId:null,title:'Reading',subtitle:'',color:'#444',y:0,height:563,actorKeys:[],desktopArt:true}
+ assert.equal(places.length,5)
+ assert.equal(seated.length,3)
+ assert.ok(seated.filter(([x,y])=>x>.24&&x<.39&&y>.69&&y<.77).length===2)
+ assert.ok(seated.some(([x,y])=>x>.58&&x<.66&&y>.71&&y<.78))
+ assert.ok(places.every(([x,y,standing])=>!standing||x>=.10&&x<=.78&&y>=.55&&y<=.82))
+ const room={kind:'break' as const,room:'room-break-reading' as const,id:'reading',sessionId:null,title:'Reading',subtitle:'',color:'#444',y:0,height:721,actorKeys:[],desktopArt:true}
  const objects=officeLeisureObjects(room,1000)
- assert.ok(objects.every(({x,y})=>x>=310&&x<=470&&y>=402&&y<=430))
+ assert.ok(objects.every(({x,y})=>x>=150&&x<=550&&y>=390&&y<=450))
 })

@@ -1,8 +1,8 @@
 import type { OfficeActor, OfficeFloor, OfficeScene } from './office-types'
 export const OFFICE_CANTEEN_ID='daily-canteen'
 export const OFFICE_DAILY_SEATS= [[.338,.61],[.495,.61],[.64,.57],[.78,.58]] as const
-// Two places on the bench followed by two standing places on open turf.
-const desktopGardenPlaces=[[.27,.735,false],[.37,.735,false],[.52,.77,true],[.68,.79,true]] as const
+// Two places on the bench cushions followed by two standing places on open turf.
+const desktopGardenPlaces=[[.238,.74,false],[.318,.74,false],[.52,.77,true],[.68,.79,true]] as const
 export function officeGardenPlaces(surface:Pick<OfficeFloor,'desktopArt'>){
  return surface.desktopArt?desktopGardenPlaces:OFFICE_DAILY_SEATS
 }
