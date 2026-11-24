@@ -1,0 +1,55 @@
+.af-mission-scroll {
+  width: 100%; height: 100%; min-height: 0; overflow: auto; padding: 14px 12px 24px;
+  background: #1c1e17; color: #f4e6cd; font: 500 13px system-ui, sans-serif;
+}
+.af-mission-tree {
+  --mission-line: #827762; --mission-gap: 20px;
+  display: grid; grid-template-columns: clamp(94px, 29%, 174px) minmax(0, 520px); gap: var(--mission-gap);
+  max-width: 770px; width: 100%; margin-inline: auto; align-items: start;
+}
+.af-mission-tree[data-branch=false] { grid-template-columns: minmax(0, 310px); }
+.af-mission-tree + .af-mission-tree { margin-top: 14px; }
+.af-mission-lead { position: sticky; top: 8px; min-width: 0; z-index: 1; }
+.af-mission-tree[data-branch=true] > .af-mission-lead::after {
+  content: ''; position: absolute; top: 21px; left: 100%; width: calc(var(--mission-gap) / 2); border-top: 1px solid var(--mission-line);
+}
+.jv-root .af-mission-card {
+  display: flex; align-items: center; gap: 7px; width: 100%; min-height: 43px; min-width: 0;
+  padding: 5px 7px; text-align: left; border: 1px solid #585344; border-radius: 8px;
+  color: inherit; background: #2b2d24; font: inherit; cursor: pointer;
+}
+.jv-root .af-mission-card:hover { background: #34352a; border-color: #aa9572; }
+.jv-root .af-mission-card[aria-pressed=true] { background: #383027; border-color: #f6a843; box-shadow: inset 0 0 0 1px #f6a843; }
+.af-mission-card:focus-visible, .af-mission-scroll:focus-visible { outline: 2px solid #ffc66f; outline-offset: 2px; }
+.af-mission-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.af-mission-name small { display: block; color: #c5b396; font-size: 10px; }
+.af-mission-initial {
+  display: grid; place-items: center; width: 30px; height: 30px; flex-shrink: 0;
+  border-radius: 6px; background: #594332; color: #f4e6cd;
+}
+.af-mission-status {
+  flex-shrink: 0; border-radius: 6px; padding: 4px 6px; color: #dac8ab; background: #484235;
+  white-space: nowrap; font-size: 11px; line-height: 1.2;
+}
+.af-mission-status[data-tone=working], .af-mission-status[data-tone=waiting] { color: #ffda99; background: #604723; }
+.af-mission-status[data-tone=done] { color: #d4edab; background: #3c4c32; }
+.af-mission-status[data-tone=failed] { color: #ffceb4; background: #743d2b; }
+.af-mission-tree[data-branch=true] > .af-mission-lead .af-mission-status { display: none; }
+.af-mission-tree[data-branch=true] > .af-mission-lead button[data-tone=failed],
+.af-mission-tree[data-branch=true] > .af-mission-lead button[data-tone=waiting] { border-color: #f6a843; }
+.af-mission-branch { margin: 0; padding: 0; list-style: none; min-width: 0; }
+.af-mission-branch .af-mission-branch { margin-top: 5px; margin-bottom: 2px; }
+.af-mission-branch .af-mission-branch[data-indent=true] { margin-left: 14px; }
+.af-mission-branch > li { position: relative; margin-bottom: 6px; }
+.af-mission-branch > li::before {
+  content: ''; position: absolute; width: 9px; top: 21px; right: 100%; border-top: 1px solid var(--mission-line);
+}
+.af-mission-branch > li::after {
+  content: ''; position: absolute; top: -6px; bottom: 0; right: calc(100% + 9px); border-left: 1px solid var(--mission-line);
+}
+.af-mission-branch > li:first-child::after { top: 0; }
+.af-mission-tree > .af-mission-branch > li:first-child::after { top: 21px; }
+.af-mission-branch > li:last-child::after { bottom: auto; height: 27px; }
+.af-mission-branch > li:first-child:last-child::after { height: 21px; }
+.af-mission-tree > .af-mission-branch > li:first-child:last-child::after { height: 0; }
+.af-mission-branch > li[data-alert]::before { border-color: #e3a761; }

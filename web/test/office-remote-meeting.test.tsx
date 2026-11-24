@@ -42,6 +42,13 @@ it('offers display settings for unknown roles and keeps completed history off th
   assert.deepEqual(currentOfficeCollaborators([m,done]).map(row=>row.key),[m.key])
   assert.equal(renderToStaticMarkup(<OfficeRemoteMeeting {...props} floor={floor([done])}/>),'')
 })
+it('keeps a clickable Desktop wall screen when there are no current participants',()=>{
+  const old=member('old');old.agent.status='done'
+  const html=renderToStaticMarkup(<OfficeRemoteMeeting {...props} floor={{...floor([old]),desktopArt:true}}/>)
+  assert.ok(html.includes('data-desktop="true"')&&html.includes('of-remote-screen'))
+  assert.ok(html.includes('aria-label="จัดทีมออนไลน์, Team"'))
+  assert.ok(!html.includes('Worker old'))
+})
 it('selects the actual source agent and changes only that display preference',()=>{
   const m=member('real-id'),selected:unknown[]=[],changed:unknown[]=[]
   const tree=OfficeRemoteRoster({members:[m],overrides:{},live:true,onSelect:(...args)=>selected.push(args),onChange:(...args)=>changed.push(args)})
@@ -57,8 +64,13 @@ it('selects the actual source agent and changes only that display preference',()
 })
 it('locks display placement while a real trip owns the participant',()=>{
   const m=member('travelling')
-  const html=renderToStaticMarkup(<OfficeRemoteRoster members={[m]} overrides={{}} live={true} travellingKeys={new Set([m.key])} onSelect={()=>{}} onChange={()=>{}}/>)
+  let requested=false
+  const tree=OfficeRemoteRoster({members:[m],overrides:{},live:true,travellingKeys:new Set([m.key]),onSelect:()=>{},onChange:()=>{requested=true}})
+  const html=renderToStaticMarkup(tree)
   assert.ok(html.includes('disabled=""')&&html.includes('รอถึงจุดหมายก่อนเปลี่ยนการแสดง'))
+  const select=elements(tree).find(node=>node.type==='select')!
+  ;(select.props.onChange as (event:unknown)=>void)({target:{value:'remote'}})
+  assert.equal(requested,false)
 })
 it('keeps a queued remote result visible until delivery without reviving old workers',()=>{
   const queued=member('queued');queued.agent.status='done'

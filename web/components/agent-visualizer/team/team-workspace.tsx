@@ -7,11 +7,17 @@ import { LEGEND, STATUS_LABEL, ageLabel, buildTeamView, compareTeamTaskRecency, 
 import { buildMissionView, type MissionView } from '@/lib/mission-model'
 import { formatModelName } from '@/lib/utils'
 import type { AnimationMode } from '@/lib/viewer-preferences'
+import { FlowIcon } from '../flow-icon'
 import { AgentLamp, ContextMeter, DeliveryTrack, TeamReactor } from './team-visuals'
 import { OfficeView } from '../office/office-view'
-import { officeKey } from '@/lib/office-model'
+import { officeAppearance, officeKey } from '@/lib/office-model'
+import { OfficeAvatarPortrait } from '../office/office-avatar-portrait'
+import { isDesktopAvatarHost, useOfficeAvatarArt } from '../office/use-office-avatar-art'
+import { useOfficeIdentities } from '../office/use-office-identities'
+import { DesktopMissionTree } from './desktop-mission-tree'
 import '../office/office.css'
 import './team.css'
+import './desktop-mission-tree.css'
 
 export type TeamPane = 'board' | 'graph' | 'office'
 
@@ -163,6 +169,25 @@ function Segmented<T extends string>({ value, options, onChange, label }: { valu
   )
 }
 
+const desktopViews = [
+  { value: 'board', label: 'Board' },
+  { value: 'graph', label: 'Graph' },
+  { value: 'office', label: 'Office' },
+] as const
+
+function DesktopViews({ pane, onPane }: { pane: TeamPane; onPane: (pane: TeamPane) => void }) {
+  return (
+    <nav className="af-desktop-views" aria-label="View">
+      {desktopViews.map(({ value, label }) => (
+        <button key={value} aria-pressed={value === pane} onClick={() => onPane(value)}>
+          <FlowIcon name={value} size={16} />
+          {label}
+        </button>
+      ))}
+    </nav>
+  )
+}
+
 function AttentionPanel({ items, onOpen, onDismiss, limit }: { items: AttentionItem[]; onOpen: (id: string) => void; onDismiss: (id: string) => void; limit: number }) {
   const [expanded, setExpanded] = useState(false)
   if (!items.length) return null
@@ -185,11 +210,37 @@ function AttentionPanel({ items, onOpen, onDismiss, limit }: { items: AttentionI
 
 const rowDepth = (row: TeamRow, compact: boolean) => compact ? Math.min(row.depth, 2) : Math.min(row.depth, 5)
 
-function AgentRowCard({ row, guides, selected, live, now, compact, onSelect }: { row: TeamRow; guides: TreeGuide[]; selected: boolean; live: boolean; now: number; compact: boolean; onSelect: (id: string) => void }) {
+interface AgentPortraitArt { atlas:CanvasImageSource; slot:number }
+
+function AgentRowCard({ row, guides, selected, live, now, compact, portrait, desktop, onSelect }: { row: TeamRow; guides: TreeGuide[]; selected: boolean; live: boolean; now: number; compact: boolean; portrait?:AgentPortraitArt; desktop: boolean; onSelect: (id: string) => void }) {
   const { agent, task } = row
   const provider = providerName(agent.runtime)
   const currentTitle = agent.status === 'running' ? agent.activities.at(-1)?.title?.trim() : undefined
   const depth = rowDepth(row, compact)
+  if (desktop) {
+    const needsYou = agent.status === 'waiting_input' || agent.status === 'waiting_approval'
+    const status = needsYou ? 'Needs you' : STATUS_LABEL[agent.status]
+    const activity = currentTitle || agent.task?.trim() || task?.task?.trim() || agent.activities.at(-1)?.title
+    return (
+      <li className="jv-row-wrap af-desktop-row-wrap">
+        <button className="jv-row af-desktop-row" data-selected={selected} data-status={agent.status}
+          aria-pressed={selected} title={[agent.name, activity, row.statusText].filter(Boolean).join(' · ')}
+          onClick={() => onSelect(agent.id)}>
+          {portrait
+            ? <OfficeAvatarPortrait appearance={officeAppearance(portrait.slot)} avatarArt={portrait.atlas} size={36} className="af-desktop-portrait" />
+            : <AgentLamp status={agent.status} size={36} />}
+          <span className="af-desktop-row-text">
+            <strong>{agent.name}</strong>
+            {activity && <span>{activity}</span>}
+          </span>
+          <span className="af-desktop-status" data-status={agent.status} title={live ? row.statusText : 'Last known: ' + row.statusText}>
+            {status}
+          </span>
+          <FlowIcon name="chevronRight" size={13} />
+        </button>
+      </li>
+    )
+  }
   return (
     <li className="jv-row-wrap" data-depth={depth} data-status={agent.status} data-live={live} style={{ '--jv-depth': depth } as CSSProperties}>
       {guides.map((guide, index) => guide && <span key={index} className="jv-guide" data-guide={guide} aria-hidden="true" style={{ '--jv-level': index + 1 } as CSSProperties} />)}
@@ -197,7 +248,8 @@ function AgentRowCard({ row, guides, selected, live, now, compact, onSelect }: {
       <button className="jv-row" data-selected={selected} data-status={agent.status} data-role={agent.role} data-live={live} aria-pressed={selected} onClick={() => onSelect(agent.id)}
         title={`${agent.name}${agent.task ? `\n\n${agent.task.slice(0, 300)}` : ''}`}>
         <span className="jv-brackets" aria-hidden="true" />
-        <AgentLamp status={agent.status} live={live} size={compact ? 26 : 34} />
+        {portrait?<OfficeAvatarPortrait appearance={officeAppearance(portrait.slot)} avatarArt={portrait.atlas} size={compact ? 26 : 34} className="jv-agent-portrait"/>:
+          <AgentLamp status={agent.status} live={live} size={compact ? 26 : 34} />}
         <span className="jv-row-main">
           <span className="jv-row-head">
             <span className="jv-role" data-role={agent.role}>{agent.role === 'lead' ? 'Lead' : row.depth > 1 ? 'Sub-worker' : 'Worker'}</span>
@@ -237,7 +289,7 @@ function TaskEvidence({ task }: { task: TeamTaskRow }) {
   )
 }
 
-function DetailPanel({ snapshot, agentId, live, now, onSelect, onClose }: { snapshot: TeamSnapshot; agentId: string; live: boolean; now: number; onSelect: (id: string) => void; onClose: () => void }) {
+function DetailPanel({ snapshot, agentId, live, now, portrait, onSelect, onClose }: { snapshot: TeamSnapshot; agentId: string; live: boolean; now: number; portrait?:AgentPortraitArt; onSelect: (id: string) => void; onClose: () => void }) {
   const agent = snapshot.agents.find(row => row.id === agentId)
   if (!agent) return null
   const task = snapshot.tasks.filter(row => row.childId === agent.id).sort(compareTeamTaskRecency)[0]
@@ -248,7 +300,8 @@ function DetailPanel({ snapshot, agentId, live, now, onSelect, onClose }: { snap
     <aside className="jv-detail" aria-label={`Details for ${agent.name}`}>
       <span className="jv-brackets" aria-hidden="true" />
       <header className="jv-detail-head">
-        <AgentLamp status={agent.status} live={live} size={42} />
+        {portrait?<OfficeAvatarPortrait appearance={officeAppearance(portrait.slot)} avatarArt={portrait.atlas} size={42} className="jv-agent-portrait"/>:
+          <AgentLamp status={agent.status} live={live} size={42} />}
         <div className="jv-detail-title">
           <span className="jv-eyebrow">{agent.role === 'lead' ? 'Lead' : 'Worker'} · {live ? STATUS_LABEL[agent.status] : `Last known: ${STATUS_LABEL[agent.status]}`}</span>
           <h2>{agent.name}</h2>
@@ -317,10 +370,19 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
   const selections = useRef(new Map<string, string | null>())
   const scrolls = useRef(new Map<string, number>())
   const list = useRef<HTMLDivElement>(null)
+  const workspaceOptions = useRef<HTMLDetailsElement>(null)
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [officeSelection, setOfficeSelection] = useState<{ sessionId: string; agentId: string } | null>(null)
+  const [officeComposerOpen, setOfficeComposerOpen] = useState(false)
   const office = pane === 'office'
   const officeSnapshots = useMemo(() => sessions.flatMap(session => teamSnapshots[session.id] ? [teamSnapshots[session.id]] : []), [sessions, teamSnapshots])
+  const desktopPortraits=isDesktopAvatarHost()
+  const identitySlots=useOfficeIdentities(officeSnapshots,desktopPortraits)
+  const avatarArt=useOfficeAvatarArt(!office)
+  const portraitFor=(sessionId:string,agentId:string):AgentPortraitArt|undefined=>{
+    const slot=identitySlots.get(officeKey(sessionId,agentId))
+    return avatarArt&&slot!==undefined?{atlas:avatarArt,slot}:undefined
+  }
   const mission = useMemo(() => {
     if (!snapshot) return undefined
     const visible = new Set(snapshot.agents.filter(agent => !hiddenIds.has(agent.id)).map(agent => agent.id))
@@ -350,6 +412,38 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
   return (
     <div className="jv-root" data-widget={widget} data-motion={animationMode} data-live={live}>
       <div className="jv-backdrop" aria-hidden="true" />
+      {desktopPortraits ? (
+        <header className="jv-bar af-desktop-workspace-bar">
+          <DesktopViews pane={pane} onPane={onPane} />
+          {office&&promptBar&&<button className="af-office-compose" type="button" aria-expanded={officeComposerOpen}
+            aria-controls="af-office-composer" onClick={()=>setOfficeComposerOpen(previous=>!previous)}>Message</button>}
+          <details ref={workspaceOptions} className="af-desktop-workspace-options" onKeyDown={event => {
+            if (event.key !== 'Escape' || !event.currentTarget.open) return
+            event.currentTarget.open = false
+            event.currentTarget.querySelector('summary')?.focus()
+          }}>
+            <summary aria-label="Workspace tools" title="Team, history, and viewer settings"><FlowIcon name="settings" size={16} /><span>Workspace</span></summary>
+            <div className="af-desktop-workspace-popover">
+              {office ? <strong>Agent Office · {officeSnapshots.length} teams</strong>
+                : <TeamPicker sessions={sessions} selectedSessionId={selectedSessionId} onSelect={onSelectSession} snapshots={teamSnapshots} compact={widget} />}
+              {!office && view && <Pipeline view={view} compact={widget} />}
+              {!office && <Segmented label="Which agents to show" value={scope} onChange={onScope} options={[
+                { value: 'active', label: 'Active team' },
+                { value: 'session', label: 'Whole session' },
+              ]} />}
+              <div className="af-desktop-workspace-actions">
+                {!office && <Legend />}
+                {viewerControls}
+              </div>
+              {!office && <ConnectionPill connection={connection} health={health} now={now} compact={widget} />}
+              {!office && view && <AttentionPanel items={view.attention} onOpen={id => {
+                select(id)
+                if (workspaceOptions.current) workspaceOptions.current.open = false
+              }} onDismiss={dismiss} limit={widget ? 1 : 3} />}
+            </div>
+          </details>
+        </header>
+      ) : (
       <header className={office ? "jv-bar of-header" : "jv-bar"}>
         {!office && <span className="jv-header-sweep" aria-hidden="true" />}
         {!office && <TeamReactor statuses={statuses} active={office ? statuses.filter(status => ['running', 'thinking', 'background', 'waiting_approval', 'waiting_input'].includes(status)).length : view?.counts.active ?? 0} live={live} size={widget ? 46 : 76} />}
@@ -376,23 +470,28 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
           </div>
         )}
       </header>
+      )}
 
       {!office && connection.tone !== 'ok' && <div className="jv-banner" data-tone={connection.tone} role="status">
         <strong>{connection.label}</strong> {connection.detail}{snapshot && connection.tone === 'down' ? ' Showing the last known team.' : ''}
       </div>}
 
-      {!office && view && <AttentionPanel items={view.attention} onOpen={select} onDismiss={dismiss} limit={widget ? 1 : 3} />}
+      {!desktopPortraits && !office && view && <AttentionPanel items={view.attention} onOpen={select} onDismiss={dismiss} limit={widget ? 1 : 3} />}
 
       <main className="jv-main" data-detail={selectedExists&&!office}>
-        {office ? <OfficeView snapshots={officeSnapshots} scope={scope} selectedKey={officeSelection ? officeKey(officeSelection.sessionId, officeSelection.agentId) : null}
+        {office ? <OfficeView snapshots={officeSnapshots} scope={scope} identitySlots={desktopPortraits?identitySlots:undefined} selectedKey={officeSelection ? officeKey(officeSelection.sessionId, officeSelection.agentId) : null}
           onSelect={(sessionId, agentId) => setOfficeSelection(previous => previous?.sessionId === sessionId && previous.agentId === agentId ? null : { sessionId, agentId })}
           onOpenTeam={(sessionId, agentId) => { selections.current.set(sessionId, agentId); setSelectedAgentId(agentId); onSelectSession(sessionId); onPane('board') }}
-          live={live} connection={connection} visible={visible} animationMode={animationMode} now={now} /> : showGraph ? <div className="jv-graph">{renderGraph(selectedAgentId, select, hiddenIds, mission)}</div> : (
+          live={live} connection={connection} visible={visible} animationMode={animationMode} now={now} /> : showGraph ? <div className="jv-graph">{desktopPortraits&&mission?
+            <DesktopMissionTree mission={mission} selected={selectedAgentId} live={live} atlas={avatarArt} onSelect={select} appearanceFor={id=>{
+              const slot=identitySlots.get(officeKey(snapshot!.sessionId,id))
+              return slot===undefined?undefined:officeAppearance(slot)
+            }}/>:renderGraph(selectedAgentId, select, hiddenIds, mission)}</div> : (
           <div className="jv-board" ref={list} onScroll={event => { if (selectedSessionId) scrolls.current.set(selectedSessionId, event.currentTarget.scrollTop) }}>
             {view ? (
               <>
                 <ol className="jv-tree" aria-label="Team members">
-                  {view.rows.map((row, index) => <AgentRowCard key={row.agent.id} row={row} guides={guides[index]} selected={row.agent.id === selectedAgentId} live={live} now={now} compact={widget} onSelect={id => select(id === selectedAgentId ? null : id)} />)}
+                  {view.rows.map((row, index) => <AgentRowCard key={row.agent.id} row={row} guides={guides[index]} selected={row.agent.id === selectedAgentId} live={live} now={now} compact={widget} desktop={desktopPortraits} portrait={portraitFor(snapshot!.sessionId,row.agent.id)} onSelect={id => select(id === selectedAgentId ? null : id)} />)}
                 </ol>
                 {scope === 'active' && view.hiddenFinished > 0 && (
                   <button className="jv-more" onClick={() => onScope('session')}>{view.hiddenFinished} finished hidden · Show whole session</button>
@@ -402,12 +501,12 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
             ) : <EmptyState connection={connection} hasSessions={sessions.length > 0} />}
           </div>
         )}
-        {!office && selectedExists && detailSnapshot && <DetailPanel snapshot={detailSnapshot} agentId={detailAgentId!} live={live} now={now}
+        {!office && selectedExists && detailSnapshot && <DetailPanel snapshot={detailSnapshot} agentId={detailAgentId!} live={live} now={now} portrait={portraitFor(detailSnapshot.sessionId,detailAgentId!)}
           onSelect={select}
           onClose={() => select(null)} />}
       </main>
 
-      {promptBar}
+      {desktopPortraits&&promptBar?<div id="af-office-composer" hidden={office&&!officeComposerOpen}>{promptBar}</div>:promptBar}
       {widget && <footer className="jv-foot"><ConnectionPill connection={connection} health={health} now={now} compact /></footer>}
     </div>
   )

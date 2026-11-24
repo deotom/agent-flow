@@ -1,9 +1,41 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { moonAge, officeSky, officeSkyIcon, skyEvent, skyHoliday, skyPhase, skySeason, skyWeather, SKY_EVENT_SLOT_MS } from '../lib/office-sky'
+import { gardenWetness, moonAge, officeClouds, officeSky, officeSkyIcon, skyEvent, skyHoliday, skyPhase, skySeason, skyWeather, SKY_EVENT_SLOT_MS } from '../lib/office-sky'
+import { drawOfficeSky, drawOfficeSkyBalloon } from '../components/agent-visualizer/office/office-sky-art'
+import type {OfficeScene} from '../lib/office-types'
 
 const at = (y: number, m: number, d: number, h = 12, min = 0, s = 0) => new Date(y, m - 1, d, h, min, s)
 const hours = (start: Date, count: number) => Array.from({ length: count }, (_, i) => new Date(start.getTime() + i * 3_600_000))
+
+test('paints the Desktop balloon only on the sky layer behind the garden',()=>{
+ const date=at(2026,11,23),event={kind:'balloon' as const,seed:.5,progress:.5}
+ const scene:OfficeScene={width:450,height:500,floors:[{id:'lounge',kind:'lounge',sessionId:null,title:'Garden',subtitle:'',color:'#abc',y:0,height:188,actorKeys:[],desktopArt:true}],actors:[],quietTeams:[],totalAgents:0,finishedCount:0}
+ let ellipses=0
+ const canvas={save(){},restore(){},beginPath(){},rect(){},clip(){},fill(){},fillRect(){},moveTo(){},lineTo(){},stroke(){},createLinearGradient(){},ellipse(){ellipses++}} as unknown as CanvasRenderingContext2D
+ const sky={...officeSky(date),weather:'clear' as const,holiday:null,event}
+ drawOfficeSky(canvas,scene,1,date,sky)
+ assert.equal(ellipses,0)
+ drawOfficeSkyBalloon(canvas,scene,1,date,event)
+ assert.equal(ellipses,3)
+ scene.floors[0].desktopArt=false
+ drawOfficeSky(canvas,scene,1,date,sky)
+ assert.equal(ellipses,6)
+})
+
+test('keeps the garden wet through rain and dries it by local time after a wet hour',()=>{
+  const dates=hours(at(2026,7,1,0),24*14)
+  const wet=(date:Date)=>['rain','storm'].includes(skyWeather(date))
+  const end=dates.find((date,i)=>i>0&&!wet(date)&&wet(dates[i-1]))!
+  assert.ok(end)
+  const after=(minutes:number)=>gardenWetness(new Date(end.getTime()+minutes*60_000))
+  assert.equal(after(-1),1)
+  assert.equal(after(0),1)
+  assert.ok(after(12)>after(29)&&after(29)>0)
+  assert.equal(after(45),0)
+  const dry=dates.find((date,i)=>i>0&&!wet(date)&&!wet(dates[i-1]))!
+  assert.ok(dry)
+  assert.equal(gardenWetness(dry),0)
+})
 
 test('time of day follows the local clock', () => {
   assert.equal(skyPhase(at(2026, 11, 13, 4, 59)), 'night')
@@ -16,6 +48,24 @@ test('time of day follows the local clock', () => {
 test('Thai seasons: hot Mar–May, rainy Jun–Oct, cool Nov–Feb', () => {
   const byMonth = Array.from({ length: 12 }, (_, m) => skySeason(at(2026, m + 1, 15)))
   assert.deepEqual(byMonth, ['cool', 'cool', 'hot', 'hot', 'hot', 'rainy', 'rainy', 'rainy', 'rainy', 'rainy', 'cool', 'cool'])
+})
+
+test('uses seasonal cloud coverage and increases it with wetter local weather',()=>{
+  const hot=officeClouds({season:'hot',weather:'clear'},0)
+  const cool=officeClouds({season:'cool',weather:'clear'},0)
+  const rainy=officeClouds({season:'rainy',weather:'clear'},0)
+  assert.ok(hot.length<cool.length&&cool.length<rainy.length)
+  assert.ok(officeClouds({season:'rainy',weather:'storm'},0).length>rainy.length)
+})
+
+test('moves individual clouds at different speeds without resetting existing clouds when coverage changes',()=>{
+  const condition={season:'cool',weather:'clear'} as const
+  const start=officeClouds(condition,0),later=officeClouds(condition,5)
+  const drift=later.map((cloud,i)=>cloud.x-start[i].x)
+  assert.ok(drift.every(distance=>distance>0))
+  assert.ok(Math.max(...drift)>Math.min(...drift))
+  assert.deepEqual(officeClouds({...condition,weather:'cloudy'},5).slice(0,later.length),later)
+  assert.deepEqual(officeClouds(condition,5),later)
 })
 
 test('moon age matches known full and new moons', () => {

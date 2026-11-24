@@ -98,6 +98,8 @@ it('clamps the small projection beside the Lead and draws original avatar/runtim
  const s=scene();s.actors[0].x=448
  const state=mergeOfficeHolograms(empty(),[event()],s,0,10000)
  const frames=officeHologramFrames(state,s,2400,false),frame=frames[0]
+ const enlarged=officeHologramFrames(state,s,2400,false,()=>1.18)[0]
+ assert.equal(enlarged.scale,.55*1.18)
  assert.ok(frame.x<450-frame.scale*20);assert.ok(frame.scale<1)
  assert.equal(frame.opacity,officeHologramFrames(state,s,100,false)[0].opacity)
  assert.ok(officeHologramFrames(state,s,2500,true)[0].opacity<officeHologramFrames(state,s,1000,true)[0].opacity)

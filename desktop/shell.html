@@ -9,7 +9,7 @@
 </head>
 <body>
   <header class="toolbar">
-    <div class="brand"><span class="brand-icon">◈</span> <span class="brand-name">AGENT FLOW</span> <span class="desktop-tag">DESKTOP</span></div>
+    <div class="brand"><span class="brand-icon" aria-hidden="true">◈</span> <span class="brand-name">Agent Flow</span></div>
     <div class="toolbar-actions">
       <button id="folder-button" title="Choose workspace · Ctrl+O" aria-label="Choose workspace"><span class="button-icon" aria-hidden="true">▱</span><span class="button-label" id="folder-text">Choose folder</span></button>
       <button id="pin-button" aria-pressed="true" title="Keep above other windows · Ctrl+Shift+T" aria-label="Always on top"><span class="button-icon" aria-hidden="true">⌖</span><span class="button-label" id="pin-text">Always on top</span></button>
@@ -25,14 +25,12 @@
   <main>
     <section id="welcome">
       <div class="welcome-orbit" aria-hidden="true"><span>◈</span></div>
-      <div class="eyebrow">YOUR AGENTS, IN VIEW</div>
-      <h1>A window into your workspace.</h1>
+      <h1>Open a workspace</h1>
       <p>Choose a project folder to watch Claude Code and Codex sessions as they work.</p>
       <button id="welcome-choose" class="primary">Choose workspace folder <span>↗</span></button>
       <button id="open-all-t3" title="Watch teams from every T3 project. No folder needed.">Watch all T3 projects</button>
       <button id="open-last" hidden>Open last workspace</button>
       <div id="last-folder" class="last-folder"></div>
-      <div class="welcome-note">Keep this window nearby. Pin it above your editor with Always on top.</div>
     </section>
     <iframe id="graph" title="Agent Flow workspace graph" sandbox="allow-scripts allow-same-origin allow-downloads" hidden></iframe>
   </main>

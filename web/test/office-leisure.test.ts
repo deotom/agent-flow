@@ -1,7 +1,7 @@
 import { it } from 'node:test'
 import assert from 'node:assert/strict'
 import { officeLeisureObjects, nearestLeisureActor, officeLeisureForSpot,createOfficeLeisureTrip } from '../lib/office-leisure'
-import { buildOfficeScene } from '../lib/office-model'
+import { buildOfficeScene,officeBreakSpots } from '../lib/office-model'
 import { officeLife } from '../lib/office-life'
 import type {TeamSnapshot} from '../lib/team-types'
 const snap:TeamSnapshot={sessionId:'s',title:'Team',active:true,updatedAt:1,tasks:[],agents:['lead','rest'].map((id,i)=>({id,role:i?'worker':'lead',parentId:i?'lead':null,name:id,runtime:'codex',model:null,status:i?'done':'thinking',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1,updatedAt:1,completedAt:null}))}
@@ -32,4 +32,17 @@ it('uses props during rest and parties while preserving real work ownership',()=
    assert.equal(officeLife({...actor,party:true},3,{objectAction:kind}).objectAction,kind)
    assert.equal(officeLife(actor,3,{objectAction:kind,tripActive:true}).objectAction,undefined)
  }
+})
+
+it('puts seated readers on the painted chair and pouf and keeps the table reachable',()=>{
+ const places=officeBreakSpots('room-break-reading',true)
+ const seated=places.filter(([, ,standing])=>!standing)
+ assert.equal(places.length,4)
+ assert.equal(seated.length,2)
+ assert.ok(seated.some(([x,y])=>x>.16&&x<.28&&y>.73&&y<.79))
+ assert.ok(seated.some(([x,y])=>x>.54&&x<.62&&y>.77&&y<.83))
+ assert.ok(places.every(([x,y,standing])=>!standing||y>.82&&(x<.17||x>.66)))
+ const room={kind:'break' as const,room:'room-break-reading' as const,id:'reading',sessionId:null,title:'Reading',subtitle:'',color:'#444',y:0,height:563,actorKeys:[],desktopArt:true}
+ const objects=officeLeisureObjects(room,1000)
+ assert.ok(objects.every(({x,y})=>x>=310&&x<=470&&y>=402&&y<=430))
 })

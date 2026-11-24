@@ -6,6 +6,23 @@ import { officePresenceEvents } from '../lib/office-motion'
 import type { TeamSnapshot } from '../lib/team-types'
 const active: TeamSnapshot = {sessionId:'s',title:'Team',active:true,updatedAt:1,tasks:[],agents:[{id:'lead',name:'Lead',role:'lead',parentId:null,runtime:'codex',model:null,status:'running',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1,updatedAt:1,completedAt:null}]}
 const done: TeamSnapshot = {...active,agents:[{...active.agents[0],status:'done'}]}
+it('grounds Desktop party guests at the painted garden bench and clear turf',()=>{
+  const team={...done,agents:Array.from({length:4},(_,i)=>({...done.agents[0],id:`agent-${i}`}))}
+  const parties=new Set(['s'])
+  const desktop=buildOfficeScene([team],'active',false,new Map(),450,parties,[],{},true)
+  const surface=desktop.floors.find(f=>f.kind==='lounge')!
+  const guests=desktop.actors.filter(a=>a.floorId===surface.id)
+  assert.equal(guests.length,4)
+  assert.equal(guests.filter(a=>a.stand).length,2)
+  for(const guest of guests.filter(a=>!a.stand)){
+    assert.ok(guest.x/450>.23&&guest.x/450<.43)
+    assert.ok(guest.y/surface.height!>=.72&&guest.y/surface.height!<=.76)
+  }
+  for(const guest of guests.filter(a=>a.stand)){
+    assert.ok(guest.x/450>.44&&guest.x/450<.74)
+    assert.ok(guest.y/surface.height!>=.74&&guest.y/surface.height!<=.81)
+  }
+})
 it('derives immediate parties purely with stable identity and exact expiry',()=>{
   const initial=emptyOfficePartyHistory()
   const working=deriveOfficeParties(initial,[active],1234)

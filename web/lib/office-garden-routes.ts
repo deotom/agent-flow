@@ -11,7 +11,8 @@ export function officeGardenRoute(scene:OfficeScene,actorKey:string,at:number):{
  const p=(x:number,y:number):OfficePoint=>({x:x*width,y})
  // The short fade leg is entirely beyond the crop, including the avatar's body.
  // Rear walkers descend the empty left border; all routes clear the seats/shop.
- const points=variant===0?[p(-.14,front),p(-.06,front),p(.10,front),p(.86,front)]
+ const points=surface?.desktopArt?[p(-.14,front),p(-.06,front),p(.10,front),{x:nav.shaftX-28*nav.scale,y:front}]
+  :variant===0?[p(-.14,front),p(-.06,front),p(.10,front),p(.86,front)]
   :variant===1?[p(1.14,front),p(1.06,front),p(.86,front)]
   :[p(-.14,rear),p(-.06,rear),p(.07,rear),p(.07,front),p(.86,front)]
  points.push({x:nav.shaftX-28*nav.scale,y:nav.hatch.y})

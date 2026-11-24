@@ -1,0 +1,618 @@
+/* Only the Electron shell and orb set this host marker in the standalone entry. */
+[data-agent-flow-host="desktop"] {
+  color-scheme: dark;
+  --desktop-bg: #191b16;
+  --desktop-panel: #22251e;
+  --desktop-raised: #2b2d24;
+  --desktop-line: #4a4637;
+  --desktop-text: #f3e8d2;
+  --desktop-muted: #c6b89f;
+  --desktop-accent: #eebd76;
+  --desktop-accent-ink: #2b2014;
+  --desktop-focus: #ffd394;
+  --desktop-hover: #39372b;
+  --desktop-selection: #3c3120;
+  --desktop-line-active: #8a7452;
+  --desktop-success: #b8d48a;
+  --desktop-warning: #ffb45e;
+  --desktop-danger: #f2ab95;
+  --desktop-shadow: 0 12px 30px #100e0b80;
+  --desktop-radius: 8px;
+}
+
+[data-agent-flow-host="desktop"] .agent-flow-ui {
+  --flow-scroll-track: var(--desktop-bg);
+  --flow-scroll-thumb: var(--desktop-line-active);
+  --flow-scroll-thumb-hover: var(--desktop-muted);
+  color: var(--desktop-text);
+  background: var(--desktop-bg) !important;
+}
+
+[data-agent-flow-host="desktop"] :is(button, select, input, textarea, summary):focus-visible {
+  outline: 2px solid var(--desktop-focus);
+  outline-offset: 2px;
+}
+
+[data-agent-flow-host="desktop"] :is(.flow-hud-panel, .flow-viewer-dialog, .glass-card) button:hover {
+  background-color: var(--desktop-hover);
+}
+
+[data-agent-flow-host="desktop"] .agent-flow-ui .flow-icon-button {
+  color: var(--desktop-muted) !important;
+}
+
+[data-agent-flow-host="desktop"] .agent-flow-ui .flow-icon-button:is([aria-expanded="true"], [aria-pressed="true"]) {
+  background: var(--desktop-selection);
+  color: var(--desktop-accent) !important;
+}
+
+[data-agent-flow-host="desktop"] :is(.flow-hud-panel, .flow-viewer-dialog, .glass-card) {
+  background: var(--desktop-panel) !important;
+  border: 1px solid var(--desktop-line) !important;
+  border-radius: var(--desktop-radius) !important;
+  color: var(--desktop-text);
+  box-shadow: var(--desktop-shadow) !important;
+}
+
+[data-agent-flow-host="desktop"] .glass-card::before { display: none; }
+
+[data-agent-flow-host="desktop"] :is(.flow-viewer-dialog, .glass-card, .flow-hud-panel) :is(input, textarea, select) {
+  background: var(--desktop-bg) !important;
+  border: 1px solid var(--desktop-line-active) !important;
+  color: var(--desktop-text) !important;
+  box-shadow: none;
+}
+
+[data-agent-flow-host="desktop"] .flow-viewer-dialog .flow-viewer-muted { color: var(--desktop-muted) !important; }
+
+[data-agent-flow-host="desktop"] .jv-root {
+  --jv-bg: var(--desktop-bg);
+  --jv-panel: var(--desktop-panel);
+  --jv-panel-strong: var(--desktop-raised);
+  --jv-line: var(--desktop-line);
+  --jv-line-strong: var(--desktop-line-active);
+  --jv-cyan: var(--desktop-accent);
+  --jv-text: var(--desktop-text);
+  --jv-muted: var(--desktop-muted);
+  --jv-dim: #a99b83;
+  --jv-run: var(--desktop-accent);
+  --jv-think: #cbb8dd;
+  --jv-wait: var(--desktop-warning);
+  --jv-done: var(--desktop-success);
+  --jv-fail: var(--desktop-danger);
+  --jv-cancel: #bcb4a4;
+  --jv-idle: #a99b83;
+  color: var(--desktop-text);
+  background: var(--desktop-bg);
+}
+
+[data-agent-flow-host="desktop"] :is(.jv-backdrop, .jv-header-sweep, .jv-brackets, .jv-packet),
+[data-agent-flow-host="desktop"] :is(.jv-row, .jv-row-wrap, .jv-stage, .jv-reactor)::after,
+[data-agent-flow-host="desktop"] .jv-reactor::before {
+  display: none;
+}
+
+[data-agent-flow-host="desktop"] .jv-bar {
+  background: var(--desktop-panel);
+  border-color: var(--desktop-line);
+}
+
+[data-agent-flow-host="desktop"] :is(.jv-popover, .jv-bar-tools [role="dialog"]) {
+  background: var(--desktop-raised) !important;
+  border-color: var(--desktop-line-active) !important;
+  box-shadow: var(--desktop-shadow) !important;
+}
+
+[data-agent-flow-host="desktop"] .jv-seg {
+  background: var(--desktop-bg);
+  border-radius: var(--desktop-radius);
+}
+
+[data-agent-flow-host="desktop"] .jv-seg button { border-radius: 5px; }
+[data-agent-flow-host="desktop"] .jv-seg button[aria-pressed="true"] {
+  color: var(--desktop-accent) !important;
+  background: var(--desktop-selection) !important;
+  box-shadow: inset 0 -2px var(--desktop-accent);
+}
+
+[data-agent-flow-host="desktop"] .jv-seg[aria-label="View"] {
+  gap: 2px;
+  border-color: transparent;
+  background: transparent;
+}
+
+[data-agent-flow-host="desktop"] .jv-stage {
+  background: var(--desktop-raised);
+  clip-path: none;
+  margin-right: 0;
+  padding-inline: 7px;
+}
+
+[data-agent-flow-host="desktop"] .jv-stage:first-child { border-radius: 5px 0 0 5px; }
+[data-agent-flow-host="desktop"] .jv-stage:last-child { border-right: 1px solid var(--desktop-line); border-radius: 0 5px 5px 0; }
+[data-agent-flow-host="desktop"] .jv-stage[data-stage="sent"] { --s: #bcb5d5; }
+[data-agent-flow-host="desktop"] .jv-stage[data-stage="received"] { --s: #acc9b8; }
+
+[data-agent-flow-host="desktop"] .jv-board,
+[data-agent-flow-host="desktop"] .jv-detail-scroll {
+  scrollbar-color: var(--flow-scroll-thumb) var(--flow-scroll-track);
+}
+
+[data-agent-flow-host="desktop"] :is(.jv-row, .jv-row[data-role="lead"]) {
+  background: var(--desktop-panel) !important;
+  border-radius: var(--desktop-radius);
+}
+
+[data-agent-flow-host="desktop"] .jv-row:hover {
+  background: var(--desktop-hover) !important;
+  box-shadow: inset 2px 0 var(--c);
+}
+
+[data-agent-flow-host="desktop"] .jv-row[data-selected="true"] {
+  background: var(--desktop-selection) !important;
+  box-shadow: inset 2px 0 var(--desktop-accent);
+}
+
+[data-agent-flow-host="desktop"] .jv-row:is([data-status="waiting_input"], [data-status="waiting_approval"]):not([data-selected="true"]) {
+  background: var(--desktop-selection) !important;
+}
+
+[data-agent-flow-host="desktop"] .jv-row[data-status="done"]:not([data-selected="true"]),
+[data-agent-flow-host="desktop"] .jv-row[data-status="cancelled"]:not([data-selected="true"]) { opacity: 1; }
+
+[data-agent-flow-host="desktop"] .jv-row-status {
+  flex: 0 1 auto;
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--c) 14%, var(--desktop-panel));
+}
+
+[data-agent-flow-host="desktop"] .jv-row-status:is([data-status="waiting_input"], [data-status="waiting_approval"]) {
+  background: var(--desktop-warning);
+  color: var(--desktop-accent-ink);
+}
+
+[data-agent-flow-host="desktop"] :is(.jv-picker-title, .jv-row-name, .jv-detail-title h2, .jv-reactor-readout strong) { color: var(--desktop-text); }
+[data-agent-flow-host="desktop"] :is(.jv-picker-title, .jv-row-name, .jv-stage strong, .jv-reactor-readout strong) { text-shadow: none; }
+[data-agent-flow-host="desktop"] .jv-alert-mark { box-shadow: none; }
+
+[data-agent-flow-host="desktop"] .jv-role[data-role="lead"] {
+  color: var(--desktop-accent-ink);
+  box-shadow: none;
+}
+
+[data-agent-flow-host="desktop"] .jv-activity li { background: var(--desktop-panel); }
+[data-agent-flow-host="desktop"] .jv-link-button { text-decoration-color: var(--desktop-line-active); }
+
+[data-agent-flow-host="desktop"] .jv-chip-button:is(:hover, [aria-expanded="true"]),
+[data-agent-flow-host="desktop"] .jv-picker-option:is(:hover, [aria-selected="true"]),
+[data-agent-flow-host="desktop"] .jv-more:hover {
+  background: var(--desktop-hover) !important;
+  box-shadow: none;
+}
+
+[data-agent-flow-host="desktop"] .jv-reactor-core { fill: var(--desktop-panel); stroke: var(--desktop-line-active); filter: none; }
+[data-agent-flow-host="desktop"] :is(.jv-reactor-halo, .jv-reactor-ticks, .jv-reactor-inner) circle { stroke: var(--desktop-line-active); }
+[data-agent-flow-host="desktop"] .jv-reactor-seg { filter: none; }
+
+[data-agent-flow-host="desktop"] .pb-root {
+  background: var(--desktop-panel);
+  color: var(--desktop-text);
+  border-color: var(--desktop-line-active);
+}
+
+[data-agent-flow-host="desktop"] .pb-root[data-compact="true"] { box-shadow: var(--desktop-shadow); }
+
+[data-agent-flow-host="desktop"] :is(.pb-select, .pb-input) {
+  background: var(--desktop-bg);
+  color: var(--desktop-text);
+  border-color: var(--desktop-line-active);
+}
+
+[data-agent-flow-host="desktop"] .pb-input::placeholder { color: var(--desktop-muted); }
+
+[data-agent-flow-host="desktop"] .pb-root .pb-send {
+  background: var(--desktop-accent);
+  color: var(--desktop-accent-ink);
+  box-shadow: none;
+}
+
+[data-agent-flow-host="desktop"] .pb-root .pb-send:not(:disabled):hover { background: var(--desktop-focus); }
+
+[data-agent-flow-host="desktop"] .pb-root .pb-send:disabled {
+  background: var(--desktop-raised);
+  color: var(--desktop-muted);
+}
+
+[data-agent-flow-host="desktop"] .pb-status[data-kind="ok"] { color: var(--desktop-success); }
+[data-agent-flow-host="desktop"] .pb-status[data-kind="error"] { color: var(--desktop-danger); }
+[data-agent-flow-host="desktop"] .pb-status[data-kind="unknown"] { color: var(--desktop-warning); }
+
+/* Office controls frame the painted scene using the same surfaces as the Board. */
+[data-agent-flow-host="desktop"] .of-view {
+  background: var(--desktop-bg);
+  color: var(--desktop-text);
+}
+
+[data-agent-flow-host="desktop"] .of-scroll {
+  background: var(--desktop-bg);
+  scrollbar-color: var(--desktop-line-active) var(--desktop-bg);
+}
+[data-agent-flow-host="desktop"] .of-building { width: 100%; }
+[data-agent-flow-host="desktop"] .of-board[data-painted="true"] { left: 40%; width: 18.8%; }
+[data-agent-flow-host="desktop"] .of-break-peek { clip-path: inset(0 17% 0 0); }
+[data-agent-flow-host="desktop"] .of-break-peek-header { right: 19%; }
+[data-agent-flow-host="desktop"] .of-lift-call-plate {
+  position: absolute; top: 63%; left: 0; display: grid; place-items: center;
+  width: 13px; height: 17px; border: 1px solid #ae783d; border-radius: 3px;
+  background: #422b19; color: #ffe0a3; font: 700 11px/1 system-ui;
+  box-shadow: 0 1px 3px #251407a0;
+}
+[data-agent-flow-host="desktop"] .of-hatch-hit[data-lift-state="waiting"] .of-lift-call-plate { background: #f0aa46; color: #2c1b0c; }
+[data-agent-flow-host="desktop"] .of-hatch-hit:is([data-lift-state="boarding"],[data-lift-state="open"]) .of-lift-call-plate { background: #a4c27b; color: #253020; }
+@media (min-width: 640px) {
+  [data-agent-flow-host="desktop"] .of-scroll { container-type: size; background: radial-gradient(ellipse at center, #322c20, var(--desktop-bg) 75%); }
+  [data-agent-flow-host="desktop"] .of-building { width: min(100%, 138cqh); }
+}
+
+[data-agent-flow-host="desktop"] .of-view :is(.of-toolbar, .of-atmosphere, .of-live-caption) {
+  background: var(--desktop-panel);
+  border-color: var(--desktop-line);
+  color: var(--desktop-text);
+}
+
+[data-agent-flow-host="desktop"] .of-toolbar { border-bottom: 1px solid var(--desktop-line); }
+
+[data-agent-flow-host="desktop"] .of-view .of-toolbar { height: 34px; }
+[data-agent-flow-host="desktop"] .of-area-switch { display: flex; gap: 4px; }
+[data-agent-flow-host="desktop"] .of-area-switch[data-compact="true"] { display: none; }
+[data-agent-flow-host="desktop"] .of-view .of-area-switch button {
+  width: auto; padding-inline: 7px; border: 0; background: transparent; color: var(--desktop-muted); font: inherit;
+}
+[data-agent-flow-host="desktop"] .of-view .of-area-switch button:hover { color: var(--desktop-text); background: var(--desktop-hover); }
+[data-agent-flow-host="desktop"] .of-scene-controls { flex: none; }
+[data-agent-flow-host="desktop"] .of-scene-controls summary {
+  display: grid; place-items: center; width: 25px; height: 25px; cursor: pointer; list-style: none;
+  border: 1px solid var(--desktop-line-active); border-radius: 6px;
+  color: var(--desktop-text); background: var(--desktop-raised); font-size: 14px;
+}
+[data-agent-flow-host="desktop"] .of-scene-controls[open] summary { color: var(--desktop-accent); }
+[data-agent-flow-host="desktop"] .of-scene-controls-panel {
+  position: absolute; z-index: 12; right: 8px; top: 36px; padding: 4px; max-width: calc(100% - 16px);
+  border: 1px solid var(--desktop-line-active); border-radius: 8px;
+  background: var(--desktop-panel); box-shadow: var(--desktop-shadow);
+}
+[data-agent-flow-host="desktop"] .of-scene-controls-panel .of-atmosphere { border: 0; padding: 4px 6px; }
+[data-agent-flow-host="desktop"] .of-scene-controls-panel .of-atmosphere > button { width: auto; height: auto; }
+[data-agent-flow-host="desktop"] .of-scene-controls-actions { display: flex; gap: 6px; padding: 4px 6px; }
+[data-agent-flow-host="desktop"] .of-scene-controls-actions > button { width: auto; padding-inline: 6px; font: inherit; }
+[data-agent-flow-host="desktop"] .of-station-sign {
+  position: absolute; z-index: 1; pointer-events: none; transform: translate(-50%, -50%);
+  padding: .12em .48em; border: 1px solid #75451b; border-radius: 3px;
+  background: linear-gradient(#ebc081, #c08b4d); color: #382414;
+  box-shadow: inset 0 0 0 1px #f4ca8d8c, 0 2px 3px #3e210c80;
+  font: 750 clamp(8px, 1.3vw, 14px)/1.15 "Segoe UI", sans-serif; letter-spacing: .035em; text-transform: uppercase;
+}
+[data-agent-flow-host="desktop"] .of-station-sign[data-wall="left"] {
+  transform: translate(-50%, -50%) skewY(-5deg);
+}
+/* The painted wooden door is the control itself: no badge, only a warm edge on hover and focus. */
+[data-agent-flow-host="desktop"] .of-view .of-annex-door { border-radius: 40% 40% 4px 4px / 22% 22% 4px 4px; transition: box-shadow .15s ease; }
+[data-agent-flow-host="desktop"] .of-view .of-annex-door:hover { box-shadow: inset 0 0 0 1px #f4ca8d90, inset 0 0 12px #ffcf8a40; }
+[data-agent-flow-host="desktop"] .of-view .of-annex-door:focus-visible { outline: 2px solid #f4ca8d; outline-offset: -2px; }
+[data-agent-flow-host="desktop"] .of-view:has(.office-activity-footer) .of-inspector { bottom: 76px; }
+@media (max-width: 580px) {
+  [data-agent-flow-host="desktop"] .of-view:has(.office-activity-footer) .of-inspector { bottom: 68px; }
+}
+@media (max-width: 350px) {
+  [data-agent-flow-host="desktop"] .of-area-switch { display: none; }
+  [data-agent-flow-host="desktop"] .of-area-switch[data-compact="true"] { display: flex; padding: 4px 6px; }
+}
+[data-agent-flow-host="desktop"] .jv-root .af-office-compose {
+  margin-left: auto; padding: 6px 10px; border: 1px solid var(--desktop-line); border-radius: 6px;
+  color: var(--desktop-muted); font-size: 11px;
+}
+[data-agent-flow-host="desktop"] .jv-root .af-office-compose:is(:hover, [aria-expanded="true"]) {
+  color: var(--desktop-text); background: var(--desktop-hover);
+}
+[data-agent-flow-host="desktop"] .af-office-compose + .af-desktop-workspace-options { margin-left: 0; }
+[data-agent-flow-host="desktop"] #af-office-composer { flex: none; min-width: 0; }
+
+[data-agent-flow-host="desktop"] .of-view :is(.of-toolbar button, .of-atmosphere button, .of-atmosphere select) {
+  background: var(--desktop-raised);
+  border-color: var(--desktop-line-active);
+  color: var(--desktop-text);
+}
+
+[data-agent-flow-host="desktop"] .of-view .of-atmosphere button[aria-pressed="true"] {
+  background: var(--desktop-selection);
+  color: var(--desktop-accent);
+}
+
+[data-agent-flow-host="desktop"] .of-view .of-toolbar :is(.of-attention, .of-attention-action),
+[data-agent-flow-host="desktop"] .of-attention-action {
+  flex: none;
+  width: auto;
+  min-height: 25px;
+  max-width: none;
+  padding-inline: 6px;
+  border: 1px solid var(--desktop-warning);
+  border-radius: 6px;
+  background: var(--desktop-warning);
+  color: var(--desktop-accent-ink);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+[data-agent-flow-host="desktop"] .of-view .of-link { color: var(--desktop-success); }
+[data-agent-flow-host="desktop"] .of-view .of-link[data-tone="warn"] { color: var(--desktop-warning); }
+[data-agent-flow-host="desktop"] .of-view .of-link[data-tone="down"] { color: var(--desktop-danger); }
+[data-agent-flow-host="desktop"] .of-view :is(.of-empty, .of-live-caption > span, .of-atmosphere small) { color: var(--desktop-muted); }
+
+[data-agent-flow-host="desktop"] .of-view .of-inspector {
+  background: var(--desktop-panel);
+  border-color: var(--desktop-line-active);
+  border-radius: var(--desktop-radius);
+  color: var(--desktop-text);
+  box-shadow: var(--desktop-shadow);
+}
+
+[data-agent-flow-host="desktop"] .of-inspector > header,
+[data-agent-flow-host="desktop"] .of-inspector-content details { border-color: var(--desktop-line); }
+
+[data-agent-flow-host="desktop"] .of-inspector-content {
+  scrollbar-color: var(--desktop-line-active) var(--desktop-bg);
+}
+
+[data-agent-flow-host="desktop"] .of-view :is(.of-inspector > header > button, .of-inspector-content > button) {
+  background: var(--desktop-raised);
+  border-color: var(--desktop-line-active);
+  color: var(--desktop-text);
+}
+
+[data-agent-flow-host="desktop"] .of-view :is(.of-inspector > header > button, .of-inspector-content > button):hover {
+  background: var(--desktop-hover);
+}
+
+[data-agent-flow-host="desktop"] .of-inspector :is(header > strong, dt, .of-inspector-team, .of-inspector-content > button > span) {
+  color: var(--desktop-muted);
+}
+
+[data-agent-flow-host="desktop"] .of-inspector summary { color: var(--desktop-accent); }
+
+[data-agent-flow-host="desktop"] .of-agent:not([data-selected="true"]):not([data-status^="waiting_"]):not([data-status="failed"]):not(:hover):not(:focus-visible) .of-tag:not([data-lead="true"]),
+[data-agent-flow-host="desktop"] .of-agent:not([data-selected="true"]):not([data-status^="waiting_"]):not([data-status="failed"]) .of-bubble {
+  display: none;
+}
+
+[data-agent-flow-host="desktop"] .of-break-peek > :is(.of-art-room-break, .of-art-room-break-game, .of-art-room-break-garden) {
+  filter: saturate(.86) sepia(.1);
+}
+
+[data-agent-flow-host="desktop"] .of-resting-muted { display:none; }
+[data-agent-flow-host="desktop"] .of-board-inner ul { display:none; }
+[data-agent-flow-host="desktop"] .of-board-inner { justify-content:center; gap:8cqh; }
+[data-agent-flow-host="desktop"] .of-board-goal { font:650 21cqh/1.1 "Segoe UI",system-ui,sans-serif; }
+[data-agent-flow-host="desktop"] .of-board-progress { font:600 17cqh/1.1 "Segoe UI",system-ui,sans-serif; }
+[data-agent-flow-host="desktop"] .of-view .of-floor-label {
+  background:#26231ddd;border-color:#7b6244;color:#f3e8d2;
+}
+
+@media (max-width: 350px) {
+  [data-agent-flow-host="desktop"] .of-toolbar:has(.of-attention-action) { gap: 4px; padding-inline: 6px; }
+  [data-agent-flow-host="desktop"] .of-toolbar:has(.of-attention-action) > time { display: none; }
+}
+
+[data-agent-flow-host="desktop"] .jv-root > .af-desktop-workspace-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  min-height: 48px;
+  background: var(--desktop-panel);
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-views {
+  display: flex;
+  align-items: stretch;
+  align-self: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-views button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 650;
+  color: var(--desktop-muted);
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-views button[aria-pressed="true"] {
+  color: var(--desktop-text);
+  background: var(--desktop-selection);
+  box-shadow: inset 0 -3px var(--desktop-accent);
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-views button[aria-pressed="true"] svg { color: var(--desktop-accent); }
+[data-agent-flow-host="desktop"] .af-desktop-views button:hover { background: var(--desktop-hover); }
+[data-agent-flow-host="desktop"] .af-desktop-views button:focus-visible { outline-offset: -3px; }
+[data-agent-flow-host="desktop"] .af-desktop-workspace-options { flex: none; }
+
+[data-agent-flow-host="desktop"] .af-desktop-workspace-options > summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--desktop-line);
+  color: var(--desktop-muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-workspace-options[open] > summary,
+[data-agent-flow-host="desktop"] .af-desktop-workspace-options > summary:hover {
+  color: var(--desktop-text);
+  background: var(--desktop-hover);
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-workspace-popover {
+  position: absolute;
+  inset: calc(100% + 5px) 8px auto auto;
+  width: min(320px, calc(100% - 16px));
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  background: var(--desktop-panel);
+  border: 1px solid var(--desktop-line-active);
+  border-radius: var(--desktop-radius);
+  box-shadow: var(--desktop-shadow);
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-workspace-popover .jv-picker-list {
+  width: 100%;
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-workspace-popover .jv-stage {
+  flex: 1;
+  min-width: 0;
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-workspace-popover .jv-stage span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-workspace-popover .jv-attention { padding: 0; }
+
+[data-agent-flow-host="desktop"] .af-desktop-workspace-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-workspace-actions .flow-viewer-dialog {
+  max-width: min(280px, calc(100cqw - 36px));
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-workspace-actions .jv-legend-panel {
+  right: auto;
+  left: auto;
+  inset-inline-end: 0;
+  width: min(252px, calc(100cqw - 62px));
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-row-wrap { padding-left: 0; }
+
+[data-agent-flow-host="desktop"] .jv-root .af-desktop-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto 13px;
+  gap: 10px;
+  padding: 7px 10px;
+  min-height: 54px;
+  background: var(--desktop-raised) !important;
+  box-shadow: none;
+}
+
+[data-agent-flow-host="desktop"] .jv-root .af-desktop-row:hover { border-color: var(--desktop-line-active) !important; }
+[data-agent-flow-host="desktop"] .jv-root .af-desktop-row:is([data-selected="true"], [data-status="waiting_input"], [data-status="waiting_approval"]) {
+  background: var(--desktop-selection) !important;
+  border-color: var(--desktop-accent) !important;
+  box-shadow: none;
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-portrait {
+  border-radius: 7px;
+  background: var(--desktop-selection);
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-row-text {
+  display: grid;
+  grid-template-columns: minmax(85px, .42fr) minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-row-text > :is(strong, span) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-row-text strong { font-size: 14px; }
+[data-agent-flow-host="desktop"] .af-desktop-row-text > span { color: var(--desktop-muted); }
+
+[data-agent-flow-host="desktop"] .af-desktop-status {
+  border-radius: 6px;
+  padding: 4px 7px;
+  background: color-mix(in srgb, var(--c, var(--desktop-muted)) 17%, var(--desktop-bg));
+  color: var(--c, var(--desktop-muted));
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-status:is([data-status="waiting_input"], [data-status="waiting_approval"]) {
+  background: var(--desktop-warning);
+  color: var(--desktop-accent-ink);
+}
+
+@container jv (max-width: 480px) {
+  [data-agent-flow-host="desktop"] .jv-root > .af-desktop-workspace-bar {
+    min-height: 44px;
+    gap: 4px;
+    padding-inline: 7px;
+  }
+
+  [data-agent-flow-host="desktop"] .af-desktop-views { gap: 1px; }
+  [data-agent-flow-host="desktop"] .af-desktop-views button {
+    gap: 5px;
+    padding-inline: 8px;
+    font-size: 13px;
+  }
+
+  [data-agent-flow-host="desktop"] .af-desktop-workspace-options > summary > span { display: none; }
+  [data-agent-flow-host="desktop"] .af-desktop-row-text { grid-template-columns: minmax(0, 1fr); gap: 1px; }
+  [data-agent-flow-host="desktop"] .af-desktop-row-text strong { font-size: 13px; }
+  [data-agent-flow-host="desktop"] .af-desktop-row-text > span { font-size: 11px; }
+  [data-agent-flow-host="desktop"] .jv-root .af-desktop-row { gap: 7px; }
+}
+
+@container jv (max-width: 300px) {
+  [data-agent-flow-host="desktop"] .af-desktop-views button { padding-inline: 5px; }
+  [data-agent-flow-host="desktop"] .jv-root .af-desktop-row {
+    gap: 5px;
+    grid-template-columns: 36px minmax(0, 1fr) auto 10px;
+    padding-inline: 6px;
+  }
+  [data-agent-flow-host="desktop"] .af-desktop-status { padding-inline: 5px; }
+}
+
+@media (max-height: 400px) {
+  [data-agent-flow-host="desktop"] .af-desktop-workspace-popover {
+    max-height: calc(100dvh - 55px);
+    overflow-y: auto;
+  }
+
+  [data-agent-flow-host="desktop"] .af-desktop-workspace-popover :is(.jv-popover, .flow-viewer-dialog) {
+    position: fixed !important;
+    top: 52px !important;
+    left: auto !important;
+    right: 12px !important;
+    width: min(310px, calc(100vw - 24px)) !important;
+    max-height: calc(100dvh - 64px) !important;
+  }
+}
+

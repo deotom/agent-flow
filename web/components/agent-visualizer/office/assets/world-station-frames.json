@@ -1,0 +1,26 @@
+{
+  "research": {
+    "x": 16,
+    "y": 16,
+    "width": 480,
+    "height": 392
+  },
+  "build": {
+    "x": 528,
+    "y": 16,
+    "width": 480,
+    "height": 287
+  },
+  "terminal": {
+    "x": 16,
+    "y": 528,
+    "width": 480,
+    "height": 299
+  },
+  "quality": {
+    "x": 528,
+    "y": 528,
+    "width": 480,
+    "height": 347
+  }
+}

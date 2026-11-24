@@ -14,6 +14,8 @@ export function drawOfficeInteriorDoors(c: Ctx, scene: OfficeScene, activeDoorFl
     if (floor.constructing || height < 60 * scale) continue
     const annex = scene.floors.find(item => item.annexOf === floor.id)
     const open = activeDoorFloorId === floor.id || activeDoorFloorId === annex?.id || activeDoorFloorId === floor.annexOf || transitDoorIds.has(floor.id) || !!annex&&transitDoorIds.has(annex.id)
+    // The painted Desktop cutaway returns through its header, clear of the shaft jamb.
+    if(floor.desktopArt&&(floor.annexOf||!open))continue
     const point=officeInteriorDoor(scene,floor.id),bounds=officeDoorBounds(scene,floor.id)
     if(!point||!bounds)continue
     c.save()

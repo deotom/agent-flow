@@ -5,12 +5,166 @@ import {officeWorkTarget} from '../lib/office-work'
 import {rememberOfficeWorkPlace,officeActorAtWorkPlace,officeSceneAtWorkPlaces,officeWorkPresenceTarget} from '../lib/office-work-presence'
 import type {OfficeActor,OfficeScene,OfficeEvent,OfficePoint} from '../lib/office-types'
 import {roomActorSpots,roomLeadRestPoint,roomStationSpots} from '../lib/office-room-design'
+import {officeActorSupport} from '../lib/office-support'
+import {officeActorRenderScale} from '../lib/office-depth'
 
 const actor:OfficeActor={key:'worker',sessionId:'s',floorId:'team',x:15,y:279,zone:'desk',parentKey:null,task:null,activity:'Working',runtimeName:'Codex',stand:true,
  appearance:{slot:0,kind:'human',shirt:'#369',hair:'#321',skin:'#cba',pants:'#333',cut:'',gear:''},
  agent:{id:'worker',parentId:null,role:'worker',name:'Worker',runtime:'codex',model:null,status:'running',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1,updatedAt:1,completedAt:null}}
 const scene=():OfficeScene=>({width:450,height:500,floors:[{id:'team',sessionId:'s',kind:'team',y:200,height:100,title:'Team',subtitle:'',color:'#abc',actorKeys:['worker']}],actors:[structuredClone(actor)],quietTeams:[],totalAgents:1,finishedCount:0})
 const event:OfficeEvent={id:'work',kind:'activity',station:'build',actorKey:'worker',parentKey:null,at:1}
+
+it('uses a left-wall Planning desk, then gives a second planner their own notebook',()=>{
+ const s=scene()
+ s.floors[0]={...s.floors[0],height:310.5,room:'room-stations',desktopArt:true}
+ const first={...s.actors[0],workStation:'planning' as const,agent:{...actor.agent,status:'thinking' as const}}
+ const target=officeWorkPresenceTarget({...s,actors:[first]},first,'planning',new Map())
+ assert.ok(target.x<s.width*.12)
+ const seated={...first,...target}
+ const pose=officeActorSupport(s,seated,{},officeActorRenderScale(s,seated),seated)
+ assert.ok(pose.sit&&pose.supportHands)
+ assert.equal(pose.workGesture?.kind,'note')
+ const second={...first,key:'second'}
+ const overflow=officeWorkPresenceTarget({...s,actors:[seated,second]},second,'planning',new Map())
+ assert.notDeepEqual(overflow,target)
+ assert.ok(overflow.y>s.floors[0].y+s.floors[0].height!*.90)
+ const atNotebook={...second,...overflow}
+ assert.equal(officeActorSupport(s,atNotebook,{},1,atNotebook).workGesture?.notebook,true)
+ const trip=createOfficeTrip({...event,station:'planning'},s,{...s,actors:[first]},0,target)!
+ let at=0
+ const note=trip.segments.find(segment=>{if(segment.planningNote)return true;at+=segment.duration;return false})
+ assert.ok(note,'a newly observed planning activity can stop at the board briefly')
+ assert.ok(officeTripFrame(trip,at+note.duration/2).pose.planningNote)
+ assert.deepEqual(trip.segments.at(-1)?.to,target)
+})
+
+it('places Desktop Build and Terminal workers on the front worktops, with their hands in reach',()=>{
+ const s=scene()
+ s.floors[0]={...s.floors[0],height:450*.69,room:'room-stations',desktopArt:true}
+ for(const station of ['build','terminal'] as const){
+  const person={...s.actors[0],workStation:station}
+  const point=officeWorkPresenceTarget(s,person,station,new Map())
+  const atBench={...person,...point}
+  const pose=officeActorSupport(s,atBench,{},officeActorRenderScale(s,atBench),point,1)
+  assert.ok(point.y>s.floors[0].y+s.floors[0].height!*.86,'feet stay at the painted front bench')
+  assert.ok(pose.supportHands,'the worker can reach its own worktop')
+  assert.equal(Boolean(pose.sit),station==='terminal')
+  if(station==='terminal'){
+   assert.ok(pose.seatHeight!>20,'the hips reach the stool while the feet sit on the floor')
+   assert.equal(pose.workBack,true,'the body faces the terminal with its back to the aisle')
+   assert.equal(pose.workGesture?.profile,false)
+   const rising=officeActorSupport(s,atBench,{rising:true,seatBlend:1},officeActorRenderScale(s,atBench),point)
+   assert.equal(rising.face,pose.face)
+   assert.equal(rising.workBack,true)
+   assert.ok(rising.supportHands,'the hands are still on the desk at the start of the rise')
+  }
+ }
+})
+
+it('seats Desktop Review coworkers at two separate books',()=>{
+ const s=scene()
+ s.floors[0]={...s.floors[0],height:450*.721,room:'room-stations-large',desktopArt:true}
+ const first={...s.actors[0],workStation:'quality' as const},second={...first,key:'second'}
+ s.actors=[first,second]
+ const places=new Map()
+ const books=[first,second].map(person=>{
+  const point=officeWorkPresenceTarget(s,person,'quality',places)
+  places.set(person.key,rememberOfficeWorkPlace(s,person,point,'quality'))
+  const atBook={...person,...point}
+  const pose=officeActorSupport(s,atBook,{},officeActorRenderScale(s,atBook),point)
+  assert.equal(pose.sit,true)
+  assert.equal(pose.seatBack,false)
+  assert.ok(pose.supportHands)
+  return point
+ })
+ assert.ok(books[1].x-books[0].x>=48)
+})
+
+it('keeps the foreground and back row close in scale in a painted room',()=>{
+ const s=scene()
+ s.floors[0]={...s.floors[0],height:325,room:'room-stations-large',desktopArt:true}
+ const rear=officeActorRenderScale(s,{...actor,y:370})
+ const front=officeActorRenderScale(s,{...actor,y:500})
+ assert.ok(front>rear&&front/rear<1.15)
+})
+
+it('gives a third Terminal coworker a lap notebook within their own reach',()=>{
+ const s=scene()
+ s.floors[0]={...s.floors[0],height:310.5,room:'room-stations',desktopArt:true}
+ // The two stools are at x=261.9 and x=321.3. This is the overflow spot toward the aisle.
+ const overflow={...s.actors[0],x:234.9,y:484.418,workStation:'terminal' as const}
+ const pose=officeActorSupport(s,overflow,{typing:true},1,overflow,3)
+ assert.equal(pose.sit,true)
+ assert.equal(pose.workGesture?.notebook,true)
+ assert.equal(pose.workGesture?.keyboard,undefined)
+ assert.ok(pose.supportHands&&Math.abs(pose.supportHands.left.x)<16&&Math.abs(pose.supportHands.right.x)<16)
+ s.actors=[overflow]
+ const trip=createOfficeTrip(event,s,s,0,{x:105,y:410})
+ assert.equal(trip?.segments[0].riseFrom,'terminal')
+ const frame=officeTripFrame(trip!,150)
+ assert.equal(frame.pose.walk,false)
+ const rising=officeActorSupport(s,overflow,frame.pose,1,frame.point,3)
+ assert.equal(rising.sit,true)
+ assert.equal(rising.workGesture?.notebook,true)
+ assert.equal(rising.typing,false)
+})
+
+it('keeps a Desktop work pose at the station when ambient life offers a mug or a wave',()=>{
+ const s=scene()
+ s.floors[0]={...s.floors[0],height:450*.69,room:'room-stations',desktopArt:true}
+ const person={...s.actors[0],workStation:'terminal' as const}
+ const point=officeWorkPresenceTarget(s,person,'terminal',new Map()),atDesk={...person,...point}
+ const pose=officeActorSupport(s,atDesk,{cup:true,mug:true,wave:true},1,point,4)
+ assert.equal(pose.sit,true)
+ assert.equal(pose.cup,false)
+ assert.equal(pose.mug,false)
+ assert.equal(pose.wave,false)
+ assert.ok(pose.supportHands&&pose.workGesture?.keyboard)
+})
+
+it('uses the parked station until a worker reaches the newly reported station',()=>{
+ const s=scene()
+ s.floors[0]={...s.floors[0],height:450*.69,room:'room-stations',desktopArt:true}
+ const workingAtBuild=officeWorkTarget(s.actors[0],s,'build')
+ const parked=rememberOfficeWorkPlace(s,s.actors[0],workingAtBuild,'build')!
+ const latest={...s.actors[0],workStation:'research' as const}
+ const shown=officeActorAtWorkPlace(s,latest,parked)
+ const pose=officeActorSupport(s,shown,{},officeActorRenderScale(s,shown),shown,1)
+ assert.equal(shown.workStation,'build')
+ assert.ok(pose.supportHands)
+ assert.equal(latest.workStation,'research')
+})
+
+it('gives two Build coworkers separate contacts on the same bench and keeps the remaining worker in place',()=>{
+ const s=scene(),worker={...s.actors[0],workStation:'build' as const},coworker={...worker,key:'coworker'}
+ for(const title of ['Research','Design','API','Quality']){
+  for(const room of ['room-stations','room-stations-large'] as const){
+   s.floors[0]={...s.floors[0],title,room,height:room==='room-stations'?253.125:337.5}
+   s.actors=[worker,coworker]
+   const first=officeWorkPresenceTarget(s,worker,'build',new Map())
+   const places=new Map([[worker.key,rememberOfficeWorkPlace(s,worker,first,'build')!]])
+   const second=officeWorkPresenceTarget(s,coworker,'build',places)
+   assert.ok(Math.abs(first.x-second.x)>=47.99)
+   assert.equal(second.y,first.y)
+   const grips=[{...worker,...first},{...coworker,...second}].map(person=>{
+    const pose=officeActorSupport(s,person,{},1,person)
+    assert.ok(pose.supportHands)
+    const {left,right}=pose.supportHands
+    return (left.x+right.x)/2+person.x
+   })
+   assert.ok(Math.abs(grips[0]-grips[1])>=30)
+   places.set(coworker.key,rememberOfficeWorkPlace(s,coworker,second,'build')!)
+   const research=officeWorkPresenceTarget(s,worker,'research',places)
+   const atBuild=officeSceneAtWorkPlaces(s,places)
+   const trip=createOfficeTrip({...event,station:'research'},atBuild,atBuild,0,research)!
+   assert.deepEqual(trip.segments[0].from,{x:atBuild.actors[0].x,y:atBuild.actors[0].y})
+   assert.deepEqual(officeTripFrame(trip,trip.endsAt).point,research)
+   places.set(worker.key,rememberOfficeWorkPlace(s,worker,research,'research')!)
+   const retained=officeWorkPresenceTarget(s,coworker,'build',places)
+   assert.ok(Math.hypot(retained.x-second.x,retained.y-second.y)<.001)
+  }
+ }
+})
 
 it('walks directly along the clear front aisle and stays at the working station',()=>{
  const s=scene(),trip=createOfficeTrip(event,s,s,0)!,target=officeWorkTarget(s.actors[0],s,'build')

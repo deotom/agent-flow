@@ -5,6 +5,20 @@ import type {OfficeActor,OfficePose,OfficeWorkStation} from '../lib/office-types
 import type {TeamAgentStatus} from '../lib/team-types'
 const actor:Pick<OfficeActor,'key'|'agent'|'pose'>={key:'worker-a',agent:{id:'a',parentId:null,role:'worker',name:'A',runtime:'codex',model:null,status:'running',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1,updatedAt:1,completedAt:null}}
 const stations=['research','build','quality','terminal'] as const
+it('gives Desktop work short actions and longer pauses, with hands back on the worktop',()=>{
+ for(const station of ['planning',...stations] as const){
+  const actions=new Set<string>()
+  let previous:ReturnType<typeof officeWorkGesture>=null
+  for(let t=.01;t<70;t+=.05){
+   const pose=officeWorkGesture(actor,station,t,true,true)!
+   actions.add(pose.kind)
+   if(pose.kind==='focus'||pose.kind==='check')assert.equal(pose.reach,0,'the hands rest while reading or checking')
+   if(previous)assert.ok(Math.abs(pose.reach-previous.reach)<.18,'the hands ease in and out')
+   previous=pose
+  }
+  assert.ok(actions.has('focus')&&actions.has('check')&&actions.size>=3)
+ }
+})
 it('uses distinct slow task actions and bounded smooth movement without mutation',()=>{
  const original=structuredClone(actor)
  const expected={research:['page','note'],build:['type','adjust'],quality:['inspect','note'],terminal:['type','mouse','adjust']}

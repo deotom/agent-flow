@@ -1,10 +1,29 @@
 import frames from './assets/work-stations-frames-v1.json'
+import worldFrames from './assets/world-station-frames.json'
 import type {OfficeRoomStation} from '../../../lib/office-room-design'
 import type {OfficeRoomArt} from './office-room-design-art'
 import type {OfficeStationState} from '../../../lib/office-station-activity'
 import {officeStationHardware,type Hardware,type Point} from './office-station-hardware'
 export {officeStationHardware} from './office-station-hardware'
 export interface OfficeStationEffects {time:number;animate:boolean;state:OfficeStationState}
+
+const worldHardware:Record<OfficeRoomStation['kind'],Hardware>={
+ research:{screens:[],lamp:[.79,.36],page:[.62,.53]},
+ build:{screens:[],lamp:[.16,.22]},
+ terminal:{screens:[
+  [[.215,.17],[.465,.17],[.465,.38],[.215,.38]],
+  [[.555,.17],[.804,.17],[.804,.38],[.555,.38]],
+ ]},
+ quality:{screens:[],lamp:[.23,.13],page:[.32,.42]},
+}
+
+function stationPaintSource(station:OfficeRoomStation,art:OfficeRoomArt){
+ if(art.worldStations)return {frame:{...worldFrames[station.kind],sheet:'world'},source:art.worldStations}
+ const key=`${station.kind}-${station.facing}` as keyof typeof frames
+ const requested=frames[key]??frames[`${station.kind}-front`]
+ const frame=requested.sheet==='angles'&&!art.stationAngles?frames[`${station.kind}-front`]:requested
+ return {frame,source:frame.sheet==='angles'?art.stationAngles:art.stations}
+}
 
 function drawDeviceEffects(c:CanvasRenderingContext2D,kind:OfficeRoomStation['kind'],parts:Hardware,x:number,y:number,w:number,h:number,effect:OfficeStationEffects){
  const alpha=Number.isFinite(c.globalAlpha)?c.globalAlpha:1
@@ -57,8 +76,7 @@ function drawDeviceEffects(c:CanvasRenderingContext2D,kind:OfficeRoomStation['ki
 
 /** Tight atlas frames retain the real object aspect; its lowest foot is the floor anchor. */
 function paintOfficeStation(c:CanvasRenderingContext2D,station:OfficeRoomStation,art:OfficeRoomArt,effects?:OfficeStationEffects){
- const key=`${station.kind}-${station.facing}` as keyof typeof frames
- const requested=frames[key]??frames[`${station.kind}-front`],frame=requested.sheet==='angles'&&!art.stationAngles?frames[`${station.kind}-front`]:requested,source=frame.sheet==='angles'?art.stationAngles:art.stations
+ const {frame,source}=stationPaintSource(station,art)
  if(!source)return
  const longest=Math.max(frame.width,frame.height),w=station.width*.90*frame.width/longest,h=station.height*.90*frame.height/longest
  c.save()
@@ -68,7 +86,8 @@ function paintOfficeStation(c:CanvasRenderingContext2D,station:OfficeRoomStation
  c.restore()
  if(effects){
   const facing=frame.sheet==='front'?'front':station.facing
-  drawDeviceEffects(c,station.kind,officeStationHardware(station.kind,facing),station.x-w/2,station.y-h,w,h,effects)
+  const hardware=frame.sheet==='world'?worldHardware[station.kind]:officeStationHardware(station.kind,facing)
+  drawDeviceEffects(c,station.kind,hardware,station.x-w/2,station.y-h,w,h,effects)
  }
 }
 
@@ -82,8 +101,7 @@ export function drawOfficeStation(c:CanvasRenderingContext2D,station:OfficeRoomS
  if(!effects||moving||typeof OffscreenCanvas==='undefined'||c.globalAlpha!==1||c.filter!=='none'||c.globalCompositeOperation!=='source-over'||c.imageSmoothingEnabled===false){paintOfficeStation(c,station,art,effects);return}
  const matrix=c.getTransform(),scale=matrix.a
  if(!Number.isFinite(scale)||scale<=0||matrix.b!==0||matrix.c!==0||matrix.d!==scale){paintOfficeStation(c,station,art,effects);return}
- const key=`${station.kind}-${station.facing}` as keyof typeof frames,requested=frames[key]??frames[`${station.kind}-front`]
- const frame=requested.sheet==='angles'&&!art.stationAngles?frames[`${station.kind}-front`]:requested,source=frame.sheet==='angles'?art.stationAngles:art.stations
+ const {frame,source}=stationPaintSource(station,art)
  if(!source)return
  let id=sourceIds.get(source);if(id===undefined){id=++nextSourceId;sourceIds.set(source,id)}
  // Align the blit to device pixels and paint the original subpixel phase inside

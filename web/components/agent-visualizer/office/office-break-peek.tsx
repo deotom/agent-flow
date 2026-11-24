@@ -28,17 +28,19 @@ export function OfficeBreakPeek({ floor, width, buildingHeight, actors, canvasRe
   const height = floor.height ?? width * .5625
   const residents = actors.filter(actor => actor.floorId === floor.id && !actor.hidden)
   const count = residents.length
+  const assigned = floor.actorKeys.length
+  const occupancy = `${count} here / ${assigned} assigned`
   const objects = [
     ...officeLeisureObjects(floor, width).map(object => ({ ...object, label: OFFICE_OBJECT_NAMES[object.kind] })),
     ...officeSeasonalObjects(floor, width, new Date(now)),
   ]
   return <section className="of-break-peek" aria-label={floor.title} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();onClose()}}} style={{ top: `${floor.y / buildingHeight * 100}%`, height: `${height / buildingHeight * 100}%` }}>
     <div className={`of-art of-art-${floor.room ?? 'room-break'}`} aria-hidden="true" style={{ inset: 0, height: '100%' }} />
-    <canvas ref={canvasRef} aria-label={`${floor.title}, ${count} resting agents`} role="img" />
+    <canvas ref={canvasRef} aria-label={`${floor.title}, ${occupancy}`} role="img" />
     <div className="of-break-peek-header">
       <button ref={back} type="button" onClick={onClose} aria-label="Back to office">← Back to office</button>
-      <strong>Break room · {count} resting</strong>
-      {!!floor.overflow && <button type="button" className="of-break-overflow" onClick={() => floor.sessionId && onOpenTeam(floor.sessionId, null)} aria-label={`Open team in Board: ${floor.overflow} more resting agents`}>+{floor.overflow}</button>}
+      <strong title={`Break room · ${occupancy}`}>{occupancy}</strong>
+      {floor.sessionId && count < assigned && <button type="button" onClick={() => onOpenTeam(floor.sessionId!, null)} aria-label="Open team in Board">Team Board</button>}
     </div>
     {objects.map((object, index) => <button key={`${object.kind}-${index}`} type="button" className="of-object-hit" aria-label={`${object.label}, ${floor.title}`}
       style={{ left: `${(object.x - 20) / width * 100}%`, top: `${(object.y - floor.y - 24) / height * 100}%`, width: `${40 / width * 100}%`, height: `${34 / height * 100}%` }}

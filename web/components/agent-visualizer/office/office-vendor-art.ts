@@ -1,6 +1,8 @@
 import {officeVendorWalk,type OfficeVendorWalk} from '../../../lib/office-vendor-walk'
 import type { OfficeScene,OfficePose,OfficePoint } from '../../../lib/office-types'
 import type { Season, Weather } from '../../../lib/office-sky'
+import {skyPhase} from '../../../lib/office-sky'
+import {officeDaylight} from '../../../lib/office-daylight'
 import { officeVendorState, type OfficeVendorExchange } from '../../../lib/office-vendor'
 import {officeActorDepthScale} from '../../../lib/office-depth'
 
@@ -56,6 +58,56 @@ export function officeVendorAvatarPose(staff:OfficeVendorCharacter):OfficePose {
 // Canvas-local presentation continuity only. No actor, trip or purchase state is written.
 type ChoreMemo={motion?:OfficeVendorWalk;at:number;width:number;last:OfficeVendorCharacter|null;wasHandoff:boolean;blocked?:string;returning?:{at:number;duration:number;previous:OfficeVendorCharacter}}
 const choreMemos=new WeakMap<Ctx,ChoreMemo>()
+const cafeClosings=new WeakMap<Ctx,{closed:boolean;frame:number;start:number}>()
+const curtainDuration=.9
+
+function cafeCurtainProgress(c:Ctx,closed:boolean,time:number){
+  if(!Number.isFinite(time)||time<=0){
+    cafeClosings.delete(c)
+    return closed?1:0
+  }
+  const previous=cafeClosings.get(c)
+  const start=closed&&previous&&time>=previous.frame?(previous.closed?previous.start:time):-Infinity
+  cafeClosings.set(c,{closed,frame:time,start})
+  if(!closed)return 0
+  const t=Math.min(1,(time-start)/curtainDuration)
+  return t*t*(3-2*t)
+}
+
+function drawCafeCounterLight(c:Ctx,width:number,height:number,gardenY:number,strength:number){
+  const x=width*.517,y=gardenY+height*.451,w=width*.157,h=height*.151
+  c.save()
+  c.beginPath();c.rect(x,y,w,h);c.clip()
+  c.globalAlpha*=strength
+  const glow=c.createRadialGradient(x+w*.46,y+h*.15,0,x+w*.46,y+h*.15,w*.68)
+  glow.addColorStop(0,'#ffd199b5')
+  glow.addColorStop(.42,'#ffb56873')
+  glow.addColorStop(1,'#ffb56800')
+  c.fillStyle=glow;c.fillRect(x,y,w,h)
+  c.restore()
+}
+
+/** A drawn curtain stays inside the painted posts, below the awning and above the sill. */
+function drawClosedCafeCurtain(c:Ctx,width:number,height:number,gardenY:number,progress:number){
+  const x=width*.516,y=gardenY+height*.451,w=width*.16,h=height*.151,fold=w/8
+  c.save();c.translate(x,y)
+  c.beginPath();c.rect(0,0,w,h);c.clip()
+  c.translate(0,h*(progress-1))
+  c.fillStyle='#57392c';c.fillRect(0,0,w,h)
+  for(let i=0;i<8;i++){
+    const left=i*fold,near=i<4
+    c.fillStyle=near?'#845b42':'#77503a'
+    c.beginPath()
+    c.moveTo(left+fold*.15,0);c.lineTo(left+fold*.69,0)
+    c.quadraticCurveTo(left+fold*.56,h*.5,left+fold*.82,h)
+    c.lineTo(left+fold*.12,h);c.quadraticCurveTo(left+fold*.28,h*.48,left+fold*.15,0)
+    c.fill()
+  }
+  c.fillStyle='#39231ec4';c.fillRect(0,0,w,h*.11)
+  c.fillStyle='#493026';c.fillRect(w*.497,0,w*.013,h)
+  c.fillStyle='#a06d46';c.fillRect(0,h*.93,w,h*.043)
+  c.restore()
+}
 
 /** The cart is already painted into the garden. Only staff and small stock/sign accents live here.
  * Callback runs inside a saved bounded clip, using absolute coordinates; the caller applies scale.
@@ -65,6 +117,24 @@ export function drawOfficeVendor(c: Ctx, scene: OfficeScene, date: Date, time: n
   const garden = scene.floors.find(f => f.kind === 'lounge'), w = scene.width, h = garden?.height ?? 0
   if (!garden || !Number.isFinite(w) || !Number.isFinite(h) || !Number.isFinite(garden.y) || w <= 0 || h <= 0) return
   const state = officeVendorState(date), k = w / 450, gy = garden.y
+  if(garden.desktopArt){
+    const curtain=cafeCurtainProgress(c,state.night,time)
+    if(curtain>=1){drawClosedCafeCurtain(c,w,h,gy,curtain);return}
+    if(skyPhase(date)==='dusk'){
+      const dim=1-officeDaylight(date).light
+      drawCafeCounterLight(c,w,h,gy,dim*(1-curtain))
+    }
+    const customer=state.open&&exchange?scene.actors.find(a=>a.key===exchange.actorKey&&!a.hidden&&a.floorId===garden.id&&!a.pose?.walk&&!a.pose?.inLift):undefined
+    const serving=Boolean(customer)
+    const x=w*(serving?.568:.598),y=gy+h*.686
+    // Clip at the inner sill so the painted countertop stays in front of the clerk.
+    c.save();c.beginPath();c.rect(w*.51,gy+h*.448,w*.162,h*.163);c.clip()
+    drawCharacter({x,y,scale:k*.67,face:serving?-1:1,serving:state.open,season:state.season,weather:state.weather,
+      pose:serving?'handoff':'idle',offer:serving?.6:undefined,recipientKey:serving?exchange?.actorKey:undefined})
+    c.restore()
+    if(curtain>0)drawClosedCafeCurtain(c,w,h,gy,curtain)
+    return
+  }
   if(!state.open||!Number.isFinite(time)||time<=0)choreMemos.delete(c)
   const stock: Record<Season, string> = { hot: '#e6bb59', rainy: '#b7c5ad', cool: '#d8a17b' }
   c.save()

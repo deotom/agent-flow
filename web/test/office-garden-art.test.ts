@@ -1,6 +1,7 @@
 import { it } from 'node:test'
 import assert from 'node:assert/strict'
-import { drawOfficeGarden } from '../components/agent-visualizer/office/office-garden-art'
+import { drawOfficeGarden, drawOfficeGardenActorShadow } from '../components/agent-visualizer/office/office-garden-art'
+import { officeDaylight } from '../lib/office-daylight'
 import type { OfficeScene, OfficeFloor } from '../lib/office-types'
 
 function recorder(){
@@ -12,7 +13,7 @@ const floor=(kind:OfficeFloor['kind']):OfficeFloor=>({id:kind,kind,sessionId:nul
 const scene=(kind:OfficeFloor['kind']='lounge'):OfficeScene=>({width:450,height:800,floors:[floor(kind)],actors:[],quietTeams:[],totalAgents:0,finishedCount:0})
 it('draws distinct Thai seasonal flora and small animals confined to garden grass margins',()=>{
   const variants=new Set<string>()
-  for(const date of [new Date(2026,3,12),new Date(2026,6,12),new Date(2026,10,12)]){
+  for(const date of [new Date(2026,3,12,12),new Date(2026,6,12,12),new Date(2026,10,12,12)]){
     const input=scene(),before=JSON.stringify(input),r=recorder()
     drawOfficeGarden(r.c,input,date,0)
     assert.equal(JSON.stringify(input),before)
@@ -30,12 +31,24 @@ it('draws distinct Thai seasonal flora and small animals confined to garden gras
   }
   assert.equal(variants.size,3)
 })
-it('dims plants and wildlife at night without adding artificial light',()=>{
+it('dims the garden wildlife layer at night',()=>{
   const day=recorder(),night=recorder()
   drawOfficeGarden(day.c,scene(),new Date(2026,10,12,12),0)
   drawOfficeGarden(night.c,scene(),new Date(2026,10,12,22),0)
   assert.ok(day.sets.some(set=>set.key==='globalAlpha'&&set.value===1))
   assert.ok(night.sets.some(set=>set.key==='globalAlpha'&&set.value===.7))
+})
+it('keeps the character contact at the feet and moves the solar shadow across the ground',()=>{
+  const shadows=(hour:number)=>{
+    const r=recorder()
+    drawOfficeGardenActorShadow(r.c,officeDaylight(new Date(2026,10,12,hour)))
+    return r.calls.filter(call=>call.op==='ellipse').map(call=>call.args)
+  }
+  const morning=shadows(8),evening=shadows(16),night=shadows(22)
+  assert.ok(Number(morning[0][0])>0&&Number(evening[0][0])<0)
+  assert.deepEqual(morning.at(-1)?.slice(0,2),[0,1])
+  assert.deepEqual(evening.at(-1)?.slice(0,2),[0,1])
+  assert.equal(night.length,1,'only the soft contact shadow remains after dark')
 })
 it('is stable for the same local day, animates optionally and skips every indoor floor',()=>{
   const date=new Date(2026,6,12),a=recorder(),b=recorder(),moving=recorder()

@@ -63,11 +63,11 @@ export function mergeOfficeHolograms(state:OfficeHologramState,events:readonly O
 }
 
 /** Render-only geometry: never adds an actor, hit target or physical trip. */
-export function officeHologramFrames(state:OfficeHologramState,scene:OfficeScene,clockMs:number,animate:boolean):OfficeHologramFrame[]{
+export function officeHologramFrames(state:OfficeHologramState,scene:OfficeScene,clockMs:number,animate:boolean,scaleFor?:(actor:OfficeActor)=>number|undefined):OfficeHologramFrame[]{
  return pruneOfficeHolograms(state,scene,clockMs).cues.flatMap(cue=>{
   const found=participants(cue,scene)
   if(!found)return []
-  const {parent,member}=found,depth=officeActorRenderScale(scene,parent),scale=depth*.55
+  const {parent,member}=found,depth=scaleFor?.(parent)??officeActorRenderScale(scene,parent),scale=depth*.55
   const margin=24*scale,left=parent.x-44*depth,right=parent.x+44*depth
   const candidate=right+margin<=scene.width?right:left
   const x=Math.max(margin,Math.min(scene.width-margin,candidate)),y=parent.y+2*depth

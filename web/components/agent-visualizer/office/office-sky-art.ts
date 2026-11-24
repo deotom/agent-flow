@@ -1,5 +1,5 @@
 import type { OfficeScene } from '../../../lib/office-types'
-import { officeSky, skyEvent as currentSkyEvent, type OfficeSky, type SkyEvent } from '../../../lib/office-sky'
+import { officeClouds, officeSky, skyEvent as currentSkyEvent, type OfficeSky, type SkyEvent } from '../../../lib/office-sky'
 
 /**
  * Paints the surface lawn's sky layer over the artwork: time-of-day tint, stars and the real
@@ -42,9 +42,15 @@ export function drawOfficeSky(c: Ctx, scene: OfficeScene, time: number, date: Da
   if (dim) { c.fillStyle = `rgba(40,48,66,${dim})`; c.fillRect(0, 0, w, H) }
   weather(c, sky, w, H, k, time)
   if (sky.holiday) holiday(c, sky, w, H, k, time)
-  if (sky.event && time) skyEvent(c, sky.event, w, H, k, time)
+  if (sky.event && time && !(lawn?.desktopArt && sky.event.kind==='balloon')) skyEvent(c, sky.event, w, H, k, time)
   c.restore()
   return sky
+}
+
+/** The Desktop balloon flies through the sky behind the masked garden scenery. */
+export function drawOfficeSkyBalloon(c:Ctx,scene:OfficeScene,time:number,date:Date,event=skyFor(date).event){
+ const lawn=scene.floors.find(f=>f.kind==='lounge')
+ if(time>0&&lawn?.desktopArt&&lawn.height&&event?.kind==='balloon')skyEvent(c,event,scene.width,lawn.height,scene.width/450,time)
 }
 
 function tint(c: Ctx, sky: OfficeSky, w: number, H: number) {
@@ -94,26 +100,27 @@ function sunGlow(c: Ctx, w: number, H: number, time: number) {
 }
 
 function cloud(c: Ctx, x: number, y: number, s: number, color: string) {
-  disc(c, x, y, 9 * s, color); disc(c, x + 10 * s, y - 4 * s, 11 * s, color); disc(c, x + 22 * s, y, 9 * s, color); c.fillRect(x, y, 22 * s, 8 * s)
+  c.beginPath()
+  c.ellipse(x+11*s,y+2*s,22*s,5*s,0,0,Math.PI*2)
+  c.moveTo(x+10*s,y-2*s);c.ellipse(x+2*s,y-2*s,8*s,5*s,0,0,Math.PI*2)
+  c.moveTo(x+23*s,y-5*s);c.ellipse(x+12*s,y-5*s,11*s,7*s,0,0,Math.PI*2)
+  c.moveTo(x+29*s,y-2*s);c.ellipse(x+22*s,y-2*s,7*s,4*s,0,0,Math.PI*2)
+  c.fillStyle=color;c.fill()
 }
 
 /** Cloud layer belongs behind the transparent tree canopy, with the live sun and moon. */
-export function drawOfficeWeatherClouds(c: Ctx, scene: OfficeScene, date: Date, time: number): boolean {
+export function drawOfficeWeatherClouds(c: Ctx, scene: OfficeScene, date: Date, time: number) {
   const sky = skyFor(date), w = scene.width, H = scene.floors.find(f => f.kind === 'lounge')?.height ?? 0, k = w / 450
   const night = sky.phase === 'night'
-  if (sky.weather !== 'clear' && sky.weather !== 'mist') {
-    c.save()
-    const n = sky.weather === 'cloudy' ? 4 : 6, color = sky.weather === 'storm' ? (night ? '#3a3f55' : '#8a90a0') : night ? '#56607a' : '#f4f1ea'
-    for (let i = 0; i < n; i++) {
-      const drift = time ? time * (3 + rnd(i, 4) * 3) * k : 0
-      const x = ((rnd(i, 5) * w + drift) % (w + 60 * k)) - 40 * k
-      c.globalAlpha = .88; cloud(c, x, H * (.06 + rnd(i, 6) * .2), k * (.8 + rnd(i, 7) * .6), color)
-    }
-    c.globalAlpha = 1
-    c.restore()
-    return true
+  const wet = sky.weather === 'rain' || sky.weather === 'storm'
+  const color = night ? (wet ? '#414960' : '#64718d')
+    : wet ? '#9da9be' : sky.phase === 'dusk' ? '#f1c9bc' : '#fff7eb'
+  c.save()
+  for (const {x,y,size,opacity} of officeClouds(sky,time)) {
+    c.globalAlpha=opacity*(wet?.90:night?.52:.78)
+    cloud(c,x*w,y*H,k*size*(wet?1.24:1),color)
   }
-  return false
+  c.restore()
 }
 
 function weather(c: Ctx, sky: OfficeSky, w: number, H: number, k: number, time: number) {

@@ -8,7 +8,7 @@
 
 **Tech stack:** React, TypeScript, Canvas 2D, CSS, WebP assets, Electron desktop build.
 
-**Design reference:** `artifacts.local/office-world-art-direction-20261122.png` is the visual reference copied from built-in ImageGen. The concept shows the private room beside the workroom to communicate continuity. The app reveals it through the existing annex view on the same floor. Reuse the materials, lighting, and silhouettes in the image and compose them as separate runtime layers.
+**Design reference:** Use `artifacts.local/office-world-vertical-concept-20261122.png` for the existing stacked Office composition and `artifacts.local/office-world-art-direction-20261122.png` for the materials. Both are local references produced with built-in ImageGen. The app reveals the private room through the existing annex view on the same floor. Reuse the materials, lighting, and silhouettes and compose them as separate runtime layers.
 
 ## Visual contract
 
@@ -16,7 +16,7 @@
 - The four shared stations are Research (`research`), Review (`quality`), Build (`build`), and Terminal (`terminal`). Keep their IDs unique. In the large room, arrange two staggered rows on one walkable plane. Give the small room a compact arrangement with the same materials and avatar scale. Keep the right aisle free of furniture and competing pointer targets.
 - Use one character identity and one set of proportions across the workroom, break room, garden, and Office-only portraits/projections. Changes of pose, lighting, or clothing layers preserve face, hair, color, role mark, and identity slot. Two coworkers at Build need distinct contact points on one physical station.
 - Treat the annex door, lift shaft, and soil line as landmarks shared by all art. The workroom door is at `.825W` and its threshold is at the wall seam (`.36032W` below the floor origin). The private threshold uses its own room height. The lift shaft is at `.938W`. Measure props and hit areas against the existing navigation rather than estimating from the reference image.
-- Desktop Office is the scope. The temporary canteen gets a compatibility check for assets reused by this change. Preserve the other app views and their appearance. Keep dependency and package boundary changes out of the proof.
+- Apply the approved visual language to the full Windows Desktop app. Office keeps the painted scene. The native shell, Board, Graph, Orb, inspector, preferences, and prompt surfaces use charcoal-olive panels, amber interaction accents, sage success, and terracotta failure. Preserve existing controls, evidence and status semantics, and opening/selection behavior. Shared extension and web contexts retain their current art and theme. The temporary canteen gets a compatibility check for reused assets.
 
 ## Owners and sequence
 
@@ -24,6 +24,7 @@
 | --- | --- | --- | --- |
 | Environment art | Environment agent | A large workroom shell, two shared station examples, one matching break room, one garden palette, matching door and lift joins | Coordinate contract |
 | Character art | Character agent | Two recognizable illustrated identities, with standing, walking, seated, and reach/reading poses | Avatar geometry contract |
+| Desktop surfaces | Visual system and Graph/Orb agents | Shared Desktop tokens, readable digital views, matching portrait identities, and preserved desktop interactions | Desktop entry marker and avatar contract |
 | Integration and review | Lead | Deterministic Desktop scene, shared station contacts, artwork integration, visual and regression checks | Both proof bundles |
 
 Environment and character planning were delegated independently. The next three tasks turn their findings into a runnable proof. The broader asset pass starts after the integrated proof is reviewed.
@@ -62,3 +63,12 @@ Environment and character planning were delegated independently. The next three 
 - [ ] Extend avatar appearances from the proven rig and reuse the same working contacts. Sample distinct hairstyles/outfits and occupation/identity combinations in office, annex, and garden. Verify loading and effects-off fallback still pick the right actor.
 - [ ] Run `pnpm --dir web test`, `pnpm --dir web exec tsc --noEmit`, `npm run build:desktop`, and `npm --prefix desktop test`. Compare built asset size and first-load/decode time against the current build. Check that new art adds no animation work in a hidden or paused Office.
 - [ ] Package a Desktop candidate and inspect all three places in the actual packaged app at widget and full size. Validate selection, door hit regions, movement through lift and annex, and background/foreground readability. Capture one matched-width visual set. Promote and reopen the installed app only when that action is requested.
+
+## Task 5 — Match the Desktop surfaces
+
+- [ ] Scope the shared palette in `web/app/desktop-theme.css` through the Desktop marker in `web/app-entry.tsx` and align the native shell in `desktop/shell.css`. Verify the viewer, preference controls, composer, urgent action, focus indicators, and empty/error states at minimum width.
+- [ ] Share Desktop Office portrait identities with Board and Orb. Update the Desktop Graph and Orb renderers to use the same palette while preserving the meaning of stages, links, and runtime badges. Inspect Board, Graph, Office, and Orb in the packaged version to catch differences between CSS and Canvas surfaces.
+
+## Reference-faithful Desktop revision
+
+The Desktop plates now come from a localized ImageGen edit of the approved portrait. It preserves the furniture, lighting, and scenery and removes static occupants and lift cabins. Runtime actors and the moving lift remain separate. The workroom station bounds and hand contacts use measurements from the actual plate. The workroom door uses its painted frame, and each Desktop team's break room opens the matching illustrated reading room at the same floor position. Existing web and extension variants keep their original art. This revision replaces the task 1 proposal to draw independent furniture over the Desktop workroom plate; the atlas remains a fallback when that plate fails to load.

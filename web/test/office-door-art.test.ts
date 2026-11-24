@@ -28,3 +28,8 @@ it('leaves a visible gap between the doorway frame and the public shaft',()=>{
  const right=tx+Math.max(...calls.filter(c=>c.op==='fillRect').map(c=>(c.args[0] as number)+(c.args[2] as number)))*sx
  assert.ok(450*.938-22-right>=4)
 })
+it('keeps the Desktop entrance in the workroom without adding a door to the furnished cutaway',()=>{
+ const main={...floor('main'),desktopArt:true},rest={...floor('rest','main'),desktopArt:true}
+ assert.ok(draw([main,rest],'rest').some(c=>c.op==='translate'))
+ assert.equal(draw([rest],'rest').length,0)
+})

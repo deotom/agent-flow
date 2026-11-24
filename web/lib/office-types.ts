@@ -14,7 +14,7 @@ export interface OfficeAppearance {
   face?: 'round' | 'square' | 'oval'
 }
 export interface OfficePoint { x: number; y: number }
-export interface OfficePose { acknowledgment?:number; workGesture?:import('./office-work-gestures').OfficeWorkGesture;workLift?:number;workBack?:boolean;stepLength?:number;stepDirection?:OfficePoint;dressing?:number;seatBack?:boolean;supportHands?:{left:OfficePoint;right:OfficePoint}; inLift?:boolean; opacity?:number;objectAction?:OfficeLeisureAction;climb?: boolean; climbStep?:number; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean; face?: 1 | -1;stretch?:number;turn?:number;lookUp?:boolean;walkWeight?:number;gait?:number;seatBlend?:number;offer?:number;cupTilt?:number }
+export interface OfficePose { planningNote?:true; acknowledgment?:number; workGesture?:import('./office-work-gestures').OfficeWorkGesture;workLift?:number;workBack?:boolean;stepLength?:number;stepDirection?:OfficePoint;dressing?:number;seatBack?:boolean;seatProfile?:boolean;supportHands?:{left:OfficePoint;right:OfficePoint}; inLift?:boolean; liftCrossing?:boolean; liftBlend?:number; liftWait?:'press'|'wait'; meeting?:boolean; rising?:boolean; opacity?:number;objectAction?:OfficeLeisureAction;climb?: boolean; climbStep?:number; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean; face?: 1 | -1;stretch?:number;turn?:number;lookUp?:boolean;walkWeight?:number;gait?:number;seatBlend?:number;seatHeight?:number;offer?:number;cupTilt?:number }
 export interface OfficeActor extends OfficePoint {
   key: string
   sessionId: string
@@ -49,6 +49,7 @@ export interface OfficeCollaborationMember {
   remote: boolean
 }
 export interface OfficeFloor {
+  desktopArt?: boolean
   collaboration?: OfficeCollaborationMember[]
   id: string
   sessionId: string | null
@@ -103,6 +104,7 @@ export interface OfficeArchitectureArt {
   doorOpen:CanvasImageSource
   liftCabin:CanvasImageSource
   liftShaft:CanvasImageSource
+  referenceLift?:CanvasImageSource
 }
 export interface OfficeLiftVisual {y:number;doorsOpen:number;moving:boolean;passengerKeys:readonly string[]}
 export interface OfficeDailyVisual {
@@ -119,8 +121,11 @@ export interface OfficePaintOptions {
   transitDoorIds?:ReadonlySet<string>
   sharedRest?:readonly import('./office-shared-rest').OfficeSharedRestPair[]
   cutawayFloor?:string
+  /** Paint the unlit-station overlay on this canvas. OfficeView paints it on a backdrop canvas under wall signs. Default true. */
+  paintDeskLights?:boolean
   exchange?:import('./office-communication').OfficeWorkExchange|null
-  roomArt?:{shell:CanvasImageSource;props:CanvasImageSource;breakRoom:CanvasImageSource;stations?:CanvasImageSource;stationAngles?:CanvasImageSource}|null
+  roomArt?:{shell:CanvasImageSource;props:CanvasImageSource;breakRoom:CanvasImageSource;canteenShell?:CanvasImageSource;stations?:CanvasImageSource;stationAngles?:CanvasImageSource;worldStations?:CanvasImageSource}|null
+  avatarArt?:CanvasImageSource|null
   dailyArt?:OfficeDailyVisual
   lift?:OfficeLiftVisual
   architectureArt?:OfficeArchitectureArt|null

@@ -24,7 +24,7 @@ export function officeWorkExchange(trip:OfficeTrip|null,scene:OfficeScene,at:num
  for(const segment of trip.segments){
   const end=start+segment.duration
   if(at<end){
-   if(segment.kind!=='hold'||segment.liftPhase||segment.duration<1000)return null
+   if(segment.kind!=='hold'||segment.liftPhase||segment.liftWait||segment.duration<1000||trip.meetingPartner&&!segment.meeting)return null
    return {kind,senderKey:kind==='assigned'?parent.key:child.key,receiverKey:kind==='assigned'?child.key:parent.key,
     label:kind==='assigned'?'Assigning work':kind==='sent'?'Report sent':'Report received',
     remote:child.floorId!==parent.floorId||Math.hypot(child.x-parent.x,child.y-parent.y)>scene.width*.28,

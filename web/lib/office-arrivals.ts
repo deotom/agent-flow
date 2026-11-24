@@ -1,7 +1,8 @@
 import type { OfficeActor, OfficeEvent, OfficePoint, OfficeScene } from './office-types'
 import { createOfficeTrip, officeTripFrame, type OfficeTrip, type OfficeTripSegment } from './office-motion'
-import { officeLanding, officeNavigation, officeInteriorDoor, officeAisle } from './office-navigation'
+import { officeLanding, officeNavigation, officeInteriorDoor, officeAisle, officeLiftApproachDistance } from './office-navigation'
 import { createOfficeLift, reserveOfficeLiftTrip, cancelOfficeLiftTrips, restoreOfficeLiftCall, type OfficeLiftState } from './office-lift'
+import {officeWalkWaypoints} from './office-walking'
 
 /** Arrivals have their own durable lane: a long climb must not expire in the work-event queue. */
 export function addOfficeArrivals(existing: ReadonlyMap<string,OfficeTrip>, events:readonly OfficeEvent[], before:OfficeScene, next:OfficeScene, now:number, lift?:OfficeLiftState) {
@@ -29,12 +30,17 @@ function retarget(trip:OfficeTrip,actor:OfficeActor,scene:OfficeScene,now:number
   let cursor=frame.point,cursorFloor=frame.floorId??trip.actor.floorId
   const segments:OfficeTripSegment[]=[]
   const leg=(to:OfficePoint,kind:OfficeTripSegment['kind'],duration:number,liftPhase?:OfficeTripSegment['liftPhase'],opacity?:OfficeTripSegment['opacity'])=>{segments.push({from:{...cursor},to:{...to},kind,duration,floorId:cursorFloor,liftPhase,opacity});cursor={...to}}
-  const walk=(to:OfficePoint)=>{const d=Math.hypot(to.x-cursor.x,to.y-cursor.y);if(d>.01)leg(to,'walk',Math.max(150,d/(75*nav.scale)*1000))}
+  const step=(to:OfficePoint)=>{const d=Math.hypot(to.x-cursor.x,to.y-cursor.y);if(d>.01)leg(to,'walk',Math.max(150,d/(75*nav.scale)*1000))}
+  const walk=(to:OfficePoint)=>{
+    const floor=scene.floors.find(f=>f.id===cursorFloor)
+    for(const waypoint of officeWalkWaypoints(floor,scene.width,cursor,to))step(waypoint)
+  }
   const source=scene.floors.find(f=>f.id===cursorFloor)
   if(source?.annexOf){
     const threshold=officeInteriorDoor(scene,source.id,'annex')
     if(threshold){
-      walk({x:cursor.x,y:threshold.y});walk(threshold);leg(cursor,'hold',280,undefined,[1,0])
+      if(!source.desktopArt)walk({x:cursor.x,y:threshold.y})
+      walk(threshold);leg(cursor,'hold',280,undefined,[1,0])
       cursorFloor=source.annexOf;cursor=officeInteriorDoor(scene,cursorFloor)??threshold
       leg(cursor,'hold',280,undefined,[0,1])
     }
@@ -42,25 +48,33 @@ function retarget(trip:OfficeTrip,actor:OfficeActor,scene:OfficeScene,now:number
   if(frame.pose.inLift||cursorFloor!==publicFloor||(Math.abs(cursor.x-nav.shaftX)<.01&&Math.abs(cursor.y-landing.y)>.01)){
     if(!frame.pose.inLift){
       const sourceLanding=officeLanding(scene,cursorFloor)
-      if(sourceLanding){walk({x:cursor.x,y:sourceLanding.y});walk(Math.abs(sourceLanding.x-nav.shaftX)<.01?{x:nav.shaftX-28*nav.scale,y:sourceLanding.y}:sourceLanding)}
-      const count=segments.length;walk({x:nav.shaftX,y:cursor.y})
+      if(sourceLanding){
+        if(!scene.floors.find(f=>f.id===cursorFloor)?.desktopArt)walk({x:cursor.x,y:sourceLanding.y})
+        walk(Math.abs(sourceLanding.x-nav.shaftX)<.01?{x:nav.shaftX-officeLiftApproachDistance(scene),y:sourceLanding.y}:sourceLanding)
+      }
+      const count=segments.length;step({x:nav.shaftX,y:cursor.y})
       if(count===segments.length)leg(cursor,'hold',280,'boarding');else segments.at(-1)!.liftPhase='boarding'
+      segments.at(-1)!.liftApron=officeLiftApproachDistance(scene,cursorFloor)
       leg(cursor,'hold',650,'closing')
     }else if(Math.abs(cursor.x-nav.shaftX)>.01){
-      walk({x:nav.shaftX,y:cursor.y});segments.at(-1)!.liftPhase='boarding'
+      step({x:nav.shaftX,y:cursor.y});segments.at(-1)!.liftPhase='boarding'
+      segments.at(-1)!.liftApron=officeLiftApproachDistance(scene,cursorFloor)
     }
     leg({x:nav.shaftX,y:landing.y},'ride',Math.max(1,Math.abs(cursor.y-landing.y)/(80*nav.scale)*1000),'riding')
     cursorFloor=publicFloor
-    leg(cursor,'hold',650,'opening');const count=segments.length;walk(landing);walk(aisle)
+    leg(cursor,'hold',650,'opening');const count=segments.length;step(landing);step(aisle)
     if(count===segments.length)leg(cursor,'hold',280,'alighting');else segments[count].liftPhase='alighting'
+    segments[count].liftApron=officeLiftApproachDistance(scene,cursorFloor)
   }
   if(targetFloor?.annexOf){
     const threshold=officeInteriorDoor(scene,targetFloor.id)!
-    walk({x:cursor.x,y:landing.y});walk(threshold);leg(cursor,'hold',280,undefined,[1,0])
+    if(!targetFloor.desktopArt)walk({x:cursor.x,y:landing.y})
+    walk(threshold);leg(cursor,'hold',280,undefined,[1,0])
     cursorFloor=actor.floorId;cursor=officeInteriorDoor(scene,targetFloor.id,'annex')!
     leg(cursor,'hold',280,undefined,[0,1])
   }else cursorFloor=actor.floorId
-  walk({x:actor.x,y:aisle.y});walk(actor);leg(actor,'hold',300)
+  if(!targetFloor?.desktopArt)walk({x:actor.x,y:aisle.y})
+  walk(actor);leg(actor,'hold',300)
   if(frame.pose.opacity!==undefined&&frame.pose.opacity<1&&segments.length)segments[0].opacity=[frame.pose.opacity,segments[0].opacity?.[1]??1]
   return {...trip,actor,segments,startedAt:now,endsAt:now+segments.reduce((n,s)=>n+s.duration,0),shaftX:nav.shaftX,rungPitch:nav.rungPitch}
 }

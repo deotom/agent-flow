@@ -1,7 +1,7 @@
 import type { OfficeFloor, OfficeScene, OfficeWorkStation } from './office-types'
 import type { TeamAgentRow } from './team-types'
 import { isWorking } from './team-model'
-import {roomStationLayout,type OfficeRoomStation} from './office-room-design'
+import {roomDesktopWorkpoints,roomStationLayout,type OfficeRoomStation} from './office-room-design'
 
 export const OFFICE_STATION_LABELS:Record<OfficeWorkStation,string>={planning:'planning board',research:'reference corner',build:'development bench',quality:'verification lab',terminal:'operations console'}
 export const OFFICE_STATION_NAMES:Record<OfficeWorkStation,string>={planning:'Planning',research:'Research',build:'Development',quality:'Verification',terminal:'Operations'}
@@ -27,6 +27,7 @@ export function officeStations(floor:OfficeFloor,width:number):OfficeRoomStation
 }
 export function officeStationPoint(floor:OfficeFloor,width:number,kind:OfficeWorkStation){
  const h=floor.height??width*.5625
+ if(floor.desktopArt&&kind==='planning')return roomDesktopWorkpoints(floor,width,kind)[0].feet
  const station=officeStations(floor,width).find(s=>s.kind===kind)
  if(station)return station.work
  if(floor.room==='room-stations-large')return {x:width*.39,y:floor.y+width*.43}

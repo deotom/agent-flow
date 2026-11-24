@@ -8,9 +8,25 @@ export function useOfficeRoomArt():OfficeRoomArt|null {
   if(typeof Image==='undefined')return
   let disposed=false
   const load=(src:string)=>new Promise<HTMLImageElement>((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=reject;image.src=src})
-  Promise.all([import('./assets/room-stations.webp?url'),import('./assets/room-daily-props-v1.webp?url'),import('./assets/room-break.webp?url'),import('./assets/work-stations.webp?url'),import('./assets/work-stations-angles-v1.webp?url')])
-   .then(parts=>Promise.all(parts.map(part=>load(part.default))))
-   .then(([shell,props,breakRoom,stations,stationAngles])=>{if(!disposed)setArt({shell,props,breakRoom,stations,stationAngles})}).catch(()=>{})
+  const desktop=document.documentElement.dataset.agentFlowHost==='desktop'
+  const worldShell=desktop?import('./assets/world-workroom.webp?url').then(asset=>load(asset.default)).catch(()=>undefined):undefined
+  const worldStations=desktop?import('./assets/world-stations.webp?url').then(asset=>load(asset.default)).catch(()=>undefined):undefined
+  const leadTable=desktop?import('./assets/world-lead-table.webp?url').then(asset=>load(asset.default)).catch(()=>undefined):undefined
+  const leadRug=desktop?import('./assets/world-lead-rug.webp?url').then(asset=>load(asset.default)).catch(()=>undefined):undefined
+  const planningDesk=desktop?import('./assets/world-planning-desk.webp?url').then(asset=>load(asset.default)).catch(()=>undefined):undefined
+  Promise.all([
+   import('./assets/room-stations.webp?url'),
+   import('./assets/room-daily-props-v1.webp?url'),
+   import('./assets/room-break.webp?url'),
+   import('./assets/work-stations.webp?url'),
+   import('./assets/work-stations-angles-v1.webp?url'),
+  ])
+   .then(parts=>Promise.all([...parts.map(part=>load(part.default)),worldShell,worldStations,leadTable,leadRug,planningDesk] as const))
+   .then(([shell,props,breakRoom,stations,stationAngles,desktopShell,desktopStations,desktopLeadTable,desktopLeadRug,desktopPlanningDesk])=>{
+    if(!disposed&&shell&&props&&breakRoom)setArt({
+     shell:desktopShell??shell,canteenShell:desktopShell?shell:undefined,props,breakRoom,stations,stationAngles,worldStations:desktopStations,leadTable:desktopLeadTable,leadRug:desktopLeadRug,planningDesk:desktopPlanningDesk,
+    })
+   }).catch(()=>{})
   return()=>{disposed=true}
  },[])
  return art

@@ -1,4 +1,5 @@
 import type { OfficeAppearance, OfficeEvent, OfficeScene, OfficeActor, OfficeFloor, OfficeBoard, OfficeBoardItem, OfficeBreakRoom } from './office-types'
+import {officeGardenPlaces} from './office-daily-scene'
 import type { TeamAgentRow, TeamSnapshot } from './team-types'
 import { buildTeamView, describeActivity, isWorking, type TeamScope } from './team-model'
 import { agentWorkStation } from './office-stations'
@@ -76,6 +77,11 @@ export const BREAK_ROOMS: Readonly<Record<OfficeBreakRoom, readonly BreakSpot[]>
   // Fireside reading nook: chesterfield, armchairs, fireplace, tea cart, globe.
   'room-break-reading': [[.29,.645,0],[.40,.645,0],[.16,.66,0],[.77,.66,0],[.48,.79,1],[.07,.74,1],[.80,.75,1]],
 }
+export function officeBreakSpots(room:OfficeBreakRoom,desktopArt:boolean):readonly BreakSpot[]{
+  return desktopArt&&room==='room-break-reading'
+    ? [[.24,.76,0],[.57,.80,0],[.13,.85,1],[.72,.84,1]]
+    : BREAK_ROOMS[room]
+}
 const BREAK_VARIANTS = Object.keys(BREAK_ROOMS) as OfficeBreakRoom[]
 /** Stable decor per team so its break room looks the same every time. */
 export const officeBreakRoom = (sessionId: string): OfficeBreakRoom =>
@@ -107,16 +113,17 @@ export function officeTeamOrder(sessionIds: readonly string[], previous: readonl
   return order.length === previous.length && order.every((id,i) => id === previous[i]) ? previous : order
 }
 
-export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: TeamScope, showQuiet: boolean, identities: ReadonlyMap<string, number>, width = 450, parties: ReadonlySet<string> = new Set(), teamOrder: readonly string[] = [], collaborationOverrides:OfficeCollaborationOverrides = {}): OfficeScene {
+export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: TeamScope, showQuiet: boolean, identities: ReadonlyMap<string, number>, width = 450, parties: ReadonlySet<string> = new Set(), teamOrder: readonly string[] = [], collaborationOverrides:OfficeCollaborationOverrides = {}, desktopArt=false): OfficeScene {
   const order = new Map(officeTeamOrder(snapshots.map(s=>s.sessionId),teamOrder).map((id,i)=>[id,i]))
   const sorted = [...new Map(snapshots.map(s => [s.sessionId, s])).values()].sort((a,b) => order.get(a.sessionId)!-order.get(b.sessionId)!)
   const quietTeams = sorted.filter(s => quiet(s) && !(parties.has(s.sessionId) && s.agents.some(a => a.status === 'done'))), floors: OfficeFloor[] = [], actors: OfficeActor[] = [], resting: OfficeActor[] = [], guests: OfficeActor[] = []
   const partyTitles: string[] = []
   const clean = (v: string) => v.replace(/(?:[A-Za-z]:[\\/]|\/root\/|\/Users\/|\/home\/)[^ ·]+/g, '').trim()
-  const surfaceHeight = width * 864/1536
-  const lounge: OfficeFloor = { id:'lounge', sessionId:null, title:'Surface lounge', subtitle:'', color:'#a88b70', y:0, height:surfaceHeight, actorKeys:[], kind:'lounge' }
+  const surfaceHeight = width * (desktopArt?.435:864/1536)
+  const lounge: OfficeFloor = { id:'lounge', sessionId:null, title:'Surface lounge', subtitle:'', color:'#a88b70', y:0, height:surfaceHeight, actorKeys:[], kind:'lounge', ...(desktopArt?{desktopArt}: {}) }
   floors.push(lounge)
-  let y = surfaceHeight * .90
+  const stackStride=desktopArt?.982:.90
+  let y = surfaceHeight * (desktopArt?.960:stackStride)
   for (const snap of sorted) {
     const agents = new Map(snap.agents.map(a => [a.id,a]))
     // Team view provides safe display names and ancestry order, including orphan/cycle handling.
@@ -126,7 +133,7 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
     const collaboration=ordered.filter(row=>row.agent.role==='worker').map(row=>({
       key:officeKey(snap.sessionId,row.agent.id),preferenceKey:officeCollaborationPreferenceKey(snap.sessionId,row.agent.id,row.task?.id),sessionId:snap.sessionId,
       agent:{...row.agent,name:officeDisplayName(row.agent.name)},task:row.task,appearance:officeAppearance(identities.get(officeKey(snap.sessionId,row.agent.id))??0),
-      remote:officeCollaborationRemote(row.agent,row.task,snap.sessionId,collaborationOverrides),
+      remote:!desktopArt&&officeCollaborationRemote(row.agent,row.task,snap.sessionId,collaborationOverrides),
     }))
     const remoteKeys=new Set(collaboration.filter(member=>member.remote).map(member=>member.key))
     const done = (a: TeamAgentRow) => a.status === 'done' || a.status === 'cancelled' || ((a.status === 'failed' || a.status === 'idle') && !rootLead(a))
@@ -137,12 +144,12 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
     const rank = (r: (typeof ordered)[number]) => r.agent.role === 'lead' && !r.agent.parentId ? 0 : r.agent.status.startsWith('waiting_') ? 1 : r.agent.status === 'failed' ? 2 : isWorking(r.agent.status) ? 3 : 4
     const desks = ordered.filter(r => !done(r.agent)&&!remoteKeys.has(officeKey(snap.sessionId,r.agent.id))).sort((a,b) => rank(a)-rank(b))
     const room = officeWorkRoom(snap.sessionId, desks.length)
-    const slots = OFFICE_SLOTS[room], height = width * slots.aspect
+    const slots = OFFICE_SLOTS[room], height = width * (desktopArt?(room==='room-stations'?.69:.721):slots.aspect)
     const id = JSON.stringify(['team',snap.sessionId]), included = showQuiet || !quiet(snap)
     const working = snap.agents.filter(a => isWorking(a.status)).length, waiting = snap.agents.filter(a => a.status.startsWith('waiting_')).length
     const project = clean(snap.project ?? ''), title = [project, clean(snap.title)].filter((v,i,a) => v && a.indexOf(v)===i).join(' · ') || 'Team'
     const online=collaboration.filter(member=>member.remote&&activeInOffice(member.agent)).length
-    if (included) floors.push({ id, sessionId:snap.sessionId, title, collaboration, board:officeBoard(snap, clean(snap.title) || title, clean), subtitle:[working ? `${working} working` : '', waiting ? `${waiting} needs you` : '',online?`${online} online`:''].filter(Boolean).join(' · '), working, waiting, overflow:Math.max(0,desks.length-slots.chairs.length), color:teamColor(snap.sessionId), y, height, room, actorKeys:desks.map(r => officeKey(snap.sessionId,r.agent.id)), kind:'team' })
+    if (included) floors.push({ id, sessionId:snap.sessionId, title, collaboration, board:officeBoard(snap, clean(snap.title) || title, clean), subtitle:[working ? `${working} working` : '', waiting ? `${waiting} needs you` : '',online?`${online} online`:''].filter(Boolean).join(' · '), working, waiting, overflow:Math.max(0,desks.length-slots.chairs.length), color:teamColor(snap.sessionId), y, height, room, desktopArt, actorKeys:desks.map(r => officeKey(snap.sessionId,r.agent.id)), kind:'team' })
     const mainFloor=floors.find(f=>f.id===id)
     const actorSpots=mainFloor?roomActorSpots(mainFloor,width):slots.chairs.map(([sx,sy])=>({x:sx*width,y:y+sy*height}))
     const teamResting: OfficeActor[] = []
@@ -164,19 +171,19 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
       // An actually idle root lead rests inside its own office, keeping its desk slot reserved.
       if(rootLead(row.agent)&&row.agent.status==='idle'&&!teamQuiet) {
         const floor=floors.find(f=>f.id===id)
-        if(floor)Object.assign(actor,roomLeadRestPoint(floor,width),{zone:'lounge',stand:false,workStation:undefined,objectAction:'book',activity:'Reading reports'})
+        if(floor)Object.assign(actor,roomLeadRestPoint(floor,width),{zone:'lounge',stand:Boolean(floor.desktopArt),workStation:undefined,objectAction:floor.desktopArt?undefined:'book',activity:floor.desktopArt?'At the Lead table':'Reading reports'})
       }
       // Active teams rest in their own break room; quiet teams go home unless they are celebrating.
       if (terminal) { if (!teamQuiet) teamResting.push(actor); else if (partying) guests.push({ ...actor, party:true }) }
       else actors.push(actor)
     }
-    if (included) y += height * .90
+    if (included) y += height * stackStride
     // The private annex shares its office bounds and never consumes another building storey.
     if (included && teamResting.length) {
-      const breakHeight = height, breakY = y-height*.90, breakId = JSON.stringify(['break', snap.sessionId])
-      const decor = officeBreakRoom(snap.sessionId), spots = BREAK_ROOMS[decor]
+      const breakHeight = height, breakY = y-height*stackStride, breakId = JSON.stringify(['break', snap.sessionId])
+      const decor = desktopArt?'room-break-reading':officeBreakRoom(snap.sessionId), spots = officeBreakSpots(decor,desktopArt)
       const breakFloor: OfficeFloor = { id:breakId, sessionId:snap.sessionId, title:`☕ ${clean(snap.title) || 'Team'} · Break room`, subtitle:`${teamResting.length} resting`,
-        color:teamColor(snap.sessionId), y:breakY, height:breakHeight, room:decor, actorKeys:[], kind:'break', annexOf:id, overflow:Math.max(0, teamResting.length - spots.length) }
+        color:teamColor(snap.sessionId), y:breakY, height:breakHeight, room:decor, actorKeys:[], kind:'break', annexOf:id, desktopArt, overflow:Math.max(0, teamResting.length - spots.length) }
       floors.push(breakFloor)
       teamResting.forEach((actor, i) => {
         const [sx, sy, stand] = spots[i % spots.length]
@@ -188,9 +195,13 @@ export function buildOfficeScene(snapshots: readonly TeamSnapshot[], scope: Team
   }
   if (quietTeams.length) { floors.push({id:'quiet',sessionId:null,title:`${quietTeams.length} ${quietTeams.length === 1 ? 'team' : 'teams'} at home`,subtitle:'',color:'#aa9168',y,height:34,actorKeys:[],kind:'quiet'}); y+=34 }
   // The surface lawn is the party garden.
-  const seats = [[.338,.61],[.495,.61],[.64,.57],[.78,.58]]
+  const seats = officeGardenPlaces(lounge)
   if (partyTitles.length) lounge.party = partyTitles
-  guests.forEach((actor,i) => { const seat=seats[i%seats.length]; actors.push({...actor, floorId:'lounge',monitor:undefined,x:seat[0]*width,y:seat[1]*surfaceHeight,stand:i%4===1||i%4===3,objectAction:(['snack','music','snack','coffee'] as const)[i%4],hidden:i>=LOUNGE_CAP}); lounge.actorKeys.push(actor.key) })
+  guests.forEach((actor,i) => {
+    const placeIndex=i%seats.length,[x,y,standing]=seats[placeIndex]
+    actors.push({...actor,floorId:'lounge',monitor:undefined,x:x*width,y:y*surfaceHeight,stand:standing??placeIndex%2===1,objectAction:(['snack','music','snack','coffee'] as const)[placeIndex],hidden:i>=LOUNGE_CAP})
+    lounge.actorKeys.push(actor.key)
+  })
   lounge.overflow=Math.max(0,guests.length-LOUNGE_CAP)
   return { width, height:y+width/3, floors, actors, quietTeams, totalAgents:sorted.reduce((n,s)=>n+s.agents.length,0), finishedCount:resting.length + guests.length }
 }

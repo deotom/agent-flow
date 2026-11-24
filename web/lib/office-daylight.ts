@@ -19,3 +19,19 @@ export function officeDaylight(date: Date) {
     sun:hour>=6&&hour<18?{x:.06+.88*progress,y:.43-.39*Math.sin(progress*Math.PI)}:null,
     shadow:Math.cos(progress*Math.PI),night:hour<5.5||hour>=18.5}
 }
+
+/** Project the sun through the gap between the painted tree canopy and lift pavilion. */
+export function officeDesktopGardenSun(sun:ReturnType<typeof officeDaylight>['sun']){
+  return sun&&{x:.57+.24*sun.x,y:sun.y}
+}
+
+/** Light the foreground independently of the sky and the illuminated lanterns. */
+export function officeDesktopGardenLighting(light:ReturnType<typeof officeDaylight>){
+  const sun=light.sun
+  const elevation=sun?1-sun.y/.43:0
+  const warm=`rgba(255,${Math.round(171+59*elevation)},${Math.round(89+94*elevation)},${.28+.21*light.light})`
+  return {
+    '--of-garden-wash':light.top+(light.night?'62':'45'),
+    '--of-garden-sun':sun?`radial-gradient(ellipse 76% 86% at ${(sun.x*100).toFixed(2)}% ${(sun.y*100).toFixed(2)}%, ${warm} 10%, transparent 92%)`:'none',
+  }
+}

@@ -3,14 +3,21 @@ import { useEffect, useState } from 'react'
 import { AgentVisualizer } from './components/agent-visualizer'
 import { OrbView } from './components/orb/orb-view'
 import './app/globals.css'
+import './app/desktop-theme.css'
+import './components/agent-visualizer/office/office-activity-footer.css'
 
 // Standalone CLI entry — no VS Code API, connects to relay via SSE
 const rootElement = document.getElementById('root')
 if (!rootElement) throw new Error('Root element #root not found')
 const root = createRoot(rootElement)
+const params = new URLSearchParams(window.location.search)
+const desktop = params.get('desktop') === '1'
+// The desktop orb window loads ?orb=1: only the floating reactor, on a transparent page.
+const orb = params.get('orb') === '1'
+if (desktop || orb) document.documentElement.dataset.agentFlowHost = 'desktop'
+
 function StandaloneApp() {
-  const desktop = new URLSearchParams(window.location.search).get('desktop') === '1'
-  const [widget, setWidget] = useState(() => desktop && new URLSearchParams(window.location.search).get('widget') === '1')
+  const [widget, setWidget] = useState(() => desktop && params.get('widget') === '1')
   useEffect(() => {
     if (!desktop || window.parent === window) return
     const configure = (event: MessageEvent) => {
@@ -19,9 +26,7 @@ function StandaloneApp() {
     window.addEventListener('message', configure)
     window.parent.postMessage({ type: 'desktop:ready' }, '*')
     return () => window.removeEventListener('message', configure)
-  }, [desktop])
+  }, [])
   return <AgentVisualizer desktopWidget={widget} />
 }
-// The desktop orb window loads ?orb=1: only the floating reactor, on a transparent page.
-const orb = new URLSearchParams(window.location.search).get('orb') === '1'
 root.render(orb ? <OrbView /> : <StandaloneApp />)

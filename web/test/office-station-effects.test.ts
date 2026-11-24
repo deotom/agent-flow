@@ -1,14 +1,31 @@
 import {it} from 'node:test'
 import assert from 'node:assert/strict'
 import {drawOfficeStation,officeStationHardware} from '../components/agent-visualizer/office/office-station-art'
-import type {OfficeRoomStation} from '../lib/office-room-design'
-import type {OfficeRoomArt} from '../components/agent-visualizer/office/office-room-design-art'
+import {roomDesktopWorkpoints,type OfficeRoomStation} from '../lib/office-room-design'
+import {drawOfficeRoomDeskLights,type OfficeRoomArt} from '../components/agent-visualizer/office/office-room-design-art'
 import {officeStationActivity,type OfficeStationState} from '../lib/office-station-activity'
 import {officeAppearance} from '../lib/office-model'
-import type {OfficeActor,OfficeScene} from '../lib/office-types'
+import type {OfficeActor,OfficeFloor,OfficeScene} from '../lib/office-types'
 
 const station:OfficeRoomStation={kind:'build',facing:'left',x:130,y:180,width:85,height:85,depth:.5,work:{x:120,y:184}}
 const art={stations:{name:'front'},stationAngles:{name:'angles'}} as unknown as OfficeRoomArt
+
+it('darkens both Terminal screens until a stationary worker occupies either painted seat',()=>{
+ const floor={id:'team',desktopArt:true,y:200,height:325} as OfficeFloor
+ const spot=roomDesktopWorkpoints(floor,450,'terminal')[1].feet
+ const actor={...spot,floorId:floor.id,zone:'desk',workStation:'terminal',agent:{status:'running'}} as OfficeActor
+ const count=(actors:OfficeActor[])=>{
+  const scene={width:450,floors:[floor],actors} as OfficeScene
+  let darkScreens=0
+  const c={save(){},restore(){},translate(){},scale(){},beginPath(){},moveTo(){},lineTo(){},closePath(){},clip(){},drawImage(){},ellipse(){},fill(){},createLinearGradient:()=>({addColorStop(){}}),fillRect(){darkScreens++}}
+  drawOfficeRoomDeskLights(c as unknown as CanvasRenderingContext2D,scene,floor,{...art,shell:art.stations!})
+  return darkScreens
+ }
+ assert.equal(count([]),2)
+ assert.equal(count([actor]),0)
+ assert.equal(count([{...actor,pose:{walk:true}}]),2)
+ assert.equal(count([{...actor,x:actor.x+25}]),2)
+})
 function paint(time:number,animate=true,state:OfficeStationState='working',item=station,assets=art,alpha=1){
  const calls:unknown[][]=[],props:Record<string,unknown>={globalAlpha:alpha}
  const c=new Proxy(props,{get(t,k){if(k in t)return t[String(k)];return (...args:unknown[])=>calls.push([k,...args,...(k==='stroke'||k==='fill'?[{alpha:props.globalAlpha,color:k==='stroke'?props.strokeStyle:props.fillStyle}]:[])])},set(t,k,v){t[String(k)]=v;calls.push(['set',k,v]);return true}}) as unknown as CanvasRenderingContext2D

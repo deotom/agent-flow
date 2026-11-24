@@ -9,7 +9,7 @@
 .of-remote-tiles [data-status^="waiting"] i{background:#ffce69}.of-remote-tiles [data-status="failed"] i{background:#ef9d82}
 .of-view .of-remote-tiles>button[aria-pressed="true"]{box-shadow:inset 0 0 0 1px #ffe5a3}
 .of-view .of-remote-manage{flex:none;display:flex;align-items:center;justify-content:center;gap:3px;max-width:100%;border:0;border-radius:2px;padding:1px 2px;background:#66472b;color:#ffe4b2;font:7px/1.2 "Segoe UI",sans-serif;white-space:nowrap;cursor:pointer}.of-remote-manage b{font:inherit;color:#fff5d6}
-.of-remote-meeting[data-remote="false"]{height:auto!important}.of-remote-meeting[data-remote="false"] .of-remote-manage{align-self:center;border:1px solid #a57b4b;padding:3px;font-size:8px;box-shadow:0 1px 2px #21170e50}
+.of-remote-meeting:not([data-desktop])[data-remote="false"]{height:auto!important}.of-remote-meeting:not([data-desktop])[data-remote="false"] .of-remote-manage{align-self:center;border:1px solid #a57b4b;padding:3px;font-size:8px;box-shadow:0 1px 2px #21170e50}
 .of-remote-meeting[data-open="true"]{z-index:8}
 .of-remote-roster{position:absolute;top:calc(100% + 4px);left:-20%;width:270px;max-width:70vw;max-height:230px;overflow:auto;box-sizing:border-box;padding:10px;border:1px solid #c59558;border-radius:5px;background:#332c21f7;box-shadow:0 3px 9px #17150d60;font-size:11px}
 .of-remote-roster p{margin:0 20px 3px 0;font-weight:600}.of-remote-roster small{color:#d5bf99;font-size:10px}.of-remote-roster ul{list-style:none;padding:0;margin:7px 0 0}.of-remote-roster li{padding:6px 0;border-top:1px solid #94734b60;display:flex;flex-direction:column;gap:5px}.of-view .of-remote-roster li button{display:flex;flex-direction:column;gap:2px;border:0;padding:0;background:none;color:#f4e5c5;text-align:left;cursor:pointer;font:inherit;overflow-wrap:anywhere}.of-remote-roster li button span{font-size:10px;color:#d4c3a2}.of-remote-roster label{display:flex;gap:6px;align-items:center;color:#d4c3a2;font-size:10px}.of-remote-roster select{min-width:0;border:1px solid #a48050;border-radius:3px;background:#51432e;color:#ffe5b9;font:10px "Segoe UI",sans-serif;padding:2px}.of-view .of-remote-close{position:absolute;right:6px;top:4px;border:0;background:none;color:#ffe4b2;font-size:16px;cursor:pointer}
@@ -21,4 +21,98 @@
 .of-view .of-remote-rail .of-remote-tiles>button{max-width:28px;border-radius:50%;background:#263e3d;box-shadow:inset 0 0 0 1px #c8b18280}
 .of-remote-count{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .of-view .of-remote-meeting[data-remote="true"] .of-remote-manage{align-self:flex-end;background:#59432b;border-radius:0 0 3px 3px;min-width:16px}
+
+/* The Desktop display shares the wall with the review table and the planning board. */
+.of-remote-meeting[data-desktop="true"]{
+  left:0;
+  width:100%;
+  z-index:6;
+  pointer-events:none;
+}
+.of-remote-meeting[data-desktop="true"][data-open="true"]{z-index:8}
+.of-remote-meeting[data-desktop="true"]>.of-remote-screen{
+  position:absolute;
+  inset:0 auto 0 66.6%;
+  width:10.8%;
+  pointer-events:auto;
+  display:flex;
+  flex-direction:column;
+  box-sizing:border-box;
+  padding:2px;
+  border:2px solid #594635;
+  border-radius:4px;
+  background:linear-gradient(140deg,#203c55,#14263a 72%);
+  box-shadow:inset 0 0 0 1px #75829450,0 2px 4px #21140fb0;
+}
+.of-remote-meeting[data-desktop="true"] .of-remote-tiles{
+  flex:1;
+  min-height:0;
+  gap:2px;
+  padding:0;
+}
+.of-view .of-remote-meeting[data-desktop="true"] .of-remote-tiles>button{
+  background:linear-gradient(145deg,#456782,#294459);
+}
+.of-remote-meeting[data-desktop="true"] .of-remote-tiles canvas{
+  left:4%;
+  width:92%;
+}
+.of-remote-meeting[data-desktop="true"] .of-remote-tiles i{width:3px;height:3px}
+.of-view .of-remote-meeting[data-desktop="true"] .of-remote-manage{
+  width:100%;
+  min-width:0;
+  align-self:stretch;
+  height:clamp(9px,26%,15px);
+  padding:0;
+  border-radius:2px;
+  color:#d4e1df;
+  background:#263d50;
+  box-shadow:inset 0 1px #88a6be56;
+  font-size:9px;
+}
+.of-view .of-remote-meeting[data-desktop="true"][data-remote="false"] .of-remote-manage{
+  height:100%;
+  background:radial-gradient(ellipse at 50% 45%,#385775,#20384d 70%);
+}
+.of-view .of-remote-meeting[data-desktop="true"] .of-remote-manage:hover{background:#416886}
+.of-view .of-remote-meeting[data-desktop="true"] .of-remote-manage svg{height:100%;width:12px;max-height:14px}
+.of-view .of-remote-meeting[data-desktop="true"] button:focus-visible{outline-offset:-1px}
+.of-remote-meeting[data-desktop="true"]>.of-remote-roster{
+  pointer-events:auto;
+  left:auto;
+  right:4%;
+  width:min(320px,92%);
+  max-width:none;
+  max-height:min(320px,64vh);
+  padding:13px;
+  container-type:inline-size;
+  border-color:#957755;
+  border-radius:8px;
+  background:#2e2a21;
+  color:#f8ead2;
+  font-size:12px;
+  box-shadow:0 6px 22px #21160f9c;
+}
+.of-remote-meeting[data-desktop="true"]>.of-remote-roster:focus{outline:none}
+.of-remote-meeting[data-desktop="true"] .of-remote-roster li{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) max-content;
+  align-items:center;
+  padding:8px 0;
+  gap:5px 10px;
+}
+.of-remote-meeting[data-desktop="true"] .of-remote-roster li>small{grid-column:1/-1}
+.of-remote-meeting[data-desktop="true"] .of-remote-roster label>span{white-space:nowrap}
+.of-remote-meeting[data-desktop="true"] .of-remote-roster select{
+  max-width:100%;
+  min-height:28px;
+  padding:3px 5px;
+  font-size:11px;
+}
+.of-remote-meeting[data-desktop="true"] .of-remote-roster li button:focus-visible,
+.of-remote-meeting[data-desktop="true"] .of-remote-close:focus-visible{outline-offset:2px}
+@container (max-width:270px){
+  .of-remote-meeting[data-desktop="true"] .of-remote-roster li{grid-template-columns:minmax(0,1fr)}
+  .of-remote-meeting[data-desktop="true"] .of-remote-roster select{flex:1}
+}
 

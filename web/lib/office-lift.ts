@@ -1,12 +1,13 @@
 import type { OfficeScene } from './office-types'
 import type { OfficeTrip, OfficeTripSegment } from './office-motion'
+import {officeLiftEase} from './office-motion'
 import { officeNavigation } from './office-navigation'
 
 interface LiftLeg { start:number; end:number; fromY:number; toY:number; fromDoor:number; toDoor:number; actorKey?:string; passenger?:string }
-export interface OfficeLiftState { gardenCallPending?:boolean; y:number; doorsOpen:number; availableAt:number; reservations:LiftLeg[] }
+export interface OfficeLiftState { gardenCallPending?:boolean; y:number; doorsOpen:number; availableAt:number; reservations:LiftLeg[]; desktopMotion?:boolean }
 export interface OfficeLiftFrame { y:number; doorsOpen:number; moving:boolean; passengerKeys:readonly string[] }
 export function createOfficeLift(scene:OfficeScene):OfficeLiftState {
- return {y:officeNavigation(scene).hatch.y,doorsOpen:0,availableAt:0,reservations:[]}
+ return {y:officeNavigation(scene).hatch.y,doorsOpen:0,availableAt:0,reservations:[],desktopMotion:Boolean(scene.floors[0]?.desktopArt)}
 }
 /** One physical car. Coordinates are retained during relayout; a retarget starts from this exact position. */
 export function officeLiftFrame(lift:OfficeLiftState,now:number,_scene?:OfficeScene):OfficeLiftFrame {
@@ -14,7 +15,8 @@ export function officeLiftFrame(lift:OfficeLiftState,now:number,_scene?:OfficeSc
  for(const leg of lift.reservations){
   if(now<leg.start)break
   const ratio=Math.max(0,Math.min(1,(now-leg.start)/Math.max(1,leg.end-leg.start)))
-  y=leg.fromY+(leg.toY-leg.fromY)*ratio;doorsOpen=leg.fromDoor+(leg.toDoor-leg.fromDoor)*ratio
+  const progress=lift.desktopMotion?officeLiftEase(ratio):ratio
+  y=leg.fromY+(leg.toY-leg.fromY)*progress;doorsOpen=leg.fromDoor+(leg.toDoor-leg.fromDoor)*progress
   if(now<leg.end)return {y,doorsOpen,moving:leg.fromY!==leg.toY,passengerKeys:leg.passenger?[leg.passenger]:[]}
  }
  return {y,doorsOpen,moving:false,passengerKeys:[]}
@@ -63,13 +65,18 @@ export function reserveOfficeLiftTrip(lift:OfficeLiftState,trip:OfficeTrip,scene
    carLeg(duration,carY,0,trip.actorKey)
   }
   if(segment.liftPhase==='boarding'){
+   const atLanding=Math.abs(carY-segment.from.y)<=.01
+   if(trip.desktopMotion&&(!atLanding||door<1)){
+    segments.push({from:{...segment.from},to:{...segment.from},duration:280,kind:'hold',floorId:segment.floorId,liftWait:'press',liftApron:segment.liftApron})
+    time+=280
+   }
    const waitStart=time
    if(Math.abs(carY-segment.from.y)>.01){
     if(door>0)carLeg(650,carY,0)
     carLeg(Math.abs(carY-segment.from.y)/(80*scale)*1000,segment.from.y,0)
    }
    if(door<1)carLeg(650,carY,1)
-   if(time>waitStart)segments.push({from:{...segment.from},to:{...segment.from},duration:time-waitStart,kind:'hold',floorId:segment.floorId})
+   if(time>waitStart)segments.push({from:{...segment.from},to:{...segment.from},duration:time-waitStart,kind:'hold',floorId:segment.floorId,liftWait:trip.desktopMotion?'wait':undefined,liftApron:segment.liftApron})
   }
   segments.push(segment)
   if(segment.liftPhase){
@@ -113,4 +120,27 @@ export function closeOfficeLiftGardenDoor(lift:OfficeLiftState,scene:OfficeScene
  const duration=650*frame.doorsOpen
  if(duration>0){lift.reservations.push({start:now,end:now+duration,fromY:frame.y,toY:frame.y,fromDoor:frame.doorsOpen,toDoor:0});lift.availableAt+=duration}
  return true
+}
+
+export function officeGardenLiftButton(lift:OfficeLiftState,scene:OfficeScene,now:number) {
+ const nav=officeNavigation(scene),car=officeLiftFrame(lift,now)
+ const expanded=Math.abs(car.y-nav.hatch.y)<2*nav.scale&&car.doorsOpen>.5
+ const occupied=lift.reservations.some(leg=>leg.actorKey&&leg.end>now)
+ const pending=lift.gardenCallPending&&lift.reservations.some(leg=>!leg.actorKey&&leg.toDoor===1&&leg.end>now)
+ const state=pending?'waiting':expanded?(occupied?'boarding':'open'):'ready'
+ const label={waiting:'Waiting for garden lift',boarding:'Garden lift boarding',open:'Close garden lift',ready:'Call lift to garden'}[state]
+ return {state,label,expanded,disabled:state==='waiting'||state==='boarding'}
+}
+
+export function toggleOfficeGardenLift(lift:OfficeLiftState,scene:OfficeScene,now:number,motion:boolean):void {
+ advanceOfficeLift(lift,now)
+ const button=officeGardenLiftButton(lift,scene,now)
+ if(button.disabled)return
+ if(!motion&&!lift.reservations.some(leg=>leg.actorKey)){
+  lift.y=officeNavigation(scene).hatch.y;lift.doorsOpen=button.expanded?0:1
+  lift.reservations=[];lift.availableAt=now;lift.gardenCallPending=false
+  return
+ }
+ if(button.expanded)closeOfficeLiftGardenDoor(lift,scene,now)
+ else callOfficeLiftToGarden(lift,scene,now)
 }

@@ -12,7 +12,7 @@ function readSeen(): boolean {
   catch { return false }
 }
 
-export function useOfficeDiscovery(visible: boolean): { open: boolean; show: () => void; dismiss: () => void } {
+export function useOfficeDiscovery(visible: boolean, autoShow = true): { open: boolean; show: () => void; dismiss: () => void } {
   const [requested, setRequested] = useState(false)
   const [pageVisible, setPageVisible] = useState(false)
   const [replay, setReplay] = useState(0)
@@ -30,10 +30,10 @@ export function useOfficeDiscovery(visible: boolean): { open: boolean; show: () 
   }, [])
 
   useEffect(() => {
-    if (!visible || !pageVisible || initialized.current) return
+    if (!autoShow || !visible || !pageVisible || initialized.current) return
     initialized.current = true
     if (!readSeen()) setRequested(true)
-  }, [visible, pageVisible])
+  }, [autoShow, visible, pageVisible])
 
   const dismiss = useCallback(() => {
     initialized.current = true

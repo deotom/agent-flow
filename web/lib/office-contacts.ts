@@ -11,6 +11,7 @@ export function officeHandContacts(p:OfficeGripPose,m:OfficeHandMotion){
  let lx=-15,ly=-21+m.left+(p.walk?swing:0),rx=16,ry=-23+m.right-m.sip*12
  if(p.walk&&!p.mug&&!p.cup&&!p.carry)ry-=swing
  if(p.climb){const phase=(p.climbStep??0)*Math.PI;lx=-17;ly=-43+Math.sin(phase)*9;rx=17;ry=-43-Math.sin(phase)*9}
+ else if(p.liftWait==='press'){rx=24;ry=-37}
  else if(p.hand||p.wave||p.objectAction==='music'){rx=16+m.wave;ry=-48}
  else if(p.objectAction==='book'||p.objectAction==='game'||p.objectAction==='snack'){
   const grip=unit(p.seatBlend??1)

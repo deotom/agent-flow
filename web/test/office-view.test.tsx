@@ -6,11 +6,53 @@ import { officeKey } from '../lib/office-model'
 import type { TeamSnapshot } from '../lib/team-types'
 const team = (sessionId:string,name:string):TeamSnapshot => ({sessionId,title:name,active:true,updatedAt:1000,tasks:[],agents:[{id:'lead',parentId:null,role:'lead',name,runtime:'codex',model:null,status:'thinking',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1000,updatedAt:1000,completedAt:null}]})
 const props={scope:'active' as const,selectedKey:null,onSelect:()=>{},onOpenTeam:()=>{},live:true,visible:true,animationMode:'off' as const,now:1000}
+const onDesktop=<T,>(render:()=>T):T=>{
+ const previous=Object.getOwnPropertyDescriptor(globalThis,'document')
+ Object.defineProperty(globalThis,'document',{configurable:true,value:{documentElement:{dataset:{agentFlowHost:'desktop'}}}})
+ try{return render()}
+ finally{
+  if(previous)Object.defineProperty(globalThis,'document',previous)
+  else Reflect.deleteProperty(globalThis,'document')
+ }
+}
+it('shows the Desktop break-room headcount above the door and keeps the break room entrance',()=>{
+ const snap=team('count','Workshop')
+ snap.agents.push({...snap.agents[0],id:'review',parentId:'lead',role:'worker',taskRole:'review',name:'Reviewer',status:'running'},
+  {...snap.agents[0],id:'rest',parentId:'lead',role:'worker',name:'Resting worker',status:'done'})
+ const html=onDesktop(()=>renderToStaticMarkup(<OfficeView {...props} scope="session" snapshots={[snap]}/>))
+ assert.ok(html.includes('1 คนในห้องพัก · Workshop'),'only the resting worker is in the break room')
+ assert.ok(!html.includes('คนในห้องทำงาน'))
+ assert.ok(html.includes('Open break room, Workshop, 1 assigned'))
+ assert.ok(!html.includes('จัดทีมออนไลน์'))
+ const busy=team('busy','Workshop')
+ busy.agents.push({...busy.agents[0],id:'review',parentId:'lead',role:'worker',taskRole:'review',name:'Reviewer',status:'running'})
+ assert.ok(onDesktop(()=>renderToStaticMarkup(<OfficeView {...props} scope="session" snapshots={[busy]}/>)).includes('0 คนในห้องพัก · Workshop'))
+})
+it('keeps the painted Desktop break-room door free of a teacup badge',()=>{
+ const snap=team('door','Workshop')
+ snap.agents.push({...snap.agents[0],id:'rest',parentId:'lead',role:'worker',name:'Resting worker',status:'done'})
+ const html=onDesktop(()=>renderToStaticMarkup(<OfficeView {...props} scope="session" snapshots={[snap]}/>))
+ const door=html.match(/<button[^>]*class="of-annex-door"[^>]*>(.*?)<\/button>/)
+ assert.ok(door,'the door stays a button')
+ assert.ok(door[0].includes('Open break room, Workshop, 1 assigned'))
+ assert.equal(door[1],'','no badge inside the Desktop door')
+ assert.ok(!html.includes('☕'))
+ const web=renderToStaticMarkup(<OfficeView {...props} scope="session" snapshots={[snap]}/>)
+ assert.ok(web.includes('☕ 1'),'the non-desktop door keeps its count badge')
+})
+it('paints desk lights on a backdrop canvas under wall signs and boards',()=>{
+ const html=onDesktop(()=>renderToStaticMarkup(<OfficeView {...props} scope="session" snapshots={[team('lights','Workshop')]}/>))
+ const lights=html.indexOf('class="of-desk-lights"'),board=html.indexOf('class="of-board"'),foreground=html.indexOf('aria-label="Office with')
+ assert.ok(lights>=0&&board>lights&&foreground>board)
+ const sign=html.indexOf('class="of-station-sign"')
+ assert.ok(sign<0||sign>lights)
+ assert.match(html,/<canvas class="of-desk-lights" aria-hidden="true" style="z-index:0;pointer-events:none;height:100%"/)
+})
 it('keeps private resting rooms behind a main-room door without standalone floors, with a waiting beacon',()=>{
  const snap=team('annex','Main');snap.agents[0].status='waiting_input'
  snap.agents.push({...snap.agents[0],id:'rest',parentId:'lead',role:'worker',name:'Resting worker',status:'done'})
  const html=renderToStaticMarkup(<OfficeView {...props} scope="session" snapshots={[snap]}/>)
- assert.ok(html.includes('Open break room, Main, 1 resting'))
+ assert.ok(html.includes('Open break room, Main, 1 assigned'))
  assert.ok(html.includes('of-alert-beacon')&&html.includes('Waiting for your answer'))
  assert.ok(!html.includes('class="of-art of-art-room-break'))
  assert.ok(!html.includes('aria-label="Resting worker,'))
@@ -82,7 +124,7 @@ it('labels the empty garden and private lounge entrance without filling the main
   active.agents.push(...Array.from({length:12},(_,i)=>({...active.agents[0],id:`done${i}`,name:`Done${i}`,parentId:'lead',role:'worker' as const,status:'done' as const})))
   const html=renderToStaticMarkup(<OfficeView {...props} snapshots={[active]}/>)
   assert.ok(html.includes('Party garden · No celebrations'))
-  assert.ok(html.includes('Open break room, Busy, 12 resting'))
+  assert.ok(html.includes('Open break room, Busy, 12 assigned'))
   assert.ok(!html.includes('aria-label="Done0,'))
   assert.ok(!html.includes('Show history'))
   const home=team('b','Home');home.agents[0].status='idle'

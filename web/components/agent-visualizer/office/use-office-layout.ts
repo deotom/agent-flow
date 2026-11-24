@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { OfficeScene } from '../../../lib/office-types'
-import { officeLayoutChanged, officeLayoutFrame } from '../../../lib/office-layout'
+import { officeLayoutChanged, officeLayoutCommitsImmediately, officeLayoutFrame } from '../../../lib/office-layout'
 
 const DURATION=420
 type Transition={from:OfficeScene;to:OfficeScene;elapsed:number;last:number|null;duration:number}
@@ -14,13 +14,14 @@ export function useOfficeLayout(target:OfficeScene,animate:boolean,suspended=fal
   const transition=useRef<Transition|null>(null),handle=useRef<number|null>(null)
   const controls=useRef({animate,suspended})
   controls.current={animate,suspended}
+  const suspendedDesktop=suspended&&Boolean(target.floors[0]?.desktopArt)
   // Supply new metadata on the same render, while retaining displayed room geometry.
-  const rendered=frame===target?target:officeLayoutFrame(frame,target,0)
+  const rendered=frame===target||suspendedDesktop?target:officeLayoutFrame(frame,target,0)
   useLayoutEffect(()=>{displayed.current=rendered},[rendered])
   useEffect(()=>{
     const prior=priorTarget.current,changed=officeLayoutChanged(prior,target)
     const newRoom=target.floors.some(f=>f.kind==='team'&&!prior.floors.some(p=>p.id===f.id))
-    if(!animate||typeof requestAnimationFrame==='undefined'){
+    if(!animate||suspendedDesktop||officeLayoutCommitsImmediately(prior,target)||typeof requestAnimationFrame==='undefined'){
       if(handle.current!==null)cancelAnimationFrame(handle.current)
       priorTarget.current=target
       handle.current=null;transition.current=null;displayed.current=target;setFrame(target);return
@@ -55,7 +56,7 @@ export function useOfficeLayout(target:OfficeScene,animate:boolean,suspended=fal
       else{transition.current=null;handle.current=null}
     }
     handle.current=requestAnimationFrame(tick)
-  },[target,animate,suspended])
+  },[target,animate,suspended,suspendedDesktop])
   useEffect(()=>()=>{if(handle.current!==null)cancelAnimationFrame(handle.current)},[])
   return rendered
 }

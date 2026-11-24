@@ -1,6 +1,6 @@
 import type {OfficeActor,OfficeFloor,OfficeScene} from './office-types'
 import {advanceOfficeDailyLedger,emptyOfficeDailyLedger,markOfficeDailyAttendance,officeDailyActorEligible,officeDailyWindow,planOfficeDailyEvents,readOfficeDailyLedger,type OfficeDailyInvitation,type OfficeDailyLedger} from './office-daily-events'
-import {OFFICE_CANTEEN_ID,OFFICE_CANTEEN_SEATS,OFFICE_DAILY_SEATS,officeGardenOccupiedSeats,projectOfficeDailyScene} from './office-daily-scene'
+import {OFFICE_CANTEEN_ID,OFFICE_CANTEEN_SEATS,officeGardenPlaces,officeGardenOccupiedSeats,projectOfficeDailyScene} from './office-daily-scene'
 import {createOfficeRoutineTrip,type OfficeRoutineTarget} from './office-daily-trips'
 import {officeTripFrame,type OfficeTrip} from './office-motion'
 import {cancelOfficeLiftTrips,reserveOfficeLiftTrip,type OfficeLiftState} from './office-lift'
@@ -68,6 +68,8 @@ export class OfficeDailyRuntime {
  }
 
  actors(scene:OfficeScene,at:number):OfficeActor[] {
+  const surface=scene.floors.find(f=>f.kind==='lounge')
+  const gardenPlaces=surface&&officeGardenPlaces(surface)
   return [...this.guests.values()].map(g=>{
    const canonical=scene.actors.find(a=>a.key===g.actorKey)??g.home
    const frame=g.trip?officeTripFrame(g.trip,at):null
@@ -76,16 +78,17 @@ export class OfficeDailyRuntime {
    const eating=g.phase==='eating'&&!g.returnNeeded
    const sharing=g.outing?.sharingUntil!==undefined&&at<g.outing.sharingUntil
    const action=g.outing?.action
+   const standing=action==='stretch'||(g.destination==='garden'&&gardenPlaces?.[g.seat]?.[2]===true)
    const smooth=(value:number)=>{const k=Math.max(0,Math.min(1,value));return k*k*(3-2*k)}
    const seatBlend=eating?Math.min(smooth((at-(g.restStartedAt??at))/350),smooth((g.until-at)/350)):0
    const restPose=action==='stretch'?{sit:false,mug:false,stretch:Math.max(0,Math.sin(at/1000*Math.PI/4))}:
-    action==='stargaze'?{sit:true,mug:false,lookUp:true,turn:Math.sin(at/5000)*.15}:
-    {sit:true,objectAction:action==='snack'||g.kind==='lunch'?'snack' as const:'coffee' as const,mug:action!=='snack'&&g.kind!=='lunch'}
+    action==='stargaze'?{sit:!standing,mug:false,lookUp:true,turn:Math.sin(at/5000)*.15}:
+    {sit:!standing,objectAction:action==='snack'||g.kind==='lunch'?'snack' as const:'coffee' as const,mug:action!=='snack'&&g.kind!=='lunch'}
    const outingActivity=action==='snack'?'is enjoying a snack':action==='drink'?'is enjoying a warm drink':action==='stretch'?'is stretching their legs':'is watching the stars'
    return {...canonical,...g.physical,...(frame?frame.point:{}),floorId:frame?.floorId??g.physical.floorId,
-    agent:canonical.agent,task:canonical.task,hidden:false,zone:g.returnNeeded?canonical.zone:'lounge',party:false,stand:Boolean(walking||waiting||eating&&action==='stretch'),
+    agent:canonical.agent,task:canonical.task,hidden:false,zone:g.returnNeeded?canonical.zone:'lounge',party:false,stand:Boolean(walking||waiting||eating&&standing),
     activity:sharing?(g.outing?.sharingWith?'is sharing snacks with a teammate':'is putting the snacks away'):eating?(g.outing?outingActivity:g.kind==='lunch'?'is enjoying lunch':g.kind==='coffee'?'is taking a coffee break':'is having afternoon tea'):g.trip?.caption??(g.returnNeeded?'is returning':g.shop?.stage==='waiting'?'is waiting at the shop':'is waiting for a short break'),
-    pose:sharing?{sit:true,hand:false,offer:.6,mug:false,objectAction:'snack'}:walking?{...frame.pose,...(action==='drink'?{mug:true}:{})}:waiting?{walk:false,sit:false}:eating?{...restPose,seatBlend}:{sit:false,mug:false}}
+    pose:sharing?{sit:!standing,hand:false,offer:.6,mug:false,objectAction:'snack'}:walking?{...frame.pose,...(action==='drink'?{mug:true}:{})}:waiting?{walk:false,sit:false}:eating?{...restPose,seatBlend}:{sit:false,mug:false}}
   })
  }
 
@@ -117,7 +120,7 @@ export class OfficeDailyRuntime {
   }
   const floor=scene.floors.find(f=>g.destination==='canteen'?f.id===OFFICE_CANTEEN_ID:f.kind==='lounge')
   if(!floor)return null
-  const seat=(g.destination==='canteen'?OFFICE_CANTEEN_SEATS:OFFICE_DAILY_SEATS)[g.seat]
+  const seat=(g.destination==='canteen'?OFFICE_CANTEEN_SEATS:officeGardenPlaces(floor))[g.seat]
   return {floorId:floor.id,x:scene.width*seat[0],y:floor.y+(floor.height??scene.width*.5625)*seat[1]}
  }
 

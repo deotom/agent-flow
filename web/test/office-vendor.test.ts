@@ -52,7 +52,9 @@ it('wet simulated hours close service but keep staff sheltered and seasonal stoc
 })
 function scene(width:number):OfficeScene{return {width,height:800,floors:[{id:'garden',kind:'lounge',sessionId:null,title:'Garden',subtitle:'',color:'#fff',y:20,height:width*.5625,actorKeys:[]}],actors:[],quietTeams:[],totalAgents:0,finishedCount:0}}
 function recorder(){
-  const calls:{op:string,args:unknown[];fill?:unknown}[]=[],state:Record<string,unknown>={}
+  const calls:{op:string,args:unknown[];fill?:unknown}[]=[],state:Record<string,unknown>={
+   createRadialGradient:(...args:unknown[])=>{calls.push({op:'createRadialGradient',args});return {addColorStop(){}}}
+  }
   const c=new Proxy(state,{get(t,k){if(k in t)return t[k as string];return (...args:unknown[])=>calls.push({op:String(k),args,fill:state.fillStyle})},set(t,k,v){t[String(k)]=v;return true}})
   return {c:c as unknown as CanvasRenderingContext2D,calls}
 }
@@ -189,6 +191,36 @@ it('shows only a closed sign at night and ignores absent or invalid gardens',()=
     const empty=recorder();drawOfficeVendor(empty.c,input,date(12),0,()=>assert.fail('invalid garden drew merchant'))
     assert.equal(empty.calls.length,0)
   }
+})
+it('closes the Desktop café window at 18:30 and opens it again at 05:30',()=>{
+ const base=scene(450)
+ const s={...base,floors:base.floors.map(f=>({...f,desktopArt:true}))}
+ for(const [hour,minute,closed] of [[18,29,false],[18,30,true],[5,29,true],[5,30,false]] as const){
+  const r=recorder()
+  let staffed=false
+  drawOfficeVendor(r.c,s,date(hour,minute),0,()=>{staffed=true})
+  assert.equal(staffed,!closed)
+  assert.equal(r.calls.some(call=>call.op==='fillRect'&&call.args[0]===0&&call.args[1]===0),closed)
+ }
+})
+it('lights only the staffed Desktop café at dusk and lowers its curtain on a live closing',()=>{
+ const base=scene(450),r=recorder()
+ const s={...base,floors:base.floors.map(f=>({...f,desktopArt:true}))}
+ const draw=(at:Date,time:number)=>{
+  r.calls.length=0
+  let clerk=false
+  drawOfficeVendor(r.c,s,at,time,()=>{clerk=true})
+  return {clerk,lit:r.calls.some(call=>call.op==='createRadialGradient'),
+   curtainOffset:r.calls.filter(call=>call.op==='translate'&&call.args[0]===0).at(-1)?.args[1]}
+ }
+ assert.deepEqual(draw(date(12),9),{clerk:true,lit:false,curtainOffset:undefined})
+ assert.deepEqual(draw(date(18,29),10),{clerk:true,lit:true,curtainOffset:undefined})
+ assert.deepEqual(draw(date(18,30),11),{clerk:true,lit:true,curtainOffset:undefined})
+ const closing=draw(date(18,30),11.45)
+ assert.equal(closing.clerk,true)
+ assert.equal(closing.lit,true)
+ assert.ok(Number(closing.curtainOffset)<0)
+ assert.deepEqual(draw(date(18,30),12),{clerk:false,lit:false,curtainOffset:0})
 })
 it('rain and storm retreat exactly one nonserving merchant underneath the existing roof',()=>{
   for(const day of [2,7])for(const width of [240,450,700]){

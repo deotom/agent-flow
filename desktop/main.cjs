@@ -555,7 +555,7 @@ function createWindow() {
   win = new BrowserWindow({
     title: 'Agent Flow', ...size, minWidth: settings.widgetMode || settings.dock !== 'off' ? 260 : 620, minHeight: settings.widgetMode ? 260 : 440,
     frame: false,
-    backgroundColor: '#080e1b', alwaysOnTop: settings.alwaysOnTop,
+    backgroundColor: '#191b16', alwaysOnTop: settings.alwaysOnTop,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),

@@ -1,15 +1,21 @@
-import {officeNavigation} from '../../../lib/office-navigation'
+import {officeLiftApproachDistance,officeNavigation} from '../../../lib/office-navigation'
 import type {OfficeArchitectureArt,OfficeScene,OfficeLiftVisual} from '../../../lib/office-types'
+import {drawOfficeReferenceLift} from './office-reference-lift-art'
 
 /** A single timber car travels through the cutaway shaft behind fixed landing doors. */
-export function drawOfficeShaft(c:CanvasRenderingContext2D,scene:OfficeScene,front=false,art?:OfficeArchitectureArt|null,surfaceOpen=false,lift?:OfficeLiftVisual){
+export function drawOfficeShaft(c:CanvasRenderingContext2D,scene:OfficeScene,front=false,art?:OfficeArchitectureArt|null,surfaceOpen=false,lift?:OfficeLiftVisual,gardenLampOn=true){
  const n=officeNavigation(scene);if(!n.visible&&!scene.floors.some(f=>f.kind==='lounge'))return
  const s=n.scale,x=n.shaftX,h=n.bottom-n.top
  const rider=scene.actors.find(a=>!a.hidden&&(a.pose?.climb||a.pose?.inLift))
  const car=lift??{y:rider?.y??n.hatch.y,doorsOpen:rider&&!rider.pose?.inLift?1:0,moving:Boolean(rider?.pose?.inLift),passengerKeys:rider?[rider.key]:[]}
  const stops=[{...n.hatch,id:'surface',surface:true},...n.landings.map(p=>({...p,surface:false}))].map(p=>({
   ...p,open:Math.abs(car.y-p.y)<2*s?Math.max(car.doorsOpen,p.surface&&surfaceOpen&&!car.moving&&!car.passengerKeys.length?1:0):0,
+  waiting:scene.actors.some(actor=>!actor.hidden&&actor.pose?.liftWait&&Math.abs(actor.y-p.y)<2*s&&Math.abs(actor.x-(x-officeLiftApproachDistance(scene,p.id)))<4*s),
  }))
+ if(scene.floors[0]?.desktopArt&&art?.referenceLift){
+  drawOfficeReferenceLift(c,art.referenceLift,n,front,car,stops,gardenLampOn)
+  return
+ }
  const clipShaft=()=>{c.beginPath();c.rect(n.left,n.top,scene.width-n.left,h);c.rect(x-22*s,n.hatch.y-86*s,44*s,90*s);c.clip()}
  const fill=(color:string,px:number,py:number,w:number,ph:number)=>{c.fillStyle=color;c.fillRect(px,py,w,ph)}
  const timberLip=(px:number,py:number,width:number,height:number)=>{

@@ -39,6 +39,29 @@ function hash(...parts: number[]): number {
   return (h >>> 0) / 4294967296
 }
 
+const seasonalCloudCount:Record<Season,number>={hot:2,cool:4,rainy:6}
+const weatherCloudCount:Record<Weather,number>={clear:0,mist:0,cloudy:2,rain:3,storm:4}
+const cloudSpan=1.34
+const cloudSeeds=Array.from({length:10},(_,i)=>({
+  start:(.81+i*.829)%cloudSpan,
+  speed:.002+.0036*hash(i,23),
+  altitude:.07+.14*hash(i,27),
+  sway:hash(i,29)*Math.PI*2,
+  size:.70+.68*hash(i,31),
+  opacity:.72+.25*hash(i,37),
+}))
+
+/** Positions are normalized to the sky and advance on the animation clock in seconds. */
+export function officeClouds(sky:Pick<OfficeSky,'season'|'weather'>,time:number){
+  const count=seasonalCloudCount[sky.season]+weatherCloudCount[sky.weather]
+  return cloudSeeds.slice(0,count).map(cloud=>({
+    x:(cloud.start+time*cloud.speed)%cloudSpan-.17,
+    y:cloud.altitude+.012*Math.sin(cloud.sway+time*.09),
+    size:cloud.size,
+    opacity:cloud.opacity,
+  }))
+}
+
 export function skyPhase(date: Date): SkyPhase {
   const hour = date.getHours() + date.getMinutes() / 60
   return hour >= 5 && hour < 8 ? 'dawn' : hour >= 8 && hour < 17 ? 'day' : hour >= 17 && hour < 19 ? 'dusk' : 'night'
@@ -111,6 +134,17 @@ export function skyWeather(date: Date): Weather {
     if (roll < acc) return weather === 'mist' && phase !== 'dawn' ? 'clear' : weather
   }
   return 'clear'
+}
+
+/** The painted paths dry for 45 minutes after an hourly rain or storm ends. */
+export function gardenWetness(date:Date,weather=skyWeather(date)){
+  if(weather==='rain'||weather==='storm')return 1
+  const minutes=date.getMinutes()+(date.getSeconds()+date.getMilliseconds()/1000)/60
+  if(minutes>=45)return 0
+  const previous=skyWeather(new Date(date.getTime()-3_600_000))
+  if(previous!=='rain'&&previous!=='storm')return 0
+  const remaining=1-minutes/45
+  return remaining*remaining*(3-2*remaining)
 }
 
 /** Random sky event for the current two-minute slot, filtered by time of day and weather. */

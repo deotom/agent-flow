@@ -11,7 +11,7 @@ export function createOfficeRoutineTrip(scene:OfficeScene,actorKey:string,target
   if(!source||source.hidden||current?.hidden)return null
   if(!scene.floors.some(floor=>floor.id===source.floorId)||!scene.floors.some(floor=>floor.id===target.floorId))return null
   if(![source.x,source.y,target.x,target.y,now].every(Number.isFinite))return null
-  const {segments,travel,leg,nav}=createOfficeTravelPath(scene,scene,source,source.floorId)
+  const {segments,travel,leg,nav,desktopMotion}=createOfficeTravelPath(scene,scene,source,source.floorId)
   if(source.floorId!==target.floorId||Math.hypot(source.x-target.x,source.y-target.y)>.01)travel(target,target.floorId)
   // A zero-distance journey still has a valid final frame, with no dining dwell.
   if(!segments.length)leg(target,0,'hold')
@@ -19,6 +19,6 @@ export function createOfficeRoutineTrip(scene:OfficeScene,actorKey:string,target
   return {
     event:{id:JSON.stringify(['routine',actorKey,target.floorId,target.x,target.y,now]),kind:'routine',actorKey,parentKey:null,at:now},
     actorKey,actor,segments,startedAt:now,endsAt:now+segments.reduce((sum,segment)=>sum+segment.duration,0),caption,
-    shaftX:nav.shaftX,rungPitch:nav.rungPitch,
+    shaftX:nav.shaftX,rungPitch:nav.rungPitch,desktopMotion,
   }
 }

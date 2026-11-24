@@ -40,3 +40,27 @@ it('draws distinct torso layers without changing identity, head, hands or the ch
   }
   assert.ok(signatures.size>=5)
 })
+it('dresses painted garments with compact collar and chest accents instead of side strips',()=>{
+  const signatures=new Set<string>()
+  const dates=[new Date(2026,3,1,12),new Date(2026,6,12,12),new Date(2026,10,1,12),new Date(2026,11,25,12)]
+  for(const date of dates)for(const outdoor of [false,true])for(const [back,fit] of [[false,undefined],[true,undefined],[false,{width:.75,profile:true}]] as const){
+    const look=officeWardrobeFor(officeWardrobeTheme(date),appearance.slot,outdoor)
+    const {c,paths,fills}=recorder()
+    drawOfficeWardrobe(c,appearance,look,back,true,fit)
+    if(!back||look.layer!=='light'||look.holiday)assert.ok(paths.length>0,`${look.layer} shows on the painted torso`)
+    const ys=paths.map(([,y])=>y),xs=paths.map(([x])=>x)
+    if(paths.length){
+      assert.ok(Math.min(...ys)>=-39&&Math.max(...ys)<=-28,'accents stay between the collar and the chest')
+      assert.ok(xs.every(x=>Math.abs(x)<=8),'no strip runs down the garment edges')
+    }
+    if(fit&&paths.length)assert.ok(xs.reduce((sum,x)=>sum+x,0)/xs.length>0,'a turned torso shows its accents on the facing side')
+    signatures.add(JSON.stringify({paths,fills}))
+  }
+  assert.ok(signatures.size>=8,'each season reads differently')
+  // An identity scarf is never doubled by the cool-season knit.
+  const cool=officeWardrobeFor(officeWardrobeTheme(new Date(2026,10,1,12)),appearance.slot,false),scarfed=recorder(),plain=recorder()
+  drawOfficeWardrobe(scarfed.c,{...appearance,gear:'scarf'},cool,false,true)
+  drawOfficeWardrobe(plain.c,appearance,cool,false,true)
+  assert.equal(scarfed.paths.length,0)
+  assert.ok(plain.paths.length>0)
+})

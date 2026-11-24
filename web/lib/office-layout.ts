@@ -5,6 +5,24 @@ const height=(floor:OfficeFloor)=>floor.height??0
 type Construction=OfficeFloor&{constructing?:boolean;constructionProgress?:number}
 const mix=(a:number,b:number,t:number)=>a+(b-a)*t
 
+/** Desktop history belongs below the painted rooms and has room for a compact-width button. */
+export function officeDesktopHistoryLayout(scene:OfficeScene):OfficeScene {
+  if(!scene.floors[0]?.desktopArt)return scene
+  const history=scene.floors.find(floor=>floor.kind==='quiet')
+  if(!history)return scene
+  const y=scene.floors.reduce((bottom,floor)=>parentId(floor)||floor===history?bottom:Math.max(bottom,floor.y+height(floor)),0)
+  const historyHeight=scene.width*.10
+  return {...scene,height:y+historyHeight+scene.width/3,floors:scene.floors.map(floor=>floor===history?{...floor,y,height:historyHeight}:floor)}
+}
+
+/** A painted Desktop storey needs its whole geometry as soon as its header is shown. */
+export function officeLayoutCommitsImmediately(before:OfficeScene,next:OfficeScene):boolean {
+  if(!next.floors[0]?.desktopArt)return false
+  const priorIds=new Set(before.floors.filter(floor=>!parentId(floor)).map(floor=>floor.id))
+  const nextIds=next.floors.filter(floor=>!parentId(floor)).map(floor=>floor.id)
+  return priorIds.size!==nextIds.length||nextIds.some(id=>!priorIds.has(id))
+}
+
 /** Status, activity and annex contents must not restart a physical building transition. */
 export function officeLayoutChanged(before:OfficeScene,next:OfficeScene):boolean {
   if(before.width!==next.width||before.height!==next.height)return true
@@ -29,7 +47,7 @@ function collapsedY(floor:OfficeFloor,before:OfficeScene,next:OfficeScene):numbe
 /** Latest scene data with interpolated physical geometry. No source scene is mutated. */
 export function officeLayoutFrame(before:OfficeScene,next:OfficeScene,progress:number):OfficeScene {
   const t=Math.max(0,Math.min(1,Number.isFinite(progress)?progress:1))
-  if(t===1)return next
+  if(t===1||officeLayoutCommitsImmediately(before,next))return next
   const oldFloors=new Map(before.floors.map(f=>[f.id,f]))
   const nextFloors=new Map(next.floors.map(f=>[f.id,f]))
   const physical=new Map<string,OfficeFloor>()

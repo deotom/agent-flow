@@ -83,6 +83,41 @@ it('large rooms use two real depth rows with perspective-scaled stations and an 
  assert.ok(nook.y<large.y+large.height!*.65)
 })
 
+it('preserves the canteen backdrop while painting workrooms with the new shell',()=>{
+ const shell={width:1000,height:563},canteenShell={width:1000,height:563}
+ const art={shell,canteenShell,props:{width:1536,height:1024},breakRoom:{width:1000,height:563}} as unknown as Parameters<typeof drawOfficeRoomShell>[3]
+ const calls:unknown[][]=[]
+ const c={drawImage:(...args:unknown[])=>calls.push(args)} as unknown as CanvasRenderingContext2D
+ const workroom=floor(),canteen={...workroom,kind:'break' as const,room:'room-canteen' as OfficeFloor['room']}
+ const scene={width:450,height:600,floors:[workroom,canteen],actors:[],quietTeams:[],totalAgents:0,finishedCount:0}
+
+ drawOfficeRoomShell(c,scene,workroom,art)
+ drawOfficeRoomShell(c,scene,canteen,art)
+
+ assert.deepEqual(calls.slice(0,3).map(call=>call[0]===shell),[true,true,true])
+ assert.deepEqual(calls.slice(3).map(call=>call[0]===canteenShell),[true,true,true])
+})
+
+it('continues the floorboards and soil across the old opening below the painted lift',()=>{
+ const shell={width:1000,height:721} as HTMLCanvasElement
+ const art={shell,canteenShell:shell,props:shell,breakRoom:shell}
+ const workroom={...floor(),desktopArt:true,height:325}
+ const scene={width:450,height:800,floors:[workroom],actors:[],quietTeams:[],totalAgents:0,finishedCount:0}
+ const calls:unknown[][]=[]
+ const c={drawImage:(...args:unknown[])=>calls.push(args)} as unknown as CanvasRenderingContext2D
+ drawOfficeRoomShell(c,scene,workroom,art)
+ const strips=calls.filter(call=>call.length===9&&Number(call[5])<405&&Number(call[5])+Number(call[7])>405)
+ assert.ok(strips.length>=2,'the opening receives floorboards and a separate soil edge')
+ assert.ok(strips.every(call=>Number(call[3])/1000>=Number(call[7])/450-.001),'the grain keeps its horizontal proportions')
+ let edge=Number(strips[0][6])
+ assert.ok(edge>=workroom.y+325*.94&&edge<workroom.y+325*.955,'repair starts at the front threshold')
+ for(const strip of strips){
+  assert.ok(Math.abs(Number(strip[6])-edge)<1e-7,'the strips join without gaps')
+  edge+=Number(strip[8])
+ }
+ assert.ok(Math.abs(edge-workroom.y-325)<1e-7)
+})
+
 it('places varied-facing furniture and usable work edges entirely on the original boards',()=>{
  for(const height of [253.125,337.5])for(const w of [450,900]){
   const f={...floor('Design studio',height*w/450),room:height>260?'room-stations-large' as const:'room-stations' as const},stations=roomStationLayout(f,w),back=f.y+w*.36,front=f.y+f.height!-w*.118

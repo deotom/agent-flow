@@ -9,11 +9,11 @@ const team=(resting:boolean):TeamSnapshot=>({sessionId:'s',title:'Team',active:t
  {id:'lead',parentId:null,role:'lead',name:'Lead',runtime:null,model:null,status:'running',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1,updatedAt:1,completedAt:null},
  {id:'worker',parentId:'lead',role:'worker',name:'Worker',runtime:null,model:null,status:resting?'done':'running',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:1,updatedAt:1,completedAt:null},
 ]})
-const scene=(resting:boolean,extraWorkers=0)=>{
+const scene=(resting:boolean,extraWorkers=0,desktopArt=false)=>{
  const t=team(resting)
  const extra=Array.from({length:extraWorkers},(_,i)=>({...t.agents[1],id:`extra-${i}`,status:'running' as const}))
  t.agents=[...t.agents,...extra]
- return buildOfficeScene([t],'active',false,assignOfficeIdentities(t.agents.map(a=>officeKey(t.sessionId,a.id))))
+ return buildOfficeScene([t],'active',false,assignOfficeIdentities(t.agents.map(a=>officeKey(t.sessionId,a.id))),450,new Set(),[],{},desktopArt)
 }
 
 test('doorway crossing gently occludes and reveals the walker on either side',()=>{
@@ -34,6 +34,18 @@ test('rest rooms are same-floor annexes and add no building height or external l
  assert.deepEqual(officeNavigation(rest).landings.map(l=>l.id),[main.id])
  assert.deepEqual(officeInteriorDoor(rest,annex.id),officeInteriorDoor(rest,main.id))
  assert.deepEqual(officeLanding(rest,annex.id),officeInteriorDoor(rest,annex.id,'annex'))
+})
+
+test('crosses the painted Desktop doorway on the original workroom floor',()=>{
+ const before=scene(false,4,true),after=scene(true,4,true)
+ const room=after.floors.find(f=>f.kind==='team')!,annex=after.floors.find(f=>f.annexOf===room.id)!
+ const trip=createOfficeTrip({id:'desktop-drawing',kind:'finished',actorKey:officeKey('s','worker'),parentKey:officeKey('s','lead'),at:0},before,after,0)!
+ const door=officeInteriorDoor(after,room.id)!
+ assert.ok(Math.abs(annex.y-room.y)<1e-9)
+ assert.equal(door.x,after.width*.737)
+ assert.equal(door.y,room.y+room.height!*.486)
+ assert.ok(trip.segments.some(segment=>segment.floorId===room.id&&segment.to.x===door.x&&segment.to.y===door.y))
+ assert.equal(officeNavigation(after).shaftX,after.width*.9)
 })
 
 test('workers enter their own annex through the office door, without climbing, and return through it',()=>{

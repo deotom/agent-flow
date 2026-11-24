@@ -1,9 +1,19 @@
-import type {OfficeScene} from './office-types'
-import type {OfficeRoomStation} from './office-room-design'
+import type {OfficeFloor,OfficeScene,OfficeWorkStation} from './office-types'
+import {roomDesktopWorkpoints,type OfficeRoomStation} from './office-room-design'
 import {agentWorkStation} from './office-stations'
 import {isWorking} from './team-model'
 
 export type OfficeStationState='idle'|'working'|'waiting'|'failed'
+/** A painted task lamp follows the actual workpoint, including the second seat. */
+export function officePaintedStationOccupancy(scene:OfficeScene,floor:OfficeFloor):ReadonlySet<OfficeWorkStation>{
+ const occupied=new Set<OfficeWorkStation>(),tolerance=scene.width/450
+ for(const actor of scene.actors){
+  if(actor.floorId!==floor.id||actor.hidden||actor.zone!=='desk'||!isWorking(actor.agent.status)||actor.pose?.walk||actor.pose?.climb||actor.pose?.inLift||actor.pose?.rising||(actor.pose?.opacity??1)<.8)continue
+  const kind=actor.workStation??agentWorkStation(actor.agent)
+  if(!occupied.has(kind)&&roomDesktopWorkpoints(floor,scene.width,kind).some(({feet})=>Math.hypot(feet.x-actor.x,feet.y-actor.y)<tolerance))occupied.add(kind)
+ }
+ return occupied
+}
 /** Device activity belongs to a visible, stationary user physically at this tool. */
 export function officeStationActivity(scene:OfficeScene,floorId:string,station:OfficeRoomStation):OfficeStationState {
  let state:OfficeStationState='idle'

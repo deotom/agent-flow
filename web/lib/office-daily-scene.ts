@@ -1,6 +1,11 @@
 import type { OfficeActor, OfficeFloor, OfficeScene } from './office-types'
 export const OFFICE_CANTEEN_ID='daily-canteen'
 export const OFFICE_DAILY_SEATS= [[.338,.61],[.495,.61],[.64,.57],[.78,.58]] as const
+// Two places on the bench followed by two standing places on open turf.
+const desktopGardenPlaces=[[.27,.735,false],[.37,.735,false],[.52,.77,true],[.68,.79,true]] as const
+export function officeGardenPlaces(surface:Pick<OfficeFloor,'desktopArt'>){
+ return surface.desktopArt?desktopGardenPlaces:OFFICE_DAILY_SEATS
+}
 export const OFFICE_CANTEEN_SEATS= [[.30,.70],[.45,.70],[.63,.70],[.78,.70]] as const
 /** Physical seat ownership, rather than a head count, is shared by parties and meals. */
 export function officeGardenOccupiedSeats(scene:OfficeScene,excludeKeys:ReadonlySet<string>=new Set()):Set<number> {
@@ -10,7 +15,7 @@ export function officeGardenOccupiedSeats(scene:OfficeScene,excludeKeys:Readonly
  for(const actor of scene.actors){
   if(actor.hidden||actor.floorId!==surface.id||excludeKeys.has(actor.key))continue
   let nearest=0,distance=Infinity
-  OFFICE_DAILY_SEATS.forEach(([x,y],i)=>{const d=Math.hypot(actor.x-x*scene.width,actor.y-surface.y-y*height);if(d<distance){nearest=i;distance=d}})
+  officeGardenPlaces(surface).forEach(([x,y],i)=>{const d=Math.hypot(actor.x-x*scene.width,actor.y-surface.y-y*height);if(d<distance){nearest=i;distance=d}})
   seats.add(nearest)
  }
  return seats
