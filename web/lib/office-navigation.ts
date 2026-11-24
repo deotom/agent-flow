@@ -25,6 +25,7 @@ export function officeInteriorDoor(scene:OfficeScene,floorId:string,side:'workro
  const room=floor?.annexOf&&side==='workroom'?(scene.floors.find(f=>f.id===floor.annexOf)??floor):floor
  if(!room||(room.kind!=='team'&&!room.annexOf))return null
  if(room.desktopArt&&!room.annexOf)return {x:scene.width*.737,y:room.y+(room.height??scene.width*.721)*.486}
+ if(room.desktopArt&&room.annexOf)return {x:scene.width*.765,y:room.y+(room.height??scene.width*.721)*.79}
  const depth=room.annexOf?(room.height??75)*.64:scene.width*OFFICE_WORKROOM_WALL_DEPTH
  return {x:scene.width*.825,y:room.y+depth}
 }

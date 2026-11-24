@@ -886,8 +886,22 @@ function drawMood(c:Ctx,mood:OfficeMood,time:number){
     c.textAlign='center'
     for(let i=0;i<3;i++){const k=(time*.45+i/3)%1;c.globalAlpha=(1-k)*.9;c.font=`bold ${6+k*5}px sans-serif`;c.fillStyle='#f3eedd';c.strokeText('z',-14-k*8,-72-k*18);c.fillText('z',-14-k*8,-72-k*18)}
   } else if(mood==='chat'){
-    c.beginPath();c.roundRect(-36,-92,22,14,5);c.moveTo(-22,-78);c.lineTo(-17,-73);c.lineTo(-27,-78);c.fillStyle='#fffaf0';c.fill();c.stroke()
-    c.beginPath();c.moveTo(-31,-88);c.lineTo(-19,-88);c.moveTo(-31,-83);c.lineTo(-24,-83);c.strokeStyle='#8a6a4c';c.stroke()
+    const x=-37,y=-93,w=23,h=14,r=4.5
+    const trace=()=>{
+      c.beginPath()
+      c.moveTo(x+r,y);c.lineTo(x+w-r,y);c.quadraticCurveTo(x+w,y,x+w,y+r)
+      c.lineTo(x+w,y+h-r);c.quadraticCurveTo(x+w,y+h,x+w-r,y+h)
+      c.lineTo(x+w-3.5,y+h);c.lineTo(x+w+2,y+h+5.5);c.lineTo(x+w-9,y+h)
+      c.lineTo(x+r,y+h);c.quadraticCurveTo(x,y+h,x,y+h-r)
+      c.lineTo(x,y+r);c.quadraticCurveTo(x,y,x+r,y);c.closePath()
+    }
+    c.save();c.translate(0,1.2);trace();c.fillStyle='rgba(36,22,12,.22)';c.fill();c.restore()
+    trace();c.fillStyle='#fff3d4';c.fill()
+    c.strokeStyle='#7d5a37';c.lineWidth=1;c.stroke()
+    c.beginPath();c.moveTo(x+r,y+1.2);c.lineTo(x+w-r,y+1.2)
+    c.strokeStyle='rgba(255,255,255,.55)';c.lineWidth=.8;c.stroke()
+    c.beginPath();c.moveTo(-32,-88.5);c.lineTo(-19,-88.5);c.moveTo(-32,-83.5);c.lineTo(-24,-83.5)
+    c.lineCap='round';c.strokeStyle='#7d5a37';c.lineWidth=1.1;c.stroke()
   } else if(mood==='idea'){
     oval(c,-20,-86,5.5,5.5,'#ffe58a');round(c,-22.5,-81,5,3,'#b8a07a',1)
     c.beginPath();for(const r of [-2.4,-1.57,-.7]){c.moveTo(-20+Math.cos(r)*8,-86+Math.sin(r)*8);c.lineTo(-20+Math.cos(r)*11,-86+Math.sin(r)*11)}c.strokeStyle='#e8b94a';c.stroke()
@@ -972,7 +986,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
   let vendorHand:{x:number;y:number;scale:number}|null=null
   drawOfficeVendor(c,scene,o.date,time,staff=>{
     c.save();c.translate(staff.x,staff.y);c.scale(staff.scale,staff.scale)
-    const hands=drawOfficeAvatar(c,shopkeeper,0,0,time,{...officeVendorAvatarPose(staff),wave:staff.pose==='serve',wardrobe:officeWardrobeFor(wardrobeTheme,shopkeeper.slot,true)},o.avatarArt)
+    const hands=drawOfficeAvatar(c,shopkeeper,0,0,time,{...officeVendorAvatarPose(staff),workwear:surface?.desktopArt,wave:staff.pose==='serve',wardrobe:officeWardrobeFor(wardrobeTheme,shopkeeper.slot,true)},o.avatarArt)
     if(!vendorExchange||staff.pose==='handoff')vendorHand={x:staff.x+hands.right.x*staff.scale,y:staff.y+hands.right.y*staff.scale,scale:staff.scale}
     c.restore()
   },vendorExchange,officeVendorCustomerApproaching(scene,o.dailyArt))

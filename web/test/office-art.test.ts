@@ -19,6 +19,7 @@ class RecordingContext {
   globalAlpha = 1
   calls: Call[] = []
   fillRect(...args: number[]) { this.calls.push({ op: 'rect', args, fill: String(this.fillStyle) }) }
+  strokeRect(...args: number[]) { this.calls.push({ op: 'strokeRect', args, fill: String(this.fillStyle) }) }
   createRadialGradient() { return {addColorStop(){}} }
   createLinearGradient() { return {addColorStop(){}} }
   beginPath() { this.calls.push({ op: 'begin', args: [], fill: String(this.fillStyle) }) }
@@ -646,4 +647,26 @@ it('calibrates Desktop break-room and garden seating heights and draws all upgra
     drawOfficeAvatar(painter,{...officeAppearance(0),outfit:'jacket'},0,0,1.5,{workwear:true,...pose},parts)
     for(const call of painter.calls)for(const v of call.args)assert.ok(typeof v!=='number'||Number.isFinite(v))
   }
+})
+it('dresses the Desktop café shopkeeper in painted overalls and draws seamless chat bubbles',()=>{
+  const {parts,v1}=paintedWardrobeAtlas()
+  const a={key:'a',sessionId:'s',agent:{status:'running' as const,role:'worker' as const,runtime:null,activities:[]},task:null,parentKey:null,
+    appearance:officeAppearance(0),floorId:'f',zone:'desk' as const,stand:true,x:100,y:280} as unknown as OfficeScene['actors'][number]
+  const b={...a,key:'b',x:135} as unknown as OfficeScene['actors'][number]
+  const desktopGarden={id:'lounge',sessionId:null,title:'Garden',subtitle:'',color:'#fff',kind:'lounge' as const,desktopArt:true,y:0,height:195,actorKeys:[]}
+  const legacyGarden={...desktopGarden,desktopArt:false}
+  const teamFloor={id:'f',sessionId:'s',title:'Team',subtitle:'',color:'#fff',kind:'team' as const,desktopArt:true,y:200,height:300,actorKeys:['a','b']}
+  const desktopOut=ctx(),legacyOut=ctx()
+  drawOfficeFrame(desktopOut,scene([desktopGarden],[]),options({motion:false,time:0,date:new Date(2026,3,20,12),avatarArt:parts}))
+  drawOfficeFrame(legacyOut,scene([legacyGarden],[]),options({motion:false,time:0,date:new Date(2026,3,20,12),avatarArt:parts}))
+  assert.ok(desktopOut.calls.some(call=>call.op==='image'&&call.args[0]===v1&&call.args[2]===512),'Desktop shopkeeper wears painted overalls')
+  assert.ok(!legacyOut.calls.some(call=>call.op==='image'&&call.args[0]===v1))
+  let chatCalls:Call[]=[]
+  for(let time=.5;time<33;time+=.5){
+    const painter=ctx()
+    drawOfficeFrame(painter,scene([teamFloor],[a,b]),options({motion:true,time,avatarArt:parts}))
+    if(painter.calls.some(call=>call.op==='fill'&&call.fill==='#fff3d4')){chatCalls=painter.calls;break}
+  }
+  assert.ok(chatCalls.length>0,'paired coworkers emit the seamless parchment chat bubble')
+  assert.ok(!chatCalls.some(call=>call.fill==='#fffaf0'))
 })

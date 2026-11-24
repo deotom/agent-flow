@@ -40,10 +40,11 @@ test('crosses the painted Desktop doorway on the original workroom floor',()=>{
  const before=scene(false,4,true),after=scene(true,4,true)
  const room=after.floors.find(f=>f.kind==='team')!,annex=after.floors.find(f=>f.annexOf===room.id)!
  const trip=createOfficeTrip({id:'desktop-drawing',kind:'finished',actorKey:officeKey('s','worker'),parentKey:officeKey('s','lead'),at:0},before,after,0)!
- const door=officeInteriorDoor(after,room.id)!
+ const door=officeInteriorDoor(after,room.id)!,annexDoor=officeInteriorDoor(after,annex.id,'annex')!
  assert.ok(Math.abs(annex.y-room.y)<1e-9)
  assert.equal(door.x,after.width*.737)
  assert.equal(door.y,room.y+room.height!*.486)
+ assert.ok(annexDoor.x<=after.width*.78&&annexDoor.y>=annex.y+annex.height!*.75)
  assert.ok(trip.segments.some(segment=>segment.floorId===room.id&&segment.to.x===door.x&&segment.to.y===door.y))
  assert.equal(officeNavigation(after).shaftX,after.width*.9)
 })

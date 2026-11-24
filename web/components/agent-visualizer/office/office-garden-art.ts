@@ -146,31 +146,32 @@ export function drawOfficeGarden(c:Ctx,scene:OfficeScene,date:Date,time:number,l
     const paintLamp=lit?drawLitGardenLamp:drawUnlitGardenLamp
     for(const [x,y] of paintedLampCenters)paintLamp(c,x*w,garden.y+y*h,k,h/195)
   }
+  const desktop=Boolean(garden.desktopArt)
   c.globalAlpha=(Number.isFinite(c.globalAlpha)?c.globalAlpha:1)*(afterDark?.7:1)
-  c.beginPath();c.rect(w*.025,garden.y+h*.61,w*.795,h*.145);c.clip()
+  c.beginPath();c.rect(w*(desktop?.02:.025),garden.y+h*(desktop?.60:.61),w*(desktop?.77:.795),h*(desktop?.275:.145));c.clip()
   if(!afterDark){
-    at(.085,.735,()=>flowers(c,sky.season,time,variant))
-    at(.735,.735,()=>flowers(c,sky.season,time,(variant+1)%3))
+    at(desktop?.115:.085,desktop?.845:.735,()=>flowers(c,sky.season,time,variant))
+    at(desktop?.755:.735,desktop?.840:.735,()=>flowers(c,sky.season,time,(variant+1)%3))
   }
   if(lit&&sky.weather!=='storm'){
     for(let i=0;i<6;i++){
       const phase=time?time*.9+i*1.9:i
-      const y=.667+Math.sin(phase)*.031
-      at(.18+i*.109+Math.sin(phase*.7)*.026,y,()=>oval(c,0,0,1.15,1.15,'#f4e69c'))
+      const y=(desktop?.66:.667)+Math.sin(phase)*(desktop?.035:.031)
+      at((desktop?.16:.18)+i*(desktop?.105:.109)+Math.sin(phase*.7)*(desktop?.024:.026),y,()=>oval(c,0,0,1.15,1.15,'#f4e69c'))
     }
   }
   if(sky.season==='hot'&&!lit&&sky.weather!=='storm'){
-    at(.22,.715,()=>lizard(c,time))
-    at(.18,.64,()=>butterfly(c,time,'#eac65c'))
-    at(.69,.66,()=>butterfly(c,time?time+1.2:0,'#e6aa91'))
+    at(desktop?.415:.22,desktop?.842:.715,()=>lizard(c,time))
+    at(.18,desktop?.66:.64,()=>butterfly(c,time,'#eac65c'))
+    at(.69,desktop?.65:.66,()=>butterfly(c,time?time+1.2:0,'#e6aa91'))
   }else if(sky.season==='rainy'){
-    if(!garden.desktopArt)for(const x of [.22,.73])at(x,.735,()=>{oval(c,0,0,12,2.2,'rgba(118,176,183,.48)');oval(c,-2,-.3,7,.5,'rgba(198,226,218,.55)')})
-    if(lit||sky.weather==='rain')at(.23,.72,()=>frog(c,time))
-    if(!afterDark)at(.76,.735,()=>snail(c,time))
+    if(!desktop)for(const x of [.22,.73])at(x,.735,()=>{oval(c,0,0,12,2.2,'rgba(118,176,183,.48)');oval(c,-2,-.3,7,.5,'rgba(198,226,218,.55)')})
+    if(lit||sky.weather==='rain')at(desktop?.385:.23,desktop?.835:.72,()=>frog(c,time))
+    if(!afterDark)at(desktop?.760:.76,desktop?.845:.735,()=>snail(c,time))
   }else if(sky.season==='cool'&&!lit){
-    at(.23,.72,()=>bird(c,time,'#9d8a6c'));at(.69,.70,()=>bird(c,time?time+2:0,'#7f9793'))
+    at(desktop?.435:.23,desktop?.835:.72,()=>bird(c,time,'#9d8a6c'));at(desktop?.745:.69,desktop?.825:.70,()=>bird(c,time?time+2:0,'#7f9793'))
   }else if(sky.season==='cool'&&sky.phase==='dusk'){
-    at(.775,.72,()=>rabbit(c,time))
+    at(desktop?.135:.775,desktop?.845:.72,()=>rabbit(c,time))
   }
   c.restore()
 }

@@ -134,6 +134,19 @@ test('a rainbow can follow rain on a dry daytime hour', () => {
   assert.ok(found)
 })
 
+test('keeps Desktop Halloween pumpkins clear of the lift and walks the cat along the foreground path',()=>{
+  const ellipses:{x:number;y:number}[]=[]
+  const canvas={fillStyle:'#000',strokeStyle:'#000',lineWidth:1,globalAlpha:1,shadowColor:'',shadowBlur:0,
+    save(){},restore(){},beginPath(){},rect(){},clip(){},fill(){},fillRect(){},moveTo(){},lineTo(){},quadraticCurveTo(){},closePath(){},stroke(){},createLinearGradient:()=>({addColorStop(){}}),
+    ellipse(x:number,y:number){ellipses.push({x,y})}} as unknown as CanvasRenderingContext2D
+  const scene:OfficeScene={width:450,height:500,floors:[{id:'lounge',kind:'lounge',sessionId:null,title:'Garden',subtitle:'',color:'#abc',y:0,height:195.75,actorKeys:[],desktopArt:true}],actors:[],quietTeams:[],totalAgents:0,finishedCount:0}
+  const date=at(2026,10,31,12),sky={...officeSky(date),weather:'clear' as const,holiday:'halloween' as const,event:{kind:'cat' as const,seed:.5,progress:.5}}
+  drawOfficeSky(canvas,scene,2,date,sky)
+  assert.ok(ellipses.length>=4)
+  assert.ok(ellipses.slice(0,3).every(p=>p.x<450*.80),'Desktop pumpkins remain left of the lift column')
+  assert.ok(ellipses.slice(3).every(p=>p.y>195.75*.80),'Desktop cat walks along the stone foreground path')
+})
+
 test('summary label and toolbar icon', () => {
   const sky = officeSky(at(2025, 11, 5, 21))
   assert.equal(sky.holiday, 'loy-krathong')

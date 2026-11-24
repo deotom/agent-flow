@@ -74,11 +74,11 @@ export function planOfficeDailyEvents(input:OfficeDailyPlanInput) {
  for(const guest of guests)if(guest.destination==='garden')gardenSeats.add(guest.seat)
  const indoorSeats=new Set(guests.filter(g=>g.destination==='canteen').map(g=>g.seat))
  for(let i=0,n=gardenKeys.size-gardenSeats.size;n>0&&i<4;i++)if(!gardenSeats.has(i)){gardenSeats.add(i);n--}
- const cap=Math.min(kind==='lunch'?4:2,LIMITS[kind]-attended.length)
+ const cap=Math.min(kind==='lunch'?4:2,LIMITS[kind]-attended.length),desktop=Boolean(scene.floors[0]?.desktopArt)
  for(const actor of [...scene.actors].sort((a,b)=>a.key.localeCompare(b.key))) {
   if(invitations.length>=cap||guests.length+invitations.length>=(kind==='lunch'?4:2))break
   if(occupied.has(actor.key)||attended.includes(actor.key)||input.busyKeys?.has(actor.key)||!officeDailyActorEligible(actor,scene))continue
-  const destination:OfficeDailyDestination=kind!=='lunch'?'home':!wet&&gardenKeys.size<4?'garden':'canteen'
+  const destination:OfficeDailyDestination=kind!=='lunch'?'home':!wet&&gardenKeys.size<4?'garden':desktop?'home':'canteen'
   const seats=destination==='garden'?gardenSeats:indoorSeats
   const seat=destination==='home'?invitations.length:[0,1,2,3].find(s=>!seats.has(s))
   if(seat===undefined)continue

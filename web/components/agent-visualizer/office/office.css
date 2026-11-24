@@ -83,7 +83,6 @@
 .of-art-room-stations,.of-art-room-stations-large{background-image:url('./assets/room-stations.webp')}
 [data-agent-flow-host="desktop"] :is(.of-art-room-stations,.of-art-room-stations-large){background-image:url('./assets/world-workroom.webp')}
 [data-agent-flow-host="desktop"] .of-art-room-break-reading{background-image:url('./assets/world-break.webp')}
-[data-agent-flow-host="desktop"] :is(.of-art-room-stations,.of-art-room-stations-large){background-image:url('./assets/world-workroom.webp')}
 [data-agent-flow-host="desktop"] .of-view .of-workbench{background-image:none}
 .of-room-tint{position:absolute;left:3%;width:86%;pointer-events:none;opacity:.24;mix-blend-mode:color;border-radius:8px;z-index:0}
 .of-view .of-workbench{position:absolute;z-index:0;border:0;padding:0;border-radius:7px;cursor:pointer;background-color:transparent;background-image:url('./assets/work-stations.webp');background-size:200% 200%;background-repeat:no-repeat;filter:brightness(.82) saturate(.85);transition:filter .2s}
@@ -102,7 +101,6 @@
 
 .of-agent[data-lift-travel=true]{visibility:hidden}
 
-.of-hatch-closed{position:absolute;inset:0 auto auto 0;width:100%;background:url('./assets/surface-closed.webp') center/100% 100%;clip-path:polygon(82% 43%,100% 43%,100% 78%,82% 78%);z-index:0;pointer-events:none}
 .of-view .of-hatch-hit{border-radius:18px 18px 4px 4px}
 .of-atmosphere{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:none;min-height:28px;padding:2px 10px;box-sizing:border-box;background:#352c21;border-top:1px solid #665238;color:#ead7b2;font-size:10px}.of-atmosphere label{display:flex;align-items:center;gap:6px}.of-atmosphere select{max-width:84px;height:22px;border:1px solid #8a7050;border-radius:5px;background:#51412e;color:#ffe9c0;font:inherit;padding:0 4px}.of-atmosphere small{font-size:9px;opacity:.8;white-space:nowrap}
 .of-view .of-workbench[data-painted="true"]{z-index:2;background-image:none;filter:none}.of-workbench[data-painted="true"]:hover,.of-workbench[data-painted="true"]:focus-visible{outline:1px solid #edce86;outline-offset:-3px;box-shadow:0 0 6px #edce8630}

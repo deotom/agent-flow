@@ -34,15 +34,15 @@ export function drawOfficeSky(c: Ctx, scene: OfficeScene, time: number, date: Da
   const lawn = scene.floors.find(f => f.kind === 'lounge'), H = lawn?.height ?? 0
   // Needs a real 2D context (gradients); recording test contexts skip the sky.
   if (!H || typeof c.createLinearGradient !== 'function') return null
-  const sky = override ?? skyFor(date), w = scene.width, k = w / 450
+  const sky = override ?? skyFor(date), w = scene.width, k = w / 450, desktop = Boolean(lawn?.desktopArt)
   c.save()
-  c.beginPath(); c.rect(0, 0, w, H * .82); c.clip()
+  c.beginPath(); c.rect(0, 0, w, H * (desktop ? .88 : .82)); c.clip()
   // The daylight canvas owns the sun path, stars and moon. This layer adds weather and events.
   const dim = sky.weather === 'storm' ? .16 : sky.weather === 'rain' ? .10 : 0
   if (dim) { c.fillStyle = `rgba(40,48,66,${dim})`; c.fillRect(0, 0, w, H) }
   weather(c, sky, w, H, k, time)
-  if (sky.holiday) holiday(c, sky, w, H, k, time)
-  if (sky.event && time && !(lawn?.desktopArt && sky.event.kind==='balloon')) skyEvent(c, sky.event, w, H, k, time)
+  if (sky.holiday) holiday(c, sky, w, H, k, time, desktop)
+  if (sky.event && time && !(desktop && sky.event.kind==='balloon')) skyEvent(c, sky.event, w, H, k, time, desktop)
   c.restore()
   return sky
 }
@@ -146,13 +146,13 @@ function weather(c: Ctx, sky: OfficeSky, w: number, H: number, k: number, time: 
   }
 }
 
-function holiday(c: Ctx, sky: OfficeSky, w: number, H: number, k: number, time: number) {
+function holiday(c: Ctx, sky: OfficeSky, w: number, H: number, k: number, time: number, desktop = false) {
   const night = sky.phase === 'night' || sky.phase === 'dusk'
   switch (sky.holiday) {
     case 'new-year': return night ? fireworks(c, w, H, k, time) : bunting(c, w, H, k, ['#e8473f', '#f2c94c', '#3f8ee8', '#5cc272'])
     case 'songkran': bunting(c, w, H, k, ['#3fb4e8', '#7fd3f5', '#f2c94c', '#ff8fb1']); return !night && time ? water(c, w, H, k, time) : undefined
     case 'loy-krathong': return night ? lanterns(c, w, H, k, time) : bunting(c, w, H, k, ['#f2a03f', '#f2c94c', '#e86a3f'])
-    case 'halloween': pumpkins(c, w, H, k, night); return night && time ? bats(c, w, H, k, time) : undefined
+    case 'halloween': pumpkins(c, w, H, k, night, desktop); return night && time ? bats(c, w, H, k, time) : undefined
     case 'christmas': treeLights(c, w, H, k, time); return snow(c, w, H, k, time)
     case 'valentine': return hearts(c, w, H, k, time)
   }
@@ -199,8 +199,8 @@ function lanterns(c: Ctx, w: number, H: number, k: number, time: number) {
   }
 }
 
-function pumpkins(c: Ctx, w: number, H: number, k: number, night: boolean) {
-  for (const [fx, fy] of [[.12, .74], [.2, .77], [.88, .73]] as const) {
+function pumpkins(c: Ctx, w: number, H: number, k: number, night: boolean, desktop = false) {
+  for (const [fx, fy] of (desktop ? [[.11, .845], [.405, .845], [.755, .840]] as const : [[.12, .74], [.2, .77], [.88, .73]] as const)) {
     const x = w * fx, y = H * fy
     c.save(); if (night) { c.shadowColor = '#ffa13d'; c.shadowBlur = 8 * k }
     c.beginPath(); c.ellipse(x, y, 6 * k, 4.6 * k, 0, 0, Math.PI * 2); c.fillStyle = '#f08a24'; c.fill(); c.strokeStyle = '#7a3d10'; c.lineWidth = .8 * k; c.stroke()
@@ -250,7 +250,7 @@ function hearts(c: Ctx, w: number, H: number, k: number, time: number) {
 }
 
 /** Random sky events; `progress` runs 0..1 across the event. */
-function skyEvent(c: Ctx, event: SkyEvent, w: number, H: number, k: number, time: number) {
+function skyEvent(c: Ctx, event: SkyEvent, w: number, H: number, k: number, time: number, desktop = false) {
   const p = event.progress, fade = Math.min(1, p / .08, (1 - p) / .08)
   const across = (from: number, to: number) => from + (to - from) * p
   c.save(); c.globalAlpha = Math.max(0, fade)
@@ -305,7 +305,7 @@ function skyEvent(c: Ctx, event: SkyEvent, w: number, H: number, k: number, time
       break
     }
     case 'cat': {
-      const x = across(-15 * k, w + 15 * k), y = H * .72, step = Math.sin(time * 9) * 1.2 * k
+      const x = across(-15 * k, w + 15 * k), y = H * (desktop ? .845 : .72), step = Math.sin(time * 9) * 1.2 * k
       c.fillStyle = '#e8913a'
       c.beginPath(); c.ellipse(x, y - 4 * k, 6 * k, 3.4 * k, 0, 0, Math.PI * 2); c.fill()
       disc(c, x + 6 * k, y - 7 * k, 3 * k, '#e8913a')

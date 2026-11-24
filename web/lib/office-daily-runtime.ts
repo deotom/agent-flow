@@ -116,7 +116,7 @@ export class OfficeDailyRuntime {
  private target(scene:OfficeScene,g:OfficeDailyRuntimeGuest):OfficeRoutineTarget|null {
   if(g.destination==='home'){
    const actor=scene.actors.find(a=>a.key===g.actorKey)??g.home
-   return {floorId:actor.floorId,x:actor.x+(g.outing?0:24*scene.width/450),y:actor.y}
+   return {floorId:actor.floorId,x:actor.x+(g.outing||scene.floors[0]?.desktopArt?0:24*scene.width/450),y:actor.y}
   }
   const floor=scene.floors.find(f=>g.destination==='canteen'?f.id===OFFICE_CANTEEN_ID:f.kind==='lounge')
   if(!floor)return null
@@ -210,12 +210,12 @@ export class OfficeDailyRuntime {
     if(target&&this.start(g,geometry,target,at,lift,'relocating','is moving to a free garden seat'))g.gardenSeatNeeded=undefined
     else g.seat=priorSeat
    }else if(g.indoorNeeded){
-    if(g.outing){
+    if(g.outing||geometry.floors[0]?.desktopArt){
      const priorDestination=g.destination;g.destination='home'
      const target=this.target(geometry,g)
-     if(target&&this.start(g,geometry,target,at,lift,'relocating','is heading inside for a quiet break')){
+     if(target&&this.start(g,geometry,target,at,lift,'relocating',g.outing?'is heading inside for a quiet break':'is bringing lunch indoors')){
       g.indoorNeeded=false;g.gardenSeatNeeded=undefined
-      if(g.outing.action==='snack'||g.outing.action==='stargaze')g.outing.action='drink'
+      if(g.outing&&(g.outing.action==='snack'||g.outing.action==='stargaze'))g.outing.action='drink'
      }else g.destination=priorDestination
      continue
     }
@@ -259,7 +259,7 @@ export class OfficeDailyRuntime {
    this.guests.set(g.actorKey,g);this.completedOrigins.delete(g.actorKey)
    this.outingSchedule=markOfficeRestOutingAdmission(this.outingSchedule,invite,at)
   }
-  this.canteenOpen=[...this.guests.values()].some(g=>g.destination==='canteen'||g.kind!=='outing'&&g.indoorNeeded||g.physical.floorId===OFFICE_CANTEEN_ID||g.trip?.segments.some(s=>s.floorId===OFFICE_CANTEEN_ID))
+  this.canteenOpen=[...this.guests.values()].some(g=>g.destination==='canteen'||g.kind!=='outing'&&!input.scene.floors[0]?.desktopArt&&g.indoorNeeded||g.physical.floorId===OFFICE_CANTEEN_ID||g.trip?.segments.some(s=>s.floorId===OFFICE_CANTEEN_ID))
   if(this.guests.size){this.retained=this.project(input.scene)}else{this.retained=null;this.canteenOpen=false}
  }
 

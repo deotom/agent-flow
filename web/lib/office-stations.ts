@@ -5,16 +5,28 @@ import {roomDesktopWorkpoints,roomStationLayout,type OfficeRoomStation} from './
 
 export const OFFICE_STATION_LABELS:Record<OfficeWorkStation,string>={planning:'planning board',research:'reference corner',build:'development bench',quality:'verification lab',terminal:'operations console'}
 export const OFFICE_STATION_NAMES:Record<OfficeWorkStation,string>={planning:'Planning',research:'Research',build:'Development',quality:'Verification',terminal:'Operations'}
+export const OFFICE_DESKTOP_STATION_NAMES:Record<OfficeWorkStation,string>={planning:'Planning',research:'Research',build:'Build',quality:'Review',terminal:'Terminal'}
 export const officeRoomSeed=(id:string)=>[...id].reduce((h,c)=>Math.imul(h^c.charCodeAt(0),16777619)>>>0,2166136261)
+const stationTokens=(value:string)=>value.replace(/([a-z0-9])([A-Z])/g,'$1 $2').replace(/[^a-zA-Z0-9]+/g,' ').toLowerCase()
+const roleStation=(role:TeamAgentRow['taskRole']):OfficeWorkStation|null=>
+ role==='research'?'research':role==='review'||role==='test'?'quality':null
 export function agentWorkStation(agent:TeamAgentRow):OfficeWorkStation {
  const activity=agent.activities.at(-1)
- if(!activity)return agent.status==='thinking'?'planning':'terminal'
- const tool=`${activity.type} ${activity.toolName??''}`.toLowerCase()
+ if(!activity){
+  if(agent.status==='thinking')return roleStation(agent.taskRole)??'planning'
+  if(agent.status==='background')return 'terminal'
+  return roleStation(agent.taskRole)??'terminal'
+ }
+ const tool=stationTokens(`${activity.type} ${activity.toolName??''}`)
  // Titles are classified locally; they never enter station labels, events or public output.
- if(/test|verify|verification|lint|pytest|assert/.test(`${tool} ${(activity.title??'').slice(0,160).toLowerCase()}`))return 'quality'
- if(/file_change|write|edit|patch/.test(tool))return 'build'
- if(/web_search|search|fetch|browse|read|query/.test(tool))return 'research'
- if(/compaction|plan|reason/.test(tool))return 'planning'
+ const title=stationTokens((activity.title??'').slice(0,160))
+ if(/\b(compaction|plan|planning|todo|todowrite|reason|reasoning|delegate|subagent|ask question|exit plan mode)\b/.test(tool))return 'planning'
+ if(/\b(review|pull request|ci logs|ci rerun|test|tests|verify|verification|lint|eslint|typecheck|type check|tsc|pytest|vitest|jest|assert)\b/.test(tool))return 'quality'
+ if(/\b(file change|write|edit|multi edit|patch|apply patch|create file|replace)\b/.test(tool))return 'build'
+ if(/\b(web search|search|fetch|web fetch|browse|read|query|grep|glob|ls|find|list|view|inspect|outline|symbol|definition|references|lookup|doc|docs|documentation|resource|resources|research|preview snapshot)\b/.test(tool))return 'research'
+ if(/\b(test|tests|testing|verify|verification|verifying|review|reviewing|audit|auditing|lint|linting|eslint|typecheck|type check|tsc|pytest|vitest|jest|mocha|playwright|cypress|assert|diff|check|checks|checking|qa|ci|pr|pull request|git status)\b/.test(title))return 'quality'
+ if(/\b(search|searching|find|finding|locate|locating|grep|rg|glob|ls|list|listing|read|reading|cat|browse|fetch|query|explore|lookup|investigate|analyze|analysis|research|inspect|directory|survey|view)\b/.test(title))return 'research'
+ if(/\b(plan|planning|compaction|compact|summarize)\b/.test(title))return 'planning'
  return 'terminal'
 }
 export function officeStations(floor:OfficeFloor,width:number):OfficeRoomStation[]{

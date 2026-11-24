@@ -297,3 +297,27 @@ it('reroutes queued rain travel from its actual walking point and shifts reserve
  assert.deepEqual(officeTripFrame(guest.trip!,1334).point,sample.point)
  assert.equal(guest.trip!.endsAt,prior.endsAt+1234)
 })
+
+it('keeps Desktop lunch guests in their painted rooms without opening a legacy canteen in rain',()=>{
+ const desktopScene:OfficeScene={...scene,actors:[{...actor,x:160,y:340}],floors:scene.floors.filter(f=>f.id!=='canteen').map(f=>({...f,desktopArt:true}))}
+ const runtime=new OfficeDailyRuntime(),lift=createOfficeLift(desktopScene)
+ runtime.step({...input(runtime,desktopScene,0,'rain'),lift})
+ const rainyGuest=runtime.guests.get(actor.key)!
+ assert.equal(rainyGuest.destination,'home')
+ assert.equal(runtime.canteenOpen,false)
+ assert.equal(runtime.project(desktopScene).floors.some(f=>f.room==='room-canteen'),false)
+ assert.deepEqual(rainyGuest.trip!.segments.at(-1)!.to,{x:160,y:340})
+
+ const clearRuntime=new OfficeDailyRuntime(),clearLift=createOfficeLift(desktopScene)
+ clearRuntime.step({...input(clearRuntime,desktopScene,0,'clear'),lift:clearLift})
+ const clearGuest=clearRuntime.guests.get(actor.key)!
+ const end=clearGuest.trip!.endsAt
+ clearRuntime.step({...input(clearRuntime,desktopScene,end,'clear'),lift:clearLift})
+ assert.equal(clearGuest.destination,'garden')
+ clearRuntime.step({...input(clearRuntime,desktopScene,end+1,'rain'),lift:clearLift})
+ assert.equal(clearRuntime.canteenOpen,false)
+ clearRuntime.step({...input(clearRuntime,desktopScene,end+2,'rain'),lift:clearLift})
+ assert.equal(clearGuest.destination,'home')
+ assert.equal(clearGuest.phase,'relocating')
+ assert.equal(clearRuntime.canteenOpen,false)
+})

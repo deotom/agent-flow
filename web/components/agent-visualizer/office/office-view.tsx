@@ -22,7 +22,7 @@ import { drawOfficeSkyBalloon } from './office-sky-art'
 import { officeDaylight, officeDesktopGardenLighting } from '../../../lib/office-daylight'
 import { officeWorkEvents, officeWorkPulse, officeWorkStation, OFFICE_STATION_LABELS } from '../../../lib/office-work'
 import {officeActorAtWorkPlace,officeSceneAtWorkPlaces,officeWorkPresenceTarget,rememberOfficeWorkPlace,type OfficeWorkPlace} from '../../../lib/office-work-presence'
-import { officeStations, officeStationUsers, officeRoomSeed, OFFICE_STATION_NAMES } from '../../../lib/office-stations'
+import { officeStations, officeStationUsers, officeRoomSeed, OFFICE_STATION_NAMES, OFFICE_DESKTOP_STATION_NAMES } from '../../../lib/office-stations'
 import { roomDesktopPlanningDesk } from '../../../lib/office-room-design'
 import { officeLeisureObjects, nearestLeisureActor, createOfficeLeisureTrip, OFFICE_OBJECT_NAMES } from '../../../lib/office-leisure'
 import { officeInteriorDoor, officeDoorBounds, officeInsideLift, officeLanding, officeNavigation } from '../../../lib/office-navigation'
@@ -107,6 +107,7 @@ type Pending = { event: OfficeEvent; before: OfficeScene }
 
 export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam, live, connection, visible, animationMode, now, identitySlots }: OfficeViewProps) {
   const desktopArt=typeof document!=='undefined'&&document.documentElement.dataset.agentFlowHost==='desktop'
+  const stationNames=desktopArt?OFFICE_DESKTOP_STATION_NAMES:OFFICE_STATION_NAMES
   const [collaborationOverrides,setCollaborationOverrides]=useState(readCollaboration)
   const changeCollaboration=(key:string,mode:OfficeDisplayMode)=>{
     const member=scene.floors.flatMap(floor=>floor.collaboration??[]).find(member=>member.preferenceKey===key)
@@ -865,11 +866,11 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
             {visualScene.floors.filter(f=>f.kind==='team'&&!f.constructing).flatMap(floor=>officeStations(floor,visualScene.width).map(station=>{
               const users=officeStationUsers(scene,floor,station.kind)
               return <button key={`${floor.id}-${station.kind}`} type="button" className="of-workbench" data-kind={station.kind} data-facing={station.facing} data-painted={Boolean(roomArt?.stations)} data-active={users.length>0}
-                aria-label={`${OFFICE_STATION_NAMES[station.kind]}, ${floor.title}, ${users.length} working`}
+                aria-label={`${stationNames[station.kind]}, ${floor.title}, ${users.length} working`}
                 tabIndex={peekFloor?.sessionId===floor.sessionId?-1:0}
                 onClick={()=>floor.sessionId&&inspectStation(floor.sessionId,station.kind)}
                 style={{left:`${(station.x-station.width/2)/visualScene.width*100}%`,top:`${(station.y-station.height*.88)/visualScene.height*100}%`,width:`${station.width/visualScene.width*100}%`,height:`${station.height/visualScene.height*100}%`,'--station-accent':floor.color} as CSSProperties}>
-                <span>{OFFICE_STATION_NAMES[station.kind]}{users.length>0&&<b> · {users.length}</b>}</span>
+                <span>{stationNames[station.kind]}{users.length>0&&<b> · {users.length}</b>}</span>
                 {users.length>0&&!roomArt?.stations&&<i aria-hidden="true"/>}
               </button>
             }))}
@@ -989,7 +990,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
         onOpen={()=>inspectAgent(activityInfo.team.sessionId,activityInfo.agent.id)}/>:<footer className="office-activity-footer office-activity-idle">No agents currently working</footer>):<div className="of-live-caption" role="status" aria-live="polite" title={captionMovement?`${captionMovement.actor.agent.name} ${captionMovement.caption}`:undefined}>
         {captionMovement?<><strong>{captionMovement.actor.agent.name}</strong><span>{captionMovement.caption}</span></>:<span aria-hidden="true">&nbsp;</span>}
       </div>}
-      {inspectedFloor&&stationSelection?<OfficeInspector key={`station-${inspectedFloor.id}-${stationSelection.kind}`} title={OFFICE_STATION_NAMES[stationSelection.kind]} onClose={closeInspector} onHeight={setInspectorHeight} autoFocus={focusInspector.current} onAutoFocus={inspectorFocused}>
+      {inspectedFloor&&stationSelection?<OfficeInspector key={`station-${inspectedFloor.id}-${stationSelection.kind}`} title={stationNames[stationSelection.kind]} onClose={closeInspector} onHeight={setInspectorHeight} autoFocus={focusInspector.current} onAutoFocus={inspectorFocused}>
         <p className="of-inspector-team">{inspectedFloor.title}</p>
         {selectedBoard&&<section aria-label="Full planning board"><h3>{selectedBoard.goal}</h3><p>{selectedBoard.done}/{selectedBoard.total} tasks done</p><ul>{selectedBoard.items.map((item,index)=><li key={index}><b>{BOARD_STATES[item.state]}</b> · {item.label}</li>)}</ul></section>}
         {stationPeople.length?stationPeople.map(actor=><button key={actor.key} type="button" onClick={()=>inspectAgent(actor.sessionId,actor.agent.id)}><b>{actor.agent.name}</b><span>{actor.activity}</span></button>):<p>No agent is using this station.</p>}
