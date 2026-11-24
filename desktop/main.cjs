@@ -1,5 +1,5 @@
 'use strict'
-const { app, BrowserWindow, dialog, ipcMain, Menu, utilityProcess, screen, powerMonitor } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, Menu, Notification, utilityProcess, screen, powerMonitor } = require('electron')
 const fs = require('node:fs')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
@@ -10,6 +10,41 @@ const shellURL = pathToFileURL(path.join(__dirname, 'shell.html')).href
 let win
 let orbWin
 let orbExpanded = false
+let lastNotificationAt = 0
+const recentNotificationTags = new Map()
+function showDesktopNotification(payload, source) {
+  if (source === 'main' && orbWin) return { shown: false }
+  if (source === 'main' && win && !win.isDestroyed()) {
+    const visible = typeof win.isVisible === 'function' ? win.isVisible() : true
+    const focused = typeof win.isFocused === 'function' ? win.isFocused() : false
+    if (visible && focused) return { shown: false }
+  }
+  if (!Notification || typeof Notification.isSupported !== 'function' || !Notification.isSupported()) return { shown: false }
+  if (!payload || typeof payload !== 'object') return { shown: false }
+  const cleanText = (value, max) => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) : ''
+  const title = cleanText(payload.title, 80)
+  const body = cleanText(payload.body, 140)
+  if (!title || !body) return { shown: false }
+  const tag = cleanText(payload.tag, 120)
+  const now = Date.now()
+  for (const [key, at] of recentNotificationTags) {
+    if (now - at >= 15000) recentNotificationTags.delete(key)
+  }
+  if (now - lastNotificationAt < 1500) return { shown: false }
+  if (tag && recentNotificationTags.has(tag)) return { shown: false }
+  lastNotificationAt = now
+  if (tag) recentNotificationTags.set(tag, now)
+  const notice = new Notification({ title, body, silent: payload.silent === true })
+  notice.on?.('click', () => {
+    if (orbWin) { closeOrb(); return }
+    if (win && !win.isDestroyed() && typeof win.isMinimized === 'function' && win.isMinimized() && typeof win.restore === 'function') {
+      win.restore()
+    }
+    restoreMain()
+  })
+  notice.show()
+  return { shown: true }
+}
 // Orb sizes: small (status light), medium (default), large (the original size).
 const ORB_SCALES = [0.65, 0.8, 1]
 // 60px above the lens holds the lead's latest reply.
@@ -503,6 +538,7 @@ function registerIPC() {
     'desktop:minimize': () => win.minimize(),
     'desktop:close': () => win.close(),
     'desktop:resize-widget': resizeWidget,
+    'desktop:notify': payload => showDesktopNotification(payload, 'main'),
   }
   for (const [channel, handler] of Object.entries(actions)) ipcMain.handle(channel, (event, payload) => {
     if (!win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || event.senderFrame.url !== shellURL) {
@@ -542,7 +578,12 @@ function registerIPC() {
   for (const [channel, handler] of Object.entries(orbActions)) ipcMain.on(channel, (event, payload) => {
     if (trustedOrb(event)) handler(payload)
   })
-  for (const [channel, handler] of Object.entries({ 'orb:t3-send': t3CLI.t3Send, 'orb:t3-start': t3CLI.t3Start, 'orb:open-project': openProject })) {
+  for (const [channel, handler] of Object.entries({
+    'orb:t3-send': t3CLI.t3Send,
+    'orb:t3-start': t3CLI.t3Start,
+    'orb:open-project': openProject,
+    'orb:notify': payload => showDesktopNotification(payload, 'orb'),
+  })) {
     ipcMain.handle(channel, (event, payload) => {
       if (!trustedOrb(event)) throw new Error('Untrusted orb request')
       requireGesture(orbWin, channel)

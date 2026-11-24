@@ -79,6 +79,27 @@ test('isolated workspaces serve UI + matching sessions, and release ports on sto
     const asset = await fetch(`${message.url}/index.js`)
     assert.equal(asset.status, 200)
     assert.ok((await asset.text()).length > 1000)
+    const webp = fs.readdirSync(path.resolve(__dirname, '../dist/webview')).find(name => name.endsWith('.webp'))
+    assert.ok(webp, 'Expected external .webp asset in desktop/dist/webview')
+    const image = await fetch(`${message.url}/${webp}`)
+    assert.equal(image.status, 200)
+    assert.equal(image.headers.get('content-type'), 'image/webp')
+    assert.match(image.headers.get('cache-control') || '', /immutable/)
+    assert.ok((await image.arrayBuffer()).byteLength > 100)
+    const nested = await fetch(`${message.url}/nested/${webp}`)
+    assert.equal(nested.status, 404)
+    const traversal = await new Promise((resolve, reject) => {
+      http.get({ host: '127.0.0.1', port: Number(new URL(message.url).port), path: '/../package.json' }, res => {
+        res.resume(); resolve(res.statusCode)
+      }).on('error', reject)
+    })
+    assert.equal(traversal, 404)
+    const evilWebp = await new Promise((resolve, reject) => {
+      http.get(`${message.url}/${webp}`, { headers: { Host: `evil.example:${new URL(message.url).port}` } }, res => {
+        res.resume(); resolve(res.statusCode)
+      }).on('error', reject)
+    })
+    assert.equal(evilWebp, 403)
     const controller = new AbortController()
     const response = await fetch(`${message.url}/events`, { signal: controller.signal })
     assert.match(response.headers.get('content-type'), /text\/event-stream/)

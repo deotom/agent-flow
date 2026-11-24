@@ -15,6 +15,8 @@ import { OfficeAvatarPortrait } from '../office/office-avatar-portrait'
 import { isDesktopAvatarHost, useOfficeAvatarArt } from '../office/use-office-avatar-art'
 import { useOfficeIdentities } from '../office/use-office-identities'
 import { DesktopMissionTree } from './desktop-mission-tree'
+import { ATTENTION_NOTIFY_STORAGE_KEY, collectAttentionAlerts, createAttentionTracker, formatAttentionNotification, readAttentionNotifyEnabled, writeAttentionNotifyEnabled } from '@/lib/attention-notify'
+import { canNotifyDesktop, notifyDesktop } from '@/lib/desktop-actions'
 import '../office/office.css'
 import './team.css'
 import './desktop-mission-tree.css'
@@ -408,6 +410,32 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
   const dismiss = (id: string) => setDismissed(previous => new Set(previous).add(id))
   const statuses = office ? officeSnapshots.flatMap(team => team.agents.map(agent => agent.status)) : snapshot?.agents.map(agent => agent.status) ?? []
   const showGraph = pane === 'graph' && Boolean(snapshot)
+  const [attentionNotify, setAttentionNotify] = useState(readAttentionNotifyEnabled)
+  const toggleAttentionNotify = () => {
+    setAttentionNotify(previous => {
+      const next = !previous
+      writeAttentionNotifyEnabled(next)
+      return next
+    })
+  }
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === null || event.key === ATTENTION_NOTIFY_STORAGE_KEY) {
+        setAttentionNotify(readAttentionNotifyEnabled())
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+  const attentionTracker = useRef(createAttentionTracker())
+  const [attentionCueTick, setAttentionCueTick] = useState(0)
+  useEffect(() => {
+    const alerts = collectAttentionAlerts(attentionTracker.current, officeSnapshots, live, Date.now())
+    if (!attentionNotify || !alerts.length) return
+    setAttentionCueTick(tick => tick + 1)
+    const notice = formatAttentionNotification(alerts)
+    if (notice && canNotifyDesktop()) void notifyDesktop(notice)
+  }, [officeSnapshots, live, attentionNotify])
 
   return (
     <div className="jv-root" data-widget={widget} data-motion={animationMode} data-live={live}>
@@ -432,6 +460,17 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
                 { value: 'session', label: 'Whole session' },
               ]} />}
               <div className="af-desktop-workspace-actions">
+                {canNotifyDesktop() && (
+                  <button
+                    type="button"
+                    className="af-desktop-alert-toggle"
+                    aria-pressed={attentionNotify}
+                    title={attentionNotify ? 'Desktop & Office waiting alerts on' : 'Waiting alerts off'}
+                    onClick={toggleAttentionNotify}
+                  >
+                    {attentionNotify ? 'Alerts: On' : 'Alerts: Off'}
+                  </button>
+                )}
                 {!office && <Legend />}
                 {viewerControls}
               </div>
@@ -482,7 +521,8 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
         {office ? <OfficeView snapshots={officeSnapshots} scope={scope} identitySlots={desktopPortraits?identitySlots:undefined} selectedKey={officeSelection ? officeKey(officeSelection.sessionId, officeSelection.agentId) : null}
           onSelect={(sessionId, agentId) => setOfficeSelection(previous => previous?.sessionId === sessionId && previous.agentId === agentId ? null : { sessionId, agentId })}
           onOpenTeam={(sessionId, agentId) => { selections.current.set(sessionId, agentId); setSelectedAgentId(agentId); onSelectSession(sessionId); onPane('board') }}
-          live={live} connection={connection} visible={visible} animationMode={animationMode} now={now} /> : showGraph ? <div className="jv-graph">{desktopPortraits&&mission?
+          live={live} connection={connection} visible={visible} animationMode={animationMode} now={now}
+          attentionCueTick={attentionCueTick} attentionNotify={attentionNotify} onToggleAttentionNotify={toggleAttentionNotify} /> : showGraph ? <div className="jv-graph">{desktopPortraits&&mission?
             <DesktopMissionTree mission={mission} selected={selectedAgentId} live={live} atlas={avatarArt} onSelect={select} appearanceFor={id=>{
               const slot=identitySlots.get(officeKey(snapshot!.sessionId,id))
               return slot===undefined?undefined:officeAppearance(slot)

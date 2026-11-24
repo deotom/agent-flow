@@ -27,7 +27,11 @@ const MIME_TYPES: Record<string, string> = {
   '.js': 'application/javascript',
   '.css': 'text/css',
   '.html': 'text/html',
+  '.webp': 'image/webp',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
 }
+const IMMUTABLE_EXTENSIONS = new Set(['.webp', '.png', '.svg'])
 
 export function serveStatic(req: http.IncomingMessage, res: http.ServerResponse) {
   const url = (req.url || '/').split('?')[0]
@@ -38,8 +42,20 @@ export function serveStatic(req: http.IncomingMessage, res: http.ServerResponse)
     return
   }
 
-  // Only serve known asset files from the webview directory
+  if (url.includes('..') || url.includes('\\')) {
+    res.writeHead(404)
+    res.end('Not found')
+    return
+  }
+
+  // Only serve known root-level asset files from the webview directory
   const basename = path.basename(url)
+  if (url !== `/${basename}`) {
+    res.writeHead(404)
+    res.end('Not found')
+    return
+  }
+
   const ext = path.extname(basename)
   const mime = MIME_TYPES[ext]
 
@@ -49,10 +65,11 @@ export function serveStatic(req: http.IncomingMessage, res: http.ServerResponse)
     return
   }
 
-  const filePath = path.join(WEBVIEW_DIR, basename)
+  const webviewRoot = path.resolve(WEBVIEW_DIR)
+  const filePath = path.resolve(webviewRoot, basename)
 
   // Prevent path traversal
-  if (!filePath.startsWith(WEBVIEW_DIR)) {
+  if (!filePath.startsWith(webviewRoot + path.sep)) {
     res.writeHead(403)
     res.end('Forbidden')
     return
@@ -60,7 +77,11 @@ export function serveStatic(req: http.IncomingMessage, res: http.ServerResponse)
 
   try {
     const content = fs.readFileSync(filePath)
-    res.writeHead(200, { 'Content-Type': mime })
+    const headers: Record<string, string> = { 'Content-Type': mime }
+    if (IMMUTABLE_EXTENSIONS.has(ext)) {
+      headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    }
+    res.writeHead(200, headers)
     res.end(content)
   } catch {
     res.writeHead(404)

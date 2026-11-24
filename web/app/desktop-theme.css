@@ -502,6 +502,29 @@
   gap: 6px;
 }
 
+[data-agent-flow-host="desktop"] .af-desktop-alert-toggle {
+  margin-inline-end: auto;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--desktop-line);
+  color: var(--desktop-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-alert-toggle[aria-pressed="true"] {
+  color: var(--desktop-accent);
+  border-color: var(--desktop-accent);
+  background: var(--desktop-selection);
+}
+
+[data-agent-flow-host="desktop"] .af-desktop-alert-toggle:hover {
+  color: var(--desktop-text);
+  background: var(--desktop-hover);
+}
+
 [data-agent-flow-host="desktop"] .af-desktop-workspace-actions .flow-viewer-dialog {
   max-width: min(280px, calc(100cqw - 36px));
 }

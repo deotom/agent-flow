@@ -14,7 +14,8 @@ import {officeAppearance,officeKey} from '@/lib/office-model'
 import type { TeamAgentRow, TeamAgentStatus } from '@/lib/team-types'
 import { STATUS_LABEL } from '@/lib/team-model'
 import { PromptBar } from '@/components/prompt/prompt-bar'
-import { canSendPrompts } from '@/lib/desktop-actions'
+import { canNotifyDesktop, canSendPrompts, notifyDesktop } from '@/lib/desktop-actions'
+import { collectAttentionAlerts, createAttentionTracker, formatAttentionNotification, readAttentionNotifyEnabled } from '@/lib/attention-notify'
 import { modelChoices } from '@/lib/prompt-model'
 
 interface OrbDesktop {
@@ -22,6 +23,7 @@ interface OrbDesktop {
   moveTo(position: { x: number; y: number; done?: boolean }): void
   openFull(): void
   menu(): void
+  notify?(payload: unknown): Promise<unknown>
   setExpanded?(value: boolean): void
   onLayout?(callback: (layout: OrbLayout) => void): () => void
 }
@@ -34,6 +36,41 @@ const REPLY_SPACE = 60
 const CENTER = { x: 130, y: 112 + REPLY_SPACE }
 /** A reply stays readable for 10 minutes, then fades out so the orb does not show stale news. */
 const REPLY_MAX_AGE = 10 * 60_000
+export const ORB_REPLY_MAX_AGE = REPLY_MAX_AGE
+
+export interface OrbReplyStep {
+  alpha: number
+  nextDelayMs: number | null
+}
+
+/** Advance reply opacity one step and return null when the canvas can rest idle. */
+export function stepOrbReplyFade(
+  currentAlpha: number,
+  hasReply: boolean,
+  replyAgeMs: number,
+  hovered: boolean,
+  health: 'ok' | 'stale' | 'offline',
+  hasTimestamp = true,
+): OrbReplyStep {
+  if (!hasReply) return { alpha: 0, nextDelayMs: null }
+  const expired = hasTimestamp && replyAgeMs > ORB_REPLY_MAX_AGE
+  const target = expired ? 0 : hovered ? 0.96 : 0.42
+  const delta = target - currentAlpha
+  if (Math.abs(delta) > 0.005) {
+    const nextAlpha = currentAlpha + delta * 0.18
+    if (Math.abs(target - nextAlpha) <= 0.005) {
+      return {
+        alpha: target,
+        nextDelayMs: !expired && hasTimestamp ? Math.max(50, ORB_REPLY_MAX_AGE - replyAgeMs + 50) : null,
+      }
+    }
+    return { alpha: nextAlpha, nextDelayMs: health === 'ok' ? 66 : 125 }
+  }
+  return {
+    alpha: target,
+    nextDelayMs: !expired && hasTimestamp ? Math.max(50, ORB_REPLY_MAX_AGE - replyAgeMs + 50) : null,
+  }
+}
 const HIT_RADIUS = 104
 const TAU = Math.PI * 2
 
@@ -239,6 +276,15 @@ export function OrbView() {
   latest.current = { summary, leadAgent, health: feed.health, reply, appearance, atlas }
   // Reply opacity eases toward faint, or strong while hovered.
   const replyHover = useRef(false)
+  const scheduleRenderRef = useRef<(() => void) | null>(null)
+  const attentionTracker = useRef(createAttentionTracker())
+
+  useEffect(() => {
+    const alerts = collectAttentionAlerts(attentionTracker.current, teams, feed.health === 'ok', Date.now())
+    if (!readAttentionNotifyEnabled() || !alerts.length) return
+    const notice = formatAttentionNotification(alerts)
+    if (notice && canNotifyDesktop()) void notifyDesktop(notice)
+  }, [teams, feed.health])
 
   // Transparent page: only the orb is visible on the desktop.
   useEffect(() => {
@@ -252,8 +298,11 @@ export function OrbView() {
     if (!context) return
     const ctx: CanvasRenderingContext2D = context
     let dpr = 0, timer = 0, stopped = false, replyAlpha = 0, replyKey = ''
+    let dprMedia: MediaQueryList | null = null
     function render() {
       if (stopped) return
+      window.clearTimeout(timer)
+      timer = 0
       const { summary: current, leadAgent: lead, health, reply: answer, appearance: portrait, atlas: art } = latest.current
       // Follow monitor changes so the orb stays sharp on a different DPI.
       const ratio = window.devicePixelRatio || 1
@@ -262,7 +311,9 @@ export function OrbView() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, ORB_SIZE.width, ORB_SIZE.height)
       ctx.translate(CENTER.x, CENTER.y)
+      let nextDelayMs: number | null = null
       if (!current || !lead) {
+        replyKey = ''; replyAlpha = 0
         const text = health === 'offline' ? 'Agent Flow offline' : 'No T3 team'
         ctx.fillStyle = '#25271f'
         ctx.strokeStyle = '#736149'
@@ -280,18 +331,43 @@ export function OrbView() {
         if (answer) {
           if (answer.text !== replyKey) { replyKey = answer.text; replyAlpha = 0 }
           const age = answer.at ? Date.now() - answer.at : 0
-          const target = age > REPLY_MAX_AGE ? 0 : replyHover.current ? 0.96 : 0.42
-          replyAlpha += (target - replyAlpha) * 0.18
+          const step = stepOrbReplyFade(replyAlpha, true, age, replyHover.current, health, Boolean(answer.at))
+          replyAlpha = step.alpha
+          nextDelayMs = step.nextDelayMs
           drawReply(ctx, answer, replyAlpha)
+        } else {
+          replyKey = ''; replyAlpha = 0
         }
         ctx.globalAlpha = 1
         if (health !== 'ok') drawHealthTag(ctx, health)
       }
-      timer = window.setTimeout(render, health === 'ok' ? 66 : 125)
+      if (nextDelayMs !== null) timer = window.setTimeout(render, nextDelayMs)
     }
+    const scheduleRender = () => render()
+    const onDprChange = () => {
+      observeDpr()
+      scheduleRender()
+    }
+    const observeDpr = () => {
+      dprMedia?.removeEventListener?.('change', onDprChange)
+      dprMedia = typeof window.matchMedia === 'function'
+        ? window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`)
+        : null
+      dprMedia?.addEventListener?.('change', onDprChange)
+    }
+    scheduleRenderRef.current = scheduleRender
+    observeDpr()
+    window.addEventListener('resize', scheduleRender)
     render()
-    return () => { stopped = true; window.clearTimeout(timer) }
+    return () => {
+      stopped = true
+      scheduleRenderRef.current = null
+      window.clearTimeout(timer)
+      window.removeEventListener('resize', scheduleRender)
+      dprMedia?.removeEventListener?.('change', onDprChange)
+    }
   }, [])
+  useEffect(() => { scheduleRenderRef.current?.() }, [summary, leadAgent, feed.health, reply, appearance, atlas, scale])
 
   // Desktop behaviour: click-through outside the orb, drag to move, click for the prompt panel,
   // double-click to open the full view, right-click for the menu.
@@ -309,7 +385,9 @@ export function OrbView() {
       const dx = x - CENTER.x, dy = y - CENTER.y
       const onLabel = dx >= CAPTION_X - 6 && dx <= CAPTION_X + CAPTION_WIDTH + 6 && Math.abs(dy - PORTRAIT_Y) <= 32
       const onReply = Boolean(latest.current.reply) && y < REPLY_SPACE + 4 && Math.abs(dx) < 124
+      const wasHovered = replyHover.current
       replyHover.current = onReply
+      if (onReply !== wasHovered) scheduleRenderRef.current?.()
       return Math.hypot(dx, dy) <= HIT_RADIUS || onLabel || onReply
     }
     const move = (event: PointerEvent) => {
@@ -347,7 +425,13 @@ export function OrbView() {
       window.clearTimeout(clickTimer)
       clickTimer = window.setTimeout(() => setExpanded(value => !value), 260)
     }
-    const leave = () => { replyHover.current = false; if (!drag && interactiveRef.current && !expandedRef.current) { interactiveRef.current = false; api.setInteractive(false) } }
+    const leave = () => {
+      if (replyHover.current) {
+        replyHover.current = false
+        scheduleRenderRef.current?.()
+      }
+      if (!drag && interactiveRef.current && !expandedRef.current) { interactiveRef.current = false; api.setInteractive(false) }
+    }
     const open = (event: MouseEvent) => { if (over(event)) { window.clearTimeout(clickTimer); api.openFull() } }
     const menu = (event: MouseEvent) => { if (!over(event)) return; event.preventDefault(); api.menu() }
     window.addEventListener('pointermove', move)

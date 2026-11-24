@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, '..')
 // Reuse exactly the same UI build as the standalone app.
 execFileSync(process.execPath, [path.join(root, 'app/build.js')], { cwd: root, stdio: 'inherit' })
 fs.mkdirSync(path.join(__dirname, 'dist'), { recursive: true })
+fs.rmSync(path.join(__dirname, 'dist/webview'), { recursive: true, force: true })
 fs.cpSync(path.join(root, 'app/dist/webview'), path.join(__dirname, 'dist/webview'), { recursive: true })
 esbuild.buildSync({
   entryPoints: [path.join(root, 'extension/src/t3-poll-worker.ts')],

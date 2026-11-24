@@ -76,6 +76,9 @@ interface OfficeViewProps {
   animationMode: AnimationMode
   now: number
   identitySlots?:ReadonlyMap<string,number>
+  attentionCueTick?: number
+  attentionNotify?: boolean
+  onToggleAttentionNotify?: () => void
 }
 const COLLABORATION_STORAGE='agent-flow.office.collaboration.v1'
 const readCollaboration=()=>{try{return parseOfficeCollaborationOverrides(localStorage.getItem(COLLABORATION_STORAGE))}catch{return parseOfficeCollaborationOverrides(null)}}
@@ -106,7 +109,7 @@ type Moving = { actor: OfficeActor; caption: string; elevatorY: number | null; s
 type Pending = { event: OfficeEvent; before: OfficeScene }
 const EMPTY_REST_MOVING: Moving[] = []
 
-export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam, live, connection, visible, animationMode, now, identitySlots }: OfficeViewProps) {
+export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam, live, connection, visible, animationMode, now, identitySlots, attentionCueTick, attentionNotify, onToggleAttentionNotify }: OfficeViewProps) {
   const desktopArt=typeof document!=='undefined'&&document.documentElement.dataset.agentFlowHost==='desktop'
   const stationNames=desktopArt?OFFICE_DESKTOP_STATION_NAMES:OFFICE_STATION_NAMES
   const [collaborationOverrides,setCollaborationOverrides]=useState(readCollaboration)
@@ -175,6 +178,13 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const enabled = visible && pageVisible && live && officeAllowsMotion(animationMode) && !paused
   const soundWeather=skyWeather(new Date(now))
   const sound=useOfficeSound({active:visible&&pageVisible&&live&&!paused,night:officeDaylight(new Date(now)).night,wet:soundWeather==='rain'||soundWeather==='storm'})
+  const lastAttentionCue=useRef(attentionCueTick)
+  useEffect(()=>{
+    if(attentionCueTick!==undefined&&attentionCueTick!==lastAttentionCue.current){
+      lastAttentionCue.current=attentionCueTick
+      if(attentionCueTick>0)sound.playCue('attention')
+    }
+  },[attentionCueTick,sound.playCue])
   const layoutTarget = useMemo(() => officeDesktopHistoryLayout(daily.current!.project(heldLayout ? officeDepartureScene(heldLayout, scene, snapshots) : scene)), [heldLayout, scene, snapshots,dailyVersion])
   const visualScene = useOfficeLayout(layoutTarget,visible&&pageVisible&&officeAllowsMotion(animationMode)&&!paused,!live)
   const workroomTop = visualScene.floors.reduce<number|undefined>((top,floor)=>
@@ -833,7 +843,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const motionControl=<button type="button" aria-label={paused ? 'Resume Office motion' : 'Pause Office motion'} aria-pressed={paused} disabled={animationMode === 'off'}
     onClick={() => setPaused(value => !value)} title={animationMode === 'off' ? 'Effects off in Animation settings' : paused ? 'Resume Office motion' : 'Pause Office motion'}>
     <span aria-hidden="true">{paused ? '▶' : 'Ⅱ'}</span>{desktopArt&&(paused?' Resume motion':' Pause motion')}</button>
-  const atmosphere=<div className="of-atmosphere"><label>บรรยากาศ <select aria-label="Office atmosphere" value={liveliness} onChange={event=>setLiveliness(officeLiveliness(event.target.value))}><option value="quiet">สงบ</option><option value="normal">ปกติ</option><option value="lively">คึกคัก</option></select></label><button type="button" disabled={!sound.available} aria-label="Office ambient sound" aria-pressed={sound.enabled} title="เสียงบรรยากาศ · ปิดเป็นค่าเริ่มต้น" onClick={sound.toggle}>{sound.enabled?'เสียง: เปิด':'เสียง: ปิด'}</button>{!desktopArt&&<small>{daylight.night?'กลางคืน · ลดกิจกรรมลง':'กิจกรรมพักระหว่างวัน'}</small>}</div>
+  const atmosphere=<div className="of-atmosphere"><label>บรรยากาศ <select aria-label="Office atmosphere" value={liveliness} onChange={event=>setLiveliness(officeLiveliness(event.target.value))}><option value="quiet">สงบ</option><option value="normal">ปกติ</option><option value="lively">คึกคัก</option></select></label><button type="button" disabled={!sound.available} aria-label="Office ambient sound" aria-pressed={sound.enabled} title="เสียงบรรยากาศ · ปิดเป็นค่าเริ่มต้น" onClick={sound.toggle}>{sound.enabled?'เสียง: เปิด':'เสียง: ปิด'}</button>{onToggleAttentionNotify&&<button type="button" aria-label="Needs you alerts" aria-pressed={Boolean(attentionNotify)} title="แจ้งเตือนเมื่อเอเจนต์รอคุณ" onClick={onToggleAttentionNotify}>{attentionNotify?'แจ้งเตือน: เปิด':'แจ้งเตือน: ปิด'}</button>}{!desktopArt&&<small>{daylight.night?'กลางคืน · ลดกิจกรรมลง':'กิจกรรมพักระหว่างวัน'}</small>}</div>
 
   return (
     <section className="of-view" data-motion={enabled} data-liveliness={liveliness} data-discover={discovery.open} data-daily-guests={daily.current!.guests.size} data-canteen-open={daily.current!.canteenOpen} data-season={sky.season} data-holiday={sky.holiday??undefined} aria-label="Agent Office">

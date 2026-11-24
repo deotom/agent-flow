@@ -6,6 +6,7 @@ if (process.isMainFrame) contextBridge.exposeInMainWorld('agentFlowDesktop', {
   t3Send: payload => ipcRenderer.invoke('desktop:t3-send', payload),
   t3Start: payload => ipcRenderer.invoke('desktop:t3-start', payload),
   openProject: payload => ipcRenderer.invoke('desktop:open-project', payload),
+  notify: payload => ipcRenderer.invoke('desktop:notify', payload),
   state: () => ipcRenderer.invoke('desktop:state'),
   chooseFolder: () => ipcRenderer.invoke('desktop:choose-folder'),
   openLast: () => ipcRenderer.invoke('desktop:open-last'),

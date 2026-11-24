@@ -5,6 +5,7 @@ export default defineConfig(createBuildConfig({
   outDir: '../app/dist/webview',
   entry: 'app-entry.tsx',
   name: 'AgentFlowApp',
+  externalAssets: true,
   define: {
     'process.env.NEXT_PUBLIC_DEMO': '"0"',
     'process.env.NEXT_PUBLIC_RELAY_PORT': '""',

@@ -98,7 +98,7 @@ window.addEventListener('message', async event => {
   if (!currentURL || event.source !== element('graph').contentWindow || event.origin !== currentURL) return
   if (event.data?.type === 'desktop:ready') { sendMode(); return }
   const { type, id, action, payload } = event.data || {}
-  const actions = { 't3-send': api.t3Send, 't3-start': api.t3Start, 'open-project': api.openProject }
+  const actions = { 't3-send': api.t3Send, 't3-start': api.t3Start, 'open-project': api.openProject, notify: api.notify }
   if (type !== 'agent-flow:desktop-request' || typeof id !== 'string' || !id.length || id.length > 100 || !Object.hasOwn(actions, action)) return
   const source = event.source
   const origin = currentURL

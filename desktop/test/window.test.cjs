@@ -19,8 +19,8 @@ test('desktop preload exposes prompt and project invokes only in the main frame'
   })
   run(false); assert.equal(api, undefined)
   run(true)
-  for (const method of ['t3Send', 't3Start', 'openProject']) assert.equal(await api[method]({ value: method }), 'result')
-  assert.deepEqual(calls, [['desktop:t3-send', { value: 't3Send' }], ['desktop:t3-start', { value: 't3Start' }], ['desktop:open-project', { value: 'openProject' }]])
+  for (const method of ['t3Send', 't3Start', 'openProject', 'notify']) assert.equal(await api[method]({ value: method }), 'result')
+  assert.deepEqual(calls, [['desktop:t3-send', { value: 't3Send' }], ['desktop:t3-start', { value: 't3Start' }], ['desktop:open-project', { value: 'openProject' }], ['desktop:notify', { value: 'notify' }]])
 })
 
 test('shell prompt bridge checks iframe source, origin, id and action and replies with the request id', async () => {
@@ -38,6 +38,7 @@ test('shell prompt bridge checks iframe source, origin, id and action and replie
     t3Send: async payload => { calls.push(['send', payload]); if (fail) throw new Error('Send failed'); return { ok: true, threadId: 'test-thread' } },
     t3Start: async payload => { calls.push(['start', payload]); return { ok: true, threadId: 'new-thread' } },
     openProject: async payload => { calls.push(['open', payload]); return { folder: payload.root } },
+    notify: async payload => { calls.push(['notify', payload]); return { shown: true } },
     onState() {}, state: () => new Promise(() => {}),
   }
   const context = vm.createContext({ window: { agentFlowDesktop: api, addEventListener: (name, handler) => listeners.set(name, handler) },
@@ -51,7 +52,7 @@ test('shell prompt bridge checks iframe source, origin, id and action and replie
       .map(patch => ({ ...event, data: Object.keys(patch).length ? { ...event.data, ...patch } : {} }))]) await receive(invalid)
   assert.equal(calls.length, 0)
   assert.equal(replies.length, 0)
-  for (const [action, method] of [['t3-send', 'send'], ['t3-start', 'start'], ['open-project', 'open']]) {
+  for (const [action, method] of [['t3-send', 'send'], ['t3-start', 'start'], ['open-project', 'open'], ['notify', 'notify']]) {
     await receive({ ...event, data: { ...event.data, action } })
     assert.equal(calls.at(-1)[0], method)
     assert.equal(replies.at(-1).value.type, 'agent-flow:desktop-response')
@@ -87,9 +88,10 @@ test('orb preload exposes prompt invokes and fire-and-forget window actions in t
   assert.equal(await api.t3Send({ message: 'hi' }), 'result')
   assert.equal(await api.t3Start({ message: 'new' }), 'result')
   assert.equal(await api.openProject({ root: 'project' }), 'result')
+  assert.equal(await api.notify({ title: 'T', body: 'B' }), 'result')
   assert.deepEqual(calls, [
     ['orb:set-interactive', true], ['orb:move-to', { x: 10, y: 20, done: true }], ['orb:open-full'], ['orb:menu'],
-    ['orb:set-expanded', true], ['orb:t3-send', { message: 'hi' }], ['orb:t3-start', { message: 'new' }], ['orb:open-project', { root: 'project' }],
+    ['orb:set-expanded', true], ['orb:t3-send', { message: 'hi' }], ['orb:t3-start', { message: 'new' }], ['orb:open-project', { root: 'project' }], ['orb:notify', { title: 'T', body: 'B' }],
   ])
 })
 
@@ -126,6 +128,8 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   const windows = []
   const menus = []
   const children = []
+  const notifications = []
+  let notificationSupported = true
   let window
   let selected
   let failNext = false
@@ -133,6 +137,11 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
     setName() {}, getPath: () => root, requestSingleInstanceLock: () => true,
     whenReady: async () => {}, quit() {},
   })
+  class MockNotification extends EventEmitter {
+    static isSupported() { return notificationSupported }
+    constructor(options) { super(); this.options = options; this.shown = false; notifications.push(this) }
+    show() { this.shown = true }
+  }
   class Window extends EventEmitter {
     constructor(options) {
       super(); if (!window) window = this
@@ -149,16 +158,19 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
     setIgnoreMouseEvents(value, options = {}) { this.ignoreMouse = value; this.forward = options.forward }
     setResizable(value) { this.resizable = value }
     setFocusable(value) { this.focusable = value }
-    hide() { this.hidden = true }
+    hide() { this.hidden = true; this.focused = false }
     show() { this.hidden = false }
     focus() { this.focused = true }
+    isVisible() { return !this.hidden }
+    isFocused() { return Boolean(this.focused) }
     destroy() { this.destroyed = true; this.emit('closed') }
     loadURL(url) { this.url = url; this.webContents.mainFrame.url = url }
     setPosition(x, y) { Object.assign(this.bounds, { x, y }) }
     getPosition() { return [this.bounds.x, this.bounds.y] }
     loadFile() {}
     isMaximized() { return false }
-    isMinimized() { return false }
+    isMinimized() { return Boolean(this.minimized) }
+    restore() { this.minimized = false }
     getBounds() { return { ...this.bounds } }
     getNormalBounds() { return this.getBounds() }
     setBounds(value) { this.bounds = value }
@@ -167,7 +179,7 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
     close() { this.emit('close') }
   }
   const electron = {
-    app, BrowserWindow: Window,
+    app, BrowserWindow: Window, Notification: MockNotification,
     screen: Object.assign(new EventEmitter(), { getAllDisplays: () => [{ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }], getDisplayMatching: () => ({ scaleFactor: 1.5, workArea: { x: 0, y: 0, width: 1920, height: 1080 } }), screenToDipRect: (_w, rect) => ({ x: rect.x / 1.5, y: rect.y / 1.5, width: rect.width / 1.5, height: rect.height / 1.5 }) }),
     powerMonitor: new EventEmitter(),
     dialog: { showOpenDialog: async () => selected || { canceled: true, filePaths: [] }, showErrorBox() {} },
@@ -522,6 +534,40 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   assert.equal(orb.bounds.height, 215 + 250, 'The expanded window fits the smaller orb plus the panel')
   sendOrb(orb, 'set-expanded', false)
   assert.deepEqual([orb.bounds.width, orb.bounds.height], [169, 215])
+
+  // Native desktop / orb waiting notifications: trust isolation, suppression, sanitization, throttling, click-to-focus.
+  assert.throws(() => handlers.get('desktop:notify')({ ...trusted, sender: {} }, {}), /Untrusted desktop request/)
+  assert.equal((await invoke('notify', { title: 'Approval needed', body: 'Lead · Team' })).shown, false, 'Main window notification is suppressed while orb is open')
+  assert.throws(() => handlers.get('orb:notify')({ sender: window.webContents }, {}), /Untrusted orb request/)
+  assert.throws(() => handlers.get('orb:notify')({ sender: orb.webContents, senderFrame: { url: orb.url } }, {}), /Untrusted orb request/)
+  now += 2000
+  assert.equal((await handlers.get('orb:notify')({ sender: orb.webContents, senderFrame: orb.webContents.mainFrame }, { title: '  Approval\n needed  ', body: 'Lead · Team', tag: 'o1' })).shown, true)
+  assert.deepEqual({ ...notifications.at(-1).options }, { title: 'Approval needed', body: 'Lead · Team', silent: false })
+  assert.equal(notifications.at(-1).shown, true)
+  notifications.at(-1).emit('click')
+  assert.equal(orb.destroyed, true)
+  assert.equal(window.hidden, false)
+  assert.equal(window.focused, true)
+  assert.equal((await invoke('notify', { title: 'Input needed', body: 'Lead · Team' })).shown, false, 'Notification is suppressed when main window is visible and focused')
+  window.minimize(); window.focused = false
+  now += 2000
+  assert.equal((await invoke('notify', { title: 'Input needed', body: 'x'.repeat(200), tag: 'm1' })).shown, true)
+  assert.equal(notifications.at(-1).options.body.length, 140)
+  now += 100
+  assert.equal((await invoke('notify', { title: 'Input needed', body: 'Other', tag: 'm2' })).shown, false, 'Global rate limit throttles rapid notifications')
+  now += 2000
+  assert.equal((await invoke('notify', { title: 'Input needed', body: 'Same tag', tag: 'm1' })).shown, false, 'Same tag is deduped within 15 seconds')
+  assert.equal((await invoke('notify', { title: 'Input needed', body: 'Worker · Team', tag: 'm2' })).shown, true)
+  notifications.at(-1).emit('click')
+  assert.equal(window.minimized, false)
+  assert.equal(window.focused, true)
+  notificationSupported = false
+  window.minimize(); window.focused = false; now += 2000
+  assert.equal((await invoke('notify', { title: 'Input needed', body: 'Worker · Team', tag: 'm3' })).shown, false)
+  notificationSupported = true
+  invoke('toggle-orb')
+  orb = windows.at(-1)
+
   app.emit('before-quit', { preventDefault() {} })
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(active.stopped, true)

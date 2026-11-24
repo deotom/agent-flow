@@ -112,3 +112,15 @@ it('unsupported or failed contexts degrade to disabled', async () => {
   assert.equal(await broken.toggleFromGesture(), false)
   assert.equal(broken.enabled, false)
 })
+it('plays a soft attention cue only when audible and stops it immediately on mute', async () => {
+  const t = setup(); t.sound.update(live)
+  assert.equal(t.sound.playCue('attention'), false)
+  await t.sound.toggleFromGesture()
+  t.advance()
+  assert.equal(t.sound.playCue('attention'), true)
+  const osc = t.ctx.sources.at(-1)!
+  assert.equal(osc.type, 'sine')
+  t.sound.update({ ...live, active: false })
+  assert.equal(osc.immediatelyStopped, true)
+  t.sound.dispose()
+})

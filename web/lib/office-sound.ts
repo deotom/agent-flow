@@ -1,5 +1,5 @@
 /** Optional, local-only Office ambience. Never create this context outside a user gesture. */
-export type OfficeSoundCue = 'paper' | 'wood'
+export type OfficeSoundCue = 'paper' | 'wood' | 'attention'
 export interface OfficeSoundState { active: boolean; night: boolean; wet: boolean }
 interface Options { createContext?: (() => AudioContext) | null; now?: () => number }
 
@@ -116,12 +116,36 @@ export class OfficeSound {
     return this.queue
   }
 
-  /** Call only for real user interactions / real door openings, never inferred tool events. */
+  /** Call only for real user interactions / real door openings, or explicit waiting alerts. */
   playCue(cue: OfficeSoundCue): boolean {
     const ctx = this.ctx
     const now = this.now()
     if (!this.audible || !ctx || ctx.state !== 'running' || now - this.lastCue < 800) return false
     this.lastCue = now
+    if (cue === 'attention') {
+      const osc = ctx.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime)
+      osc.frequency.setValueAtTime(880, ctx.currentTime + 0.11)
+      const envelope = ctx.createGain()
+      const duration = 0.26
+      envelope.gain.setValueAtTime(0, ctx.currentTime)
+      envelope.gain.linearRampToValueAtTime(0.28, ctx.currentTime + 0.015)
+      envelope.gain.linearRampToValueAtTime(0, ctx.currentTime + duration)
+      osc.connect(envelope)
+      envelope.connect(this.master!)
+      this.sources.add(osc)
+      const cleanup = () => {
+        this.cueCleanup.delete(osc)
+        this.sources.delete(osc)
+        osc.disconnect(); envelope.disconnect()
+      }
+      this.cueCleanup.set(osc, cleanup)
+      osc.onended = cleanup
+      osc.start()
+      osc.stop(ctx.currentTime + duration)
+      return true
+    }
     const source = ctx.createBufferSource()
     source.buffer = this.noise
     const filter = ctx.createBiquadFilter()
