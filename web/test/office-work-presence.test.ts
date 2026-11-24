@@ -95,9 +95,11 @@ it('gives a third Terminal coworker a lap notebook within their own reach',()=>{
  const overflow={...s.actors[0],x:234.9,y:484.418,workStation:'terminal' as const}
  const pose=officeActorSupport(s,overflow,{typing:true},1,overflow,3)
  assert.equal(pose.sit,true)
+ assert.ok(pose.seatHeight!<=19,'overflow notebook uses a natural workshop stool height, not a high bar stool')
  assert.equal(pose.workGesture?.notebook,true)
  assert.equal(pose.workGesture?.keyboard,undefined)
  assert.ok(pose.supportHands&&Math.abs(pose.supportHands.left.x)<16&&Math.abs(pose.supportHands.right.x)<16)
+ assert.ok(pose.supportHands.left.x*pose.face!>0&&pose.supportHands.right.x*pose.face!>0,'both hands stay forward on the lap notebook without reaching behind the back')
  s.actors=[overflow]
  const trip=createOfficeTrip(event,s,s,0,{x:105,y:410})
  assert.equal(trip?.segments[0].riseFrom,'terminal')
@@ -269,4 +271,20 @@ it('retains valid small-room depth workplaces instead of clamping them to one ai
  assert.deepEqual(officeWorkPresenceTarget(s,worker,'research',new Map([[worker.key,place]])),point)
  const points=(['build','research','quality','terminal'] as const).map(kind=>officeWorkPresenceTarget(s,worker,kind,new Map()))
  assert.ok(new Set(points.map(p=>p.y)).size>=3)
+})
+
+it('keeps a Desktop Research coworker reading at the book side when Planning is occupied',()=>{
+ const s=scene()
+ s.floors[0]={...s.floors[0],height:310.5,room:'room-stations',desktopArt:true}
+ const planner={...s.actors[0],workStation:'planning' as const}
+ const planTarget=officeWorkPresenceTarget(s,planner,'planning',new Map())
+ const places=new Map([[planner.key,rememberOfficeWorkPlace(s,planner,planTarget,'planning')!]])
+ const atPlan={...planner,...planTarget}
+ const researcher={...s.actors[0],key:'researcher',workStation:'research' as const}
+ const researchTarget=officeWorkPresenceTarget({...s,actors:[atPlan,researcher]},researcher,'research',places)
+ const atBook={...researcher,...researchTarget}
+ const pose=officeActorSupport(s,atBook,{},officeActorRenderScale(s,atBook),researchTarget,1)
+ assert.equal(pose.face,-1)
+ assert.equal(pose.workGesture?.profile,true)
+ assert.ok(pose.supportHands,'researcher still reaches the open book when Planning is occupied')
 })

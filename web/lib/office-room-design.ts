@@ -43,17 +43,17 @@ export function roomBuildWorkpoints(station:OfficeRoomStation,width:number){
 }
 // Normalized coordinates of the furniture feet and worktops in the painted Desktop plate.
 const desktopStations=[
- {kind:'research',x:.24,feet:.52,top:.422,width:.23,seated:false,points:[[.161,.527,.209]]},
+ {kind:'research',x:.24,feet:.52,top:.422,width:.23,seated:false,points:[[.172,.527,.209],[.234,.527,.209]]},
  {kind:'quality',x:.51,feet:.52,top:.434,width:.26,seated:true,seatTop:.465,points:[[.448,.529,.448],[.565,.529,.549]]},
  {kind:'build',x:.235,feet:.898,top:.782,width:.34,seated:false,points:[[.162,.918,.208],[.285,.918,.287]]},
- {kind:'terminal',x:.625,feet:.90,top:.787,width:.30,seated:true,seatTop:.825,points:[[.582,.916,.557],[.714,.916,.676]]},
+ {kind:'terminal',x:.625,feet:.90,top:.787,width:.30,seated:true,seatTop:.825,points:[[.582,.916,.568],[.714,.916,.695]]},
 ] as const
 export function roomDesktopPlanningDesk(floor:OfficeFloor,width:number){
  const height=floor.height??width*.72
  const left=width*.008,top=floor.y+height*.244,deskWidth=width*.105,deskHeight=height*.30
  return {left,top,width:deskWidth,height:deskHeight,
   feet:{x:left+deskWidth*.747,y:top+deskHeight*.992},
-  surface:{x:left+deskWidth*.55,y:top+deskHeight*.603,span:deskWidth*.075},
+  surface:{x:left+deskWidth*.48,y:top+deskHeight*.655,span:deskWidth*.075},
   seated:true,seatY:top+deskHeight*.752}
 }
 /** The Desktop plate has its own painted stools, monitors, books, and devices. */

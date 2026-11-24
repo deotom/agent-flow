@@ -22,7 +22,7 @@ const desktopCycles:Record<OfficeWorkStation,readonly (readonly [WorkKind,number
  quality:[['inspect',2.1],['focus',2.6],['page',1.3],['note',2.15],['check',1.55]],
 }
 const desktopLengths=Object.fromEntries(Object.entries(desktopCycles).map(([station,steps])=>[station,steps.reduce((sum,[,seconds])=>sum+seconds,0)])) as Record<OfficeWorkStation,number>
-const desktopTilt={planning:.17,research:.22,build:.17,terminal:.13,quality:.17}
+const desktopTilt={planning:.17,research:.14,build:.17,terminal:.13,quality:.17}
 const cycles:Record<OfficeWorkStation,readonly WorkKind[]>={
  planning:['note'],
  research:['page','page','page','page','note'],
@@ -34,7 +34,7 @@ const seedFor=(key:string)=>[...key].reduce((seed,c)=>Math.imul(seed^c.charCodeA
 
 function desktopWorkGesture(station:OfficeWorkStation,time:number,seed:number):OfficeWorkGesture {
  const steps=desktopCycles[station],tilt=desktopTilt[station],reading=station==='research'
- if(!(time>0&&Number.isFinite(time)))return {kind:steps[0][0],progress:0,reach:0,turn:0,nod:reading?.24:0,tilt,lean:reading?2:0}
+ if(!(time>0&&Number.isFinite(time)))return {kind:steps[0][0],progress:0,reach:0,turn:0,nod:reading?.24:0,tilt,lean:reading?1:0}
  let elapsed=(time*(.86+seed%31/100)+((seed>>>11)%20000)/1000)%desktopLengths[station]
  for(const [kind,duration] of steps){
   if(elapsed>=duration){elapsed-=duration;continue}
@@ -43,7 +43,7 @@ function desktopWorkGesture(station:OfficeWorkStation,time:number,seed:number):O
   const nod=kind==='check'?-.29:kind==='focus'?.19:kind==='note'?.14:kind==='inspect'?.12:.04
   const turn=kind==='check'?.19:kind==='page'?-.08:kind==='mouse'?.08:kind==='tune'?-.09:.025
   const lean=kind==='check'?-1.8:kind==='inspect'?1.7:kind==='focus'?.9:.5
-  return {kind,progress,reach:rest?0:weight,turn:turn*weight,nod:(reading?.24:0)+nod*weight,tilt:tilt+(kind==='check'?-.07:.035)*weight,lean:(reading?2:0)+lean*weight}
+  return {kind,progress,reach:rest?0:weight,turn:turn*weight,nod:(reading?.24:0)+nod*weight,tilt:tilt+(kind==='check'?-.07:.035)*weight,lean:(reading?1:0)+lean*weight}
  }
  return {kind:steps[0][0],progress:0,reach:0,turn:0,nod:reading?.24:0,tilt}
 }

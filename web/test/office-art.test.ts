@@ -574,7 +574,20 @@ it('lets relaxed painted hands hang close to the trim torso while officeHandCont
   assert.ok(painted.left.x>=-11&&painted.left.x<=-10&&painted.right.x>=10&&painted.right.x<=11.5)
   assert.deepEqual([legacy.left.x,legacy.right.x],[-15,16])
   const busy=drawOfficeAvatar(ctx(),{...officeAppearance(0),outfit:'jacket'},0,0,0,{workwear:true,mug:true},parts)
-  assert.equal(busy.left.x,-15,'held props keep their contact points')
+  assert.ok(busy.left.x>=-11&&busy.left.x<=-10,'free hand stays tucked beside the trim torso while holding a mug')
+  assert.ok(busy.right.x>=11&&busy.right.x<=14,'mug hand stays near the trim torso')
+})
+it('keeps free hands tucked in single-hand actions, bounds stretch, and holds standing books with both hands',()=>{
+  const {parts}=paintedWardrobeAtlas()
+  const jacket={...officeAppearance(0),outfit:'jacket' as const}
+  for(const pose of [{wave:true},{hand:true},{carry:true},{liftWait:'press' as const},{offer:.8},{scratch:true}]){
+    const hands=drawOfficeAvatar(ctx(),jacket,0,0,0,{workwear:true,...pose},parts)
+    assert.ok(hands.left.x>=-11.5,`free hand stays tucked during ${JSON.stringify(pose)}`)
+  }
+  const stretched=drawOfficeAvatar(ctx(),jacket,0,0,0,{workwear:true,stretch:1},parts)
+  assert.ok(stretched.left.y>=-58&&stretched.right.y>=-58,'overhead stretch stays within natural arm length')
+  const readingStanding=drawOfficeAvatar(ctx(),jacket,0,0,0,{workwear:true,objectAction:'book'},parts)
+  assert.ok(readingStanding.left.x>=-9&&readingStanding.right.x<=10,'both hands hold the edges of a standing book')
 })
 it('hangs standing painted legs from the raised hip and keeps the boots on the floor',()=>{
   const parts={width:1024,height:512} as HTMLImageElement

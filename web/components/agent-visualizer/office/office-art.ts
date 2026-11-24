@@ -360,10 +360,23 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
   const bend=support.bend
   const profileSeat=roomBody&&(p.workGesture?.profile||p.seatProfile||reading)?bend:0
   if(notebook){
-    const height=p.seatHeight??18
-    round(c,-10,1-height,3,height-1,'#674028',1);round(c,6,1-height,3,height-1,'#674028',1)
-    round(c,-8,-6,15,2,'#99633a',1)
-    oval(c,-1,1-height,12,3.5,'#b37843')
+    const height=p.seatHeight??17,cx=-2
+    c.save()
+    c.beginPath();c.ellipse(cx,.6,10,2.5,0,0,Math.PI*2);c.fillStyle='#2a181048';c.fill()
+    // Back leg in shade behind the front legs.
+    c.beginPath();c.moveTo(cx+1,-height+2);c.lineTo(cx+2,-1.5);c.lineWidth=2.4;c.lineCap='round';c.strokeStyle='#52321e';c.stroke()
+    // Left and right tapered wooden legs + cross rung.
+    for(const [tx,bx] of [[-5,-8],[4,6.5]] as const){
+      c.beginPath();c.moveTo(cx+tx,-height+2);c.lineTo(cx+bx,0);c.lineWidth=2.6;c.strokeStyle='#6f4528';c.stroke()
+      c.beginPath();c.moveTo(cx+tx-.5,-height+2.5);c.lineTo(cx+bx-.5,-1);c.lineWidth=.8;c.strokeStyle='#9e6b3d88';c.stroke()
+    }
+    c.beginPath();c.moveTo(cx-6.6,-6);c.lineTo(cx+5.2,-6);c.lineWidth=2.1;c.strokeStyle='#7e502f';c.stroke()
+    // Bevelled round wooden seat cushion matching warm workshop furniture.
+    c.beginPath();c.ellipse(cx,-height+1.6,10.2,3.2,0,0,Math.PI*2);c.fillStyle='#6a3e22';c.fill()
+    c.beginPath();c.ellipse(cx,-height,10.2,3.1,0,0,Math.PI*2);c.fillStyle='#b57942';c.fill()
+    c.lineWidth=.85;c.strokeStyle='#4a2a19a0';c.stroke()
+    c.beginPath();c.ellipse(cx-1,-height-.6,6.8,1.5,0,0,Math.PI*2);c.fillStyle='#d89f6270';c.fill()
+    c.restore()
   }
   const canPaintLegs=legArt&&!p.walk&&!p.climb
   const seatArtBlend=canPaintLegs?Math.min(1,Math.max(0,(seated-.32)/.68)):0
@@ -501,11 +514,20 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
   const paintKeyboard=()=>{
     if(!keyboard)return
     const key=toTorso(keyboard)
-    c.save();c.translate(key.x,key.y);if(workTilt)c.rotate(-workTilt)
-    round(c,-12,-3,24,6,'#435251',1)
-    for(let i=0;i<5;i++){
-      c.fillStyle=p.typing&&time&&Math.floor(time*9)%5===i?'#cfe4b0':'#8d9a83'
-      c.fillRect(-9+i*4,-1,2,2)
+    c.save();c.translate(key.x,key.y+(roomBody?1:0));if(workTilt)c.rotate(-workTilt)
+    if(roomBody){
+      c.beginPath();c.roundRect(-9,-2.2,18,4.5,1);c.fillStyle='#4a3d33';c.fill()
+      c.lineWidth=.8;c.strokeStyle='#2e221b88';c.stroke()
+      for(let i=0;i<5;i++){
+        c.fillStyle=p.typing&&time&&Math.floor(time*9)%5===i?'#d8cca4':'#9c8c72'
+        c.fillRect(-6.8+i*3,-.7,1.8,1.5)
+      }
+    }else{
+      round(c,-12,-3,24,6,'#435251',1)
+      for(let i=0;i<5;i++){
+        c.fillStyle=p.typing&&time&&Math.floor(time*9)%5===i?'#cfe4b0':'#8d9a83'
+        c.fillRect(-9+i*4,-1,2,2)
+      }
     }
     c.restore()
   }
@@ -547,6 +569,27 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
     contacts.right=raised?{x:10.5,y:-30+m.wave*.45}:{x:1,y:-19}
     contacts.shared={x:(contacts.left.x+contacts.right.x)/2,y:(contacts.left.y+contacts.right.y)/2}
   }
+  if(roomBody&&!p.walk&&!p.climb&&!p.supportHands&&!reading&&!notebook&&!p.dressing&&!relaxed&&!p.meeting){
+    if(p.objectAction==='book'){
+      contacts.left={x:-7.8,y:-22.5+m.left}
+      contacts.right={x:8.6,y:-22.5+m.right}
+    }else if(stretch>0){
+      contacts.left={x:mix(sideView?2.5:-10.5,sideView?4:-12.5,stretch),y:mix(-20,-56,stretch)}
+      contacts.right={x:mix(sideView?1:11,sideView?7:12.5,stretch),y:mix(-20,-56,stretch)}
+    }else if(p.mug||p.cup||raised||p.carry||p.liftWait||p.scratch||(p.offer??0)>0||p.objectAction==='water'){
+      // Keep the free hand tucked near the trim torso during one-handed poses.
+      contacts.left=sideView?{x:2.2,y:-19}:{x:seated?-9.5:-10.5,y:(seated?-15.5:-20)+m.left}
+      if((p.mug||p.cup)&&!raised&&!p.scratch){
+        contacts.right={x:sideView?8.5:12.5,y:-22+m.right-m.sip*11}
+        contacts.cup={...contacts.cup,pivot:{...contacts.right}}
+      }else if(p.carry&&!raised)contacts.right={x:sideView?7.5:12.5,y:-21+m.right}
+      else if(p.liftWait==='press')contacts.right={x:18,y:-36}
+      else if(p.scratch)contacts.right={x:8+m.wave*.6,y:-54}
+      else if((p.offer??0)>0)contacts.right={x:mix(11,20,p.offer!),y:mix(-21,-29,p.offer!)}
+      else if(p.hand||p.wave||p.objectAction==='music')contacts.right={x:sideView?9.5:13.5+m.wave*.7,y:-47}
+    }
+    contacts.shared={x:(contacts.left.x+contacts.right.x)/2,y:(contacts.left.y+contacts.right.y)/2}
+  }
   const shoulderSide=p.supportHands?p.face??1:1
   // In profile the near arm leaves the painted armhole and the far shoulder sits just
   // ahead of it behind the chest. Facing 3/4, the near arm rises out of the open
@@ -579,7 +622,8 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
     // Relaxed arms hang almost straight; reaching arms use the full bone length.
     const length=sideView&&!p.supportHands
       ?(p.walk?Math.min(10.5,Math.max(distance/2+.35,8.6)):p.meeting?Math.min(10.5,Math.max(distance/2+.35,7.8)):10.5)
-      :p.supportHands||!roomBody?13
+      :!roomBody?13
+      :p.supportHands?(sideView?Math.min(11.5,Math.max(distance/2+.6,notebook?8:8.8)):Math.min(12.2,Math.max(distance/2+.8,7.2)))
       :p.walk&&paintedBody?Math.min(11,Math.max(distance/2+.25,6))
       :Math.min(13,Math.max(distance/2+.9,6))
     const elbowSide=sideView?1:officeElbowSide(shoulder,hand,side,length)
@@ -663,34 +707,73 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
     c.restore() // head
   }
   if(!workBehind){paintHead();if(lateWardrobe)paintWardrobe()}
-  if((p.mug||p.cup)&&(!p.objectAction||p.objectAction==='coffee')&&!raised&&!p.scratch&&stretch<.3){c.save();c.translate(hands.cup.pivot.x,hands.cup.pivot.y);c.rotate(hands.cup.angle);round(c,-10,-5,9,10,'#fff0cf',2);oval(c,1,0,3,3,'#ead6ae');c.restore()}
+  if((p.mug||p.cup)&&(!p.objectAction||p.objectAction==='coffee')&&!raised&&!p.scratch&&stretch<.3){
+    c.save();c.translate(hands.cup.pivot.x,hands.cup.pivot.y);c.rotate(hands.cup.angle)
+    if(roomBody){
+      c.beginPath();c.moveTo(-2.3,-2.5);c.bezierCurveTo(-5.6,-2.5,-5.6,1.6,-2.3,1.6);c.lineWidth=1.5;c.strokeStyle='#d6c096';c.stroke()
+      c.beginPath();c.roundRect(-2.5,-4.5,6.8,7.8,1.8);c.fillStyle='#fff0cf';c.fill()
+      c.fillStyle='#c9ad8444';c.beginPath();c.roundRect(1.5,-4.5,2.8,7.8,[0,1.8,1.8,0]);c.fill()
+      c.lineWidth=.85;c.strokeStyle='#5a392599';c.beginPath();c.roundRect(-2.5,-4.5,6.8,7.8,1.8);c.stroke()
+      c.beginPath();c.ellipse(.9,-4.2,3.1,1.2,0,0,Math.PI*2);c.fillStyle='#5e3b24';c.fill()
+      c.beginPath();c.ellipse(.9,-4.3,3.3,1.3,0,Math.PI*.05,Math.PI*.95);c.lineWidth=.75;c.strokeStyle='#fff9e8aa';c.stroke()
+      if(time){const s=Math.sin(time*2.2)*.6;c.beginPath();c.moveTo(.4,-6.2);c.quadraticCurveTo(1.2+s,-8.5,.2,-10.5);c.lineWidth=.9;c.strokeStyle='#fff6e066';c.stroke()}
+    }else{round(c,-10,-5,9,10,'#fff0cf',2);oval(c,1,0,3,3,'#ead6ae')}
+    c.restore()
+  }
   if(p.objectAction&&!p.walk&&!p.climb){
     c.save()
     if(p.objectAction==='book'||p.objectAction==='game'||p.objectAction==='snack')c.globalAlpha*=Math.max(0,Math.min(1,p.seatBlend??1))
     if(roomBody&&reading)drawProfileBook(c,hands.shared)
     else if(roomBody&&p.objectAction==='book'){
-      // A standing reader holds a pocket-sized volume between the hands, not a sign board.
+      // Shaded leather-bound volume held open between both hands.
       const {x:bx,y:by}=hands.shared
-      c.save();c.translate(bx,by);c.scale(.66,.66);c.translate(-bx,-by)
-      drawLeisureProp(c,'book',hands,time);c.restore()
+      c.save();c.translate(bx,by-1)
+      c.beginPath();c.moveTo(-8.5,-4);c.lineTo(0,-3);c.lineTo(8.5,-4);c.lineTo(8.5,5.5);c.lineTo(0,6.8);c.lineTo(-8.5,5.5);c.closePath()
+      c.fillStyle='#6c4228';c.fill();c.lineWidth=.85;c.strokeStyle='#3d241699';c.stroke()
+      c.beginPath();c.moveTo(-7.5,-3.6);c.quadraticCurveTo(-3.5,-5,0,-3);c.lineTo(0,5.2);c.quadraticCurveTo(-3.8,3.8,-7.5,4.6);c.closePath();c.fillStyle='#efe0b8';c.fill()
+      c.beginPath();c.moveTo(0,-3);c.quadraticCurveTo(3.8,-5,7.5,-3.6);c.lineTo(7.5,4.6);c.quadraticCurveTo(3.8,3.8,0,5.2);c.closePath();c.fillStyle='#e2cf9f';c.fill()
+      c.beginPath();c.moveTo(0,-3);c.lineTo(0,5.6);c.lineWidth=1;c.strokeStyle='#8a6946';c.stroke()
+      c.beginPath()
+      for(const lineY of [-1.2,.8,2.8]){c.moveTo(-5.8,lineY);c.lineTo(-1.6,lineY);c.moveTo(1.6,lineY);c.lineTo(5.8,lineY)}
+      c.lineWidth=.65;c.strokeStyle='#9b815b';c.stroke()
+      c.restore()
     }
     else drawLeisureProp(c,p.objectAction,hands,time)
     c.restore()
   }
-  if(p.carry){if(p.climb)round(c,-10,-31,20,18,'#967450',4);else{round(c,rx-13,ry+2,20,14,'#c69a58',2);round(c,rx-12,ry,9,4,'#dbc38c',1)}}
+  if(p.carry){
+    if(p.climb)round(c,-10,-31,20,18,'#967450',4)
+    else if(roomBody){
+      const fw=sideView?13:15,fh=sideView?10.5:11,fx=rx-(sideView?7:8.5),fy=ry+1
+      c.save();c.translate(fx,fy)
+      c.beginPath();c.roundRect(0,0,fw,fh,2);c.fillStyle='#b68449';c.fill()
+      c.beginPath();c.roundRect(0,0,fw,4.2,[2,2,1,1]);c.fillStyle='#d9bd85';c.fill()
+      c.beginPath();c.roundRect(fw*.58,0,fw*.42,fh,[0,2,2,0]);c.fillStyle='#7c512844';c.fill()
+      c.lineWidth=.85;c.strokeStyle='#4a2d1c99';c.beginPath();c.roundRect(0,0,fw,fh,2);c.stroke()
+      c.beginPath();c.roundRect(fw*.42,3.4,2.4,2.1,.6);c.fillStyle='#ecd07c';c.fill()
+      c.restore()
+    }else{round(c,rx-13,ry+2,20,14,'#c69a58',2);round(c,rx-12,ry,9,4,'#dbc38c',1)}
+  }
   if(notebook){
-    const lap=toTorso({x:0,y:2-(p.seatHeight??18)})
+    const lap=toTorso({x:face*9.5,y:-1.5-(p.seatHeight??17)})
     c.save();c.translate(lap.x,lap.y);if(workTilt)c.rotate(-workTilt)
     const lid=p.rising?Math.max(0,Math.min(1,(seated-.45)/.55)):1
     if(p.rising)c.globalAlpha*=Math.min(1,seated*2)
+    c.beginPath();c.ellipse(1,1.6,7,1.4,0,0,Math.PI*2);c.fillStyle='#23140c55';c.fill()
+    // Slim laptop deck across the thighs.
+    c.beginPath();c.roundRect(-5,-1,12,2.6,1);c.fillStyle='#5a4f44';c.fill()
+    c.beginPath();c.roundRect(-4.5,-1,11,1.1,[.8,.8,0,0]);c.fillStyle='#7b6e5e';c.fill()
+    c.lineWidth=.8;c.strokeStyle='#2c211999';c.beginPath();c.roundRect(-5,-1,12,2.6,1);c.stroke()
     if(lid>0){
-      round(c,-13,-12*lid,23,12*lid,'#55473c',2)
+      const topX=6.5+4.2*lid,topY=-11.2*lid
+      c.beginPath();c.moveTo(5.6,-.6);c.lineTo(topX-2.3*lid,topY);c.lineTo(topX,topY+.6*lid);c.lineTo(6.8,0);c.closePath()
+      c.fillStyle='#4e433a';c.fill();c.lineWidth=.8;c.strokeStyle='#2c211999';c.stroke()
       if(lid>.25){
-        round(c,-11,-10*lid,19,8*lid,'#4e726b',1)
-        c.fillStyle='#a8b999';c.fillRect(-8,-8*lid,9,lid);c.fillRect(-8,-5*lid,12,lid)
+        c.beginPath();c.moveTo(5.6,-.9);c.lineTo(topX-2.3*lid,topY+.8*lid);c.lineTo(topX-1*lid,topY+1.4*lid);c.lineTo(6.1,-.3);c.closePath()
+        c.fillStyle='#7fb5a8';c.fill()
+        c.beginPath();c.moveTo(5.8,-1.8*lid);c.lineTo(topX-2.1*lid,topY+2.4*lid);c.lineWidth=1;c.strokeStyle='#bfe0c4cc';c.stroke()
       }
     }
-    round(c,-15,0,27,3,'#705e46',1)
     c.restore()
   }
   if(p.planningNote)drawProfileBook(c,hands.shared)
@@ -713,11 +796,13 @@ export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time
     }
     if(legArt&&p.workGesture){
       const near=arms[shoulderSide===1?1:0]
-      // The cloak covers the upper arm. Only the last part of the cuff reaches above it.
-      const sleeve={x:near.wrist.x-5*near.aim.x,y:near.wrist.y-5*near.aim.y}
-      const cuff={x:near.wrist.x-2.5*near.aim.x,y:near.wrist.y-2.5*near.aim.y}
-      paintedFabric(c,sleeve,cuff,near.wrist,[2.3,2.1,1.9],cloth,'#513223a8')
-      paintedGrip(c,near.hand,near.aim,skin,true,keyPlaneTilt)
+      if(Math.abs(near.hand.x)>10.5||near.hand.y<-39){
+        // Only draw a cuff past the cloak when the near arm actually clears the back edge.
+        const sleeve={x:near.wrist.x-5*near.aim.x,y:near.wrist.y-5*near.aim.y}
+        const cuff={x:near.wrist.x-2.5*near.aim.x,y:near.wrist.y-2.5*near.aim.y}
+        paintedFabric(c,sleeve,cuff,near.wrist,[2.3,2.1,1.9],cloth,'#513223a8')
+        paintedGrip(c,near.hand,near.aim,skin,true,keyPlaneTilt)
+      }
     }
     paintHead()
   }

@@ -38,12 +38,13 @@ export function officeActorSupport<T extends OfficePose>(scene:OfficeScene,actor
    const typing=!p.rising&&gesture.kind==='type'
    const tap=typing&&workTime>0?Math.sin(workTime*9)*gesture.reach:0
    const grip=p.rising?Math.max(0,Math.min(1,((p.seatBlend??0)-.35)/.65)):1
-   const stool=roomDesktopWorkpoints(floor,scene.width,'terminal')[0]
-   const stoolHeight=stool?.seatY!==undefined&&scale>0?(stool.feet.y-stool.seatY)/scale:18
-   return {...pose,sit:true,seatHeight:stoolHeight,seatBack:false,face:actor.x<scene.width*.625?1:-1,workBack:false,
+   const face:1|-1=actor.x<scene.width*.625?1:-1
+   const stoolHeight=17
+   const fx=face*(12.5*grip+2*(1-grip)),nx=face*(9.5*grip+1*(1-grip))
+   return {...pose,sit:true,seatHeight:stoolHeight,seatBack:false,face,workBack:false,
     cup:false,mug:false,hand:false,wave:false,scratch:false,lean:0,hop:0,objectAction:undefined,typing:animateWork&&typing,
     workGesture:{...gesture,kind:typing||p.rising?'type':'focus',profile:true,notebook:true},
-    supportHands:grip?{left:{x:-7,y:-21+(24-stoolHeight)*grip+tap},right:{x:7,y:-21+(24-stoolHeight)*grip-tap}}:undefined}
+    supportHands:grip?{left:{x:fx,y:-21.5+tap},right:{x:nx,y:-20.5-tap}}:undefined}
   }
   return {...pose,sit:false,typing:false,workGesture:undefined,supportHands:undefined}
  }
@@ -74,11 +75,11 @@ export function officeActorSupport<T extends OfficePose>(scene:OfficeScene,actor
  const workPose={...actor.pose,...p,...(floor.desktopArt?{hand:false,wave:false}:{})}
  const gesture=officeWorkGesture({...actor,pose:workPose},kind,workTime,true,floor.desktopArt)
  if(!gesture)return {...pose,typing:false,workGesture:undefined,supportHands:undefined}
- const reach=gesture.reach,action=gesture.kind,span=center.span
+ const reach=gesture.reach,action=gesture.kind,span=floor.desktopArt&&(kind==='build'||kind==='terminal'||kind==='research')?center.span*.74:center.span
  const left={x:center.x-span,y:center.y},right={x:center.x+span,y:center.y}
  if(action==='mouse'){right.x+=(floor.desktopArt?13:6)*scale*reach;right.y+=scale*reach}
- if(action==='adjust'){right.x+=7*scale*reach;right.y-=8*scale*reach}
- if(action==='tune'){right.x+=(4+2*Math.sin(gesture.progress*4*Math.PI))*scale*reach;right.y-=8*scale*reach}
+ if(action==='adjust'){right.x+=(floor.desktopArt?4:7)*scale*reach;right.y-=(floor.desktopArt?5:8)*scale*reach}
+ if(action==='tune'){right.x+=(floor.desktopArt?2+1.5*Math.sin(gesture.progress*4*Math.PI):4+2*Math.sin(gesture.progress*4*Math.PI))*scale*reach;right.y-=(floor.desktopArt?5:8)*scale*reach}
  if(action==='inspect'){right.x+=4*scale*reach;right.y-=(floor.desktopArt?11:7)*scale*reach}
  if(action==='note'){right.x+=(floor.desktopArt?3+3*Math.sin(gesture.progress*6*Math.PI):3)*scale*reach;right.y-=2*scale*reach}
  if(action==='page'){right.x-=span*2*reach;right.y-=(floor.desktopArt?7:3)*scale*reach}
