@@ -24,7 +24,7 @@ export function officeSeasonalActivity(date: Date): OfficeSeasonalActivity {
 }
 
 export function officeSeasonalObjects(floor: OfficeFloor, width: number, date: Date) {
-  if (floor.kind !== 'break') return []
+  if (floor.kind !== 'break' || floor.desktopArt) return []
   const activity = officeSeasonalActivity(date)
   return [{kind:activity.action,label:activity.label,x:width*.12,y:floor.y+(floor.height??width*.5625)*.79}]
 }

@@ -51,3 +51,14 @@ test('initial small-room staging leaves the occupied lead nook clear before the 
  assert.equal(s.floors.find(f=>f.kind==='team')!.room,'room-stations')
  for(let i=0;i<people.length;i++)for(let j=0;j<i;j++)assert.ok(Math.abs(people[i].x-people[j].x)>=48||Math.abs(people[i].y-people[j].y)>=60,'initial bodies are clear, not just later cached positions')
 })
+test('Desktop idle root lead stands calmly at the Lead table without a forced reading book',()=>{
+ const source=snapshot('idle')
+ const desktop=buildOfficeScene([source],'session',false,new Map(),450,new Set(),[],{},true)
+ const actor=desktop.actors.find(a=>a.key===officeKey('s','lead'))!
+ assert.equal(actor.zone,'lounge');assert.equal(actor.stand,true);assert.equal(actor.objectAction,undefined)
+ assert.equal(actor.activity,'At the Lead table')
+ for(const t of [0,1.5,12,24]){
+  const life=officeLife(actor,t)
+  assert.equal(life.stand,true);assert.equal(life.objectAction,undefined);assert.equal(life.doze,false);assert.equal(life.walk,false);assert.equal(life.dx,0)
+ }
+})

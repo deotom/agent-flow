@@ -67,7 +67,6 @@
 
 .of-resting-muted{background:#ede5d0d9;color:#655e50;border:1px solid #b6ae98;font-size:9px}
 .of-board[data-compact="true"]{left:36.5%;width:27%;background:linear-gradient(135deg,#2c3b36,#172b2c);border:3px solid #8f6037;border-radius:3px;box-shadow:0 2px 4px #1b130f80;color:#e9f2df;z-index:1}.of-board[data-compact="true"] .of-board-inner{padding:5cqh 5cqw}
-.of-work-station{position:absolute;transform:translate(-50%,-100%);z-index:4;pointer-events:none;padding:3px 5px;border:1px solid #d2ac68;border-radius:5px;background:#263e38ed;color:#fff0cb;font:9px/1.2 "Segoe UI",sans-serif;white-space:nowrap;box-shadow:0 2px 4px #17130e60}
 .of-view{position:relative}
 .of-scroll{overflow-anchor:none}
 .of-building{contain:layout paint}
@@ -78,6 +77,7 @@
 @keyframes of-peek-in{from{opacity:0;transform:translateX(8px)}to{opacity:1;transform:translateX(0)}}
 .of-break-peek-header>.of-break-overflow{position:static;right:auto;bottom:auto;flex:none}
 .of-break-peek .of-agent[data-edge=end]>.of-tag{left:auto;right:0;transform:none}
+.of-break-peek .of-agent .of-card{top:auto;bottom:100%;margin-bottom:2px}
 .of-alert-beacon{position:absolute;z-index:3;width:22px;height:17px;pointer-events:none;transform:translateX(-50%)}.of-alert-beacon>b{position:absolute;inset:3px 4px 1px;border:1px solid #eac7a0;border-radius:8px 8px 3px 3px;background:linear-gradient(90deg,#752b2c,#e55d4f,#8b292d);box-shadow:0 0 9px #f2675255}.of-alert-beacon:before{content:'';position:absolute;top:0;left:3px;right:3px;height:4px;background:#6e5140;border:1px solid #ba9569;border-radius:3px}.of-alert-beacon>i{position:absolute;left:-30px;top:-28px;width:82px;height:82px;border-radius:50%;background:conic-gradient(from 0deg,transparent 0 265deg,#f55c4315 280deg,#ff705355 305deg,transparent 325deg);animation:of-beacon-turn 2.8s linear infinite}.of-view[data-motion=false] .of-alert-beacon>i{animation-play-state:paused}@keyframes of-beacon-turn{to{transform:rotate(360deg)}}
 .of-construction{position:absolute;left:2%;width:87%;z-index:6;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;box-sizing:border-box;border:1px solid #bc9753;border-radius:5px;background:repeating-linear-gradient(90deg,#27342df5 0 31px,#34433bf5 32px 33px);color:#f6dfad;opacity:clamp(0,calc((1 - var(--build-progress))*5),1);pointer-events:none}.of-construction>strong{font-size:13px}.of-construction>span{max-width:80%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px}.of-construction>i,.of-construction>b{position:absolute;left:0;right:0;height:8px;background:repeating-linear-gradient(135deg,#d2ac55 0 9px,#384237 9px 18px)}.of-construction>i{top:0}.of-construction>b{bottom:0}
 .of-art-room-stations,.of-art-room-stations-large{background-image:url('./assets/room-stations.webp')}
@@ -89,7 +89,7 @@
 .of-workbench[data-kind="research"]{background-position:0 0}.of-workbench[data-kind="build"]{background-position:100% 0}.of-workbench[data-kind="terminal"]{background-position:0 100%}.of-workbench[data-kind="quality"]{background-position:100% 100%}
 .of-workbench[data-active="true"],.of-view .of-workbench:hover,.of-view .of-workbench:focus-visible{filter:brightness(1.06) saturate(1.1) drop-shadow(0 0 3px var(--station-accent))}
 .of-workbench>span{position:absolute;top:0;left:50%;transform:translate(-50%,-100%);padding:2px 4px;border:1px solid #a78752;border-radius:4px;background:#293c32e8;color:#f8e9c9;font:8px/1.2 "Segoe UI",sans-serif;white-space:nowrap;pointer-events:none}.of-workbench>span b{color:#cceba8}
-.of-workbench>span{opacity:0;transition:opacity .15s}.of-workbench:hover>span,.of-workbench:focus-visible>span{opacity:1}.of-work-station{display:none}
+.of-workbench>span{opacity:0;transition:opacity .15s}.of-workbench:hover>span,.of-workbench:focus-visible>span{opacity:1}
 .of-workbench>i{position:absolute;right:13%;top:30%;width:4px;height:4px;border-radius:50%;background:#b9ed8c;box-shadow:0 0 5px #b9ed8c;pointer-events:none}
 .of-view[data-motion="true"] .of-workbench[data-active="true"]>i{animation:of-station-light 2s ease-in-out infinite alternate}
 @keyframes of-station-light{from{opacity:.55;box-shadow:0 0 3px #b9ed8c}to{opacity:.95;box-shadow:0 0 7px #b9ed8c}}

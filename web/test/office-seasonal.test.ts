@@ -16,6 +16,7 @@ test('activities follow the local calendar and seasons without changing real job
   const floor={id:'break',kind:'break' as const,y:300,height:250,title:'Team break',color:'#fff',sessionId:'s',subtitle:'',actorKeys:[]}
   const [object]=officeSeasonalObjects(floor,450,new Date(2026,3,13,12))
   assert.equal(object.kind,'water');assert.equal(object.x,54);assert.equal(object.y,497.5)
+  assert.deepEqual(officeSeasonalObjects({...floor,desktopArt:true},450,new Date(2026,3,13,12)),[])
   assert.deepEqual(officeSeasonalObjects({...floor,kind:'team'},450,new Date()),[])
 })
 

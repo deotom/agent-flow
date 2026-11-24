@@ -6,6 +6,7 @@ const scene={floors:[{id:'office',kind:'team'},{id:'rest',kind:'break',annexOf:'
 const actor={floorId:'office',zone:'lounge',parentKey:null,agent:{role:'lead'}} as OfficeActor
 it('uses the actual floor to distinguish lead nook, garden, private lounge, canteen and lift',()=>{
  assert.equal(officeActorLocation(actor,scene),'resting in the lead reading nook')
+ assert.equal(officeActorLocation(actor,{...scene,floors:[{id:'office',kind:'team',desktopArt:true},...scene.floors.slice(1)]} as OfficeScene),'at the Lead table')
  assert.equal(officeActorLocation({...actor,floorId:'garden'},scene),'in the garden')
  assert.equal(officeActorLocation({...actor,floorId:'garden',party:true},scene),'celebrating in the party garden')
  assert.equal(officeActorLocation({...actor,floorId:'rest'},scene),'in the private break room')

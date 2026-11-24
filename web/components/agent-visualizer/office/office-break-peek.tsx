@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, type CSSProperties, type RefObject } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import type { OfficeActor, OfficeFloor, OfficeLeisureAction, OfficePoint } from '../../../lib/office-types'
 import { officeLeisureObjects, OFFICE_OBJECT_NAMES } from '../../../lib/office-leisure'
 import { officeSeasonalObjects } from '../../../lib/office-seasonal'
@@ -24,6 +24,7 @@ interface OfficeBreakPeekProps {
 /** A view through the interior door; it occupies the main room's existing bounds. */
 export function OfficeBreakPeek({ floor, width, buildingHeight, actors, canvasRef, onClose, onSelect, onOpenTeam, onObject, agentRef, now, selectedKey,focusOnOpen=true }: OfficeBreakPeekProps) {
   const back=useRef<HTMLButtonElement>(null)
+  const [hoveredKey,setHoveredKey]=useState<string|null>(null)
   useEffect(()=>{if(focusOnOpen)back.current?.focus()},[focusOnOpen])
   const height = floor.height ?? width * .5625
   const residents = actors.filter(actor => actor.floorId === floor.id && !actor.hidden)
@@ -47,11 +48,18 @@ export function OfficeBreakPeek({ floor, width, buildingHeight, actors, canvasRe
       onClick={() => onObject(object)}><span>{object.label}</span></button>)}
     {residents.map(actor => {
       const ai = [actor.runtimeName, actor.agent.model].filter(Boolean).join(' · ')
+      const role = actor.agent.role === 'lead' ? 'Lead' : actor.pod ? 'Sub-lead' : 'Agent'
       return <button key={actor.key} ref={agentRef?.(actor.key)} type="button" className="of-agent" data-zone="lounge" data-edge={actor.x>width*.55?'end':'start'} data-status={actor.agent.status} data-selected={selectedKey === actor.key}
         aria-pressed={selectedKey === actor.key} aria-label={`${actor.agent.name}, ${ai}, ${actor.activity}, resting in the break room`}
         style={{ left: `${(actor.x - 22) / width * 100}%`, top: `${(actor.y - floor.y - 72) / height * 100}%`, width: `${44 / width * 100}%`, height: `${75 / height * 100}%`,opacity:actor.pose?.opacity }}
-        title={`${actor.agent.name} · ${ai} · ${actor.activity}`} onClick={() => onSelect(actor.sessionId, actor.agent.id)}>
+        onMouseEnter={()=>setHoveredKey(actor.key)} onMouseLeave={()=>setHoveredKey(null)} onFocus={()=>setHoveredKey(actor.key)} onBlur={()=>setHoveredKey(null)}
+        onClick={() => onSelect(actor.sessionId, actor.agent.id)}>
         <span className="of-tag" aria-hidden="true" data-zone="lounge" data-failed={actor.agent.status === 'failed'} style={{ '--team': actor.team?.color ?? floor.color } as CSSProperties}>{actor.agent.status === 'failed' && <b>✕</b>}{actor.agent.name}</span>
+        <span className="of-card" aria-hidden="true" data-visible={hoveredKey === actor.key && selectedKey !== actor.key}>
+          <strong>{actor.agent.name}</strong>
+          <span>{role} · {ai}</span>
+          <span className="of-card-activity">{actor.activity}</span>
+        </span>
       </button>
     })}
   </section>

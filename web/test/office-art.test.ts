@@ -220,7 +220,7 @@ it('lengthens only the shins on a tall Terminal stool and keeps its boots on the
   const legs={width:768,height:512} as HTMLImageElement
   officeAvatarLegAtlases.set(parts,legs)
   const painter=ctx()
-  drawOfficeAvatar(painter,officeAppearance(0),0,0,0,{sit:true,workBack:true,seatHeight:28},parts,true)
+  drawOfficeAvatar(painter,officeAppearance(0),0,0,0,{sit:true,workBack:true,seatHeight:28},parts)
   const layers=painter.calls.filter(call=>call.op==='image')
   const legLayers=layers.filter(call=>call.args[0]===legs)
   assert.equal(legLayers.length,3,'thighs, shins and boots are separate bands')
@@ -241,7 +241,7 @@ it('keeps the rear stool legs out of upright, early rise and side-facing poses',
     {sit:true,objectAction:'book'}, {sit:true,workBack:true,seatProfile:true}]
   for(const pose of poses){
     const painter=ctx()
-    drawOfficeAvatar(painter,officeAppearance(0),0,0,0,{seatHeight:28,...pose},parts,true)
+    drawOfficeAvatar(painter,officeAppearance(0),0,0,0,{seatHeight:28,...pose},parts)
     assert.ok(!painter.calls.some(call=>call.op==='image'&&call.args[0]===legs&&call.args[1]===256&&Number(call.args[2])<256))
   }
 })
@@ -669,4 +669,26 @@ it('dresses the Desktop café shopkeeper in painted overalls and draws seamless 
   }
   assert.ok(chatCalls.length>0,'paired coworkers emit the seamless parchment chat bubble')
   assert.ok(!chatCalls.some(call=>call.fill==='#fffaf0'))
+})
+it('draws lunch eating trays after avatars and keeps Desktop ambient fireflies/butterflies/confetti clear of the lift shaft',()=>{
+  const {parts}=paintedWardrobeAtlas()
+  const props={width:1536,height:1024} as HTMLImageElement
+  const roomArt={shell:{width:1000,height:721} as HTMLImageElement,canteenShell:{width:1000,height:721} as HTMLImageElement,props}
+  const desktopGarden={id:'lounge',sessionId:null,title:'Garden',subtitle:'',color:'#fff',kind:'lounge' as const,desktopArt:true,y:0,height:195,actorKeys:['diner']}
+  const diner={key:'diner',sessionId:'s',agent:{status:'done' as const,role:'worker' as const,runtime:null,activities:[]},task:null,parentKey:null,
+    appearance:officeAppearance(0),floorId:'lounge',zone:'lounge' as const,stand:false,party:true,x:140,y:145} as unknown as OfficeScene['actors'][number]
+  const sc={width:450,height:500,floors:[desktopGarden],actors:[diner],quietTeams:[],totalAgents:1,finishedCount:1}
+  const painter=ctx()
+  drawOfficeFrame(painter,sc,options({motion:true,time:3,date:new Date(2026,5,1,21),avatarArt:parts,roomArt,dailyArt:{kind:'lunch',delivery:false,cleanup:false,guests:[{actorKey:'diner',kind:'lunch',phase:'eating',floorId:'lounge',x:140,y:145,seat:0}]}}))
+  const lastAvatar=painter.calls.findLastIndex(call=>call.op==='image'&&call.args[0]===parts)
+  const trayCall=painter.calls.findLastIndex(call=>call.op==='image'&&call.args[0]===props&&call.args[1]===1024+512*.10)
+  assert.ok(lastAvatar>=0&&trayCall>lastAvatar,'lunch eating tray is painted in front of the avatar')
+  assert.ok(painter.calls.some(call=>call.op==='rect'&&call.args[0]===0&&call.args[1]===0&&Math.abs(Number(call.args[2])-450*.81)<1e-6&&call.args[3]===195),'Desktop garden ambient effects clip left of the lift shaft')
+  const leadTeamFloor={id:'f',sessionId:'s',title:'Team',subtitle:'',color:'#fff',kind:'team' as const,desktopArt:true,y:200,height:300,actorKeys:['lead']}
+  const idleLead={key:'lead',sessionId:'s',agent:{status:'idle' as const,role:'lead' as const,runtime:null,activities:[]},task:null,parentKey:null,
+    appearance:officeAppearance(0),floorId:'f',zone:'lounge' as const,stand:true,x:300,y:380} as unknown as OfficeScene['actors'][number]
+  const idleOut=ctx()
+  drawOfficeFrame(idleOut,scene([leadTeamFloor],[idleLead]),options({motion:false,time:3,avatarArt:parts}))
+  assert.ok(!idleOut.calls.some(call=>call.fill==='#efe0b8'),'idle Desktop root lead does not hold a forced book at the Lead table')
+  assert.ok(!idleOut.calls.some(call=>call.fill==='#fff0cf'),'idle Desktop root lead does not hold an automatic mug at the Lead table')
 })

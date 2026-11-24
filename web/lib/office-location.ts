@@ -7,6 +7,6 @@ export function officeActorLocation(actor:OfficeActor,scene:OfficeScene):string 
  if(floor?.room==='room-canteen')return 'in the canteen'
  if(floor?.kind==='lounge')return actor.party?'celebrating in the party garden':'in the garden'
  if(floor?.annexOf)return 'in the private break room'
- if(floor?.kind==='team'&&actor.zone==='lounge'&&actor.agent.role==='lead'&&!actor.parentKey)return 'resting in the lead reading nook'
+ if(floor?.kind==='team'&&actor.zone==='lounge'&&actor.agent.role==='lead'&&!actor.parentKey)return floor.desktopArt?'at the Lead table':'resting in the lead reading nook'
  return 'in the office'
 }

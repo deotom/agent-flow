@@ -40,6 +40,16 @@ it('keeps the painted Desktop break-room door free of a teacup badge',()=>{
  const web=renderToStaticMarkup(<OfficeView {...props} scope="session" snapshots={[snap]}/>)
  assert.ok(web.includes('☕ 1'),'the non-desktop door keeps its count badge')
 })
+it('renders Desktop workbench labels, working counts and board active state without dead work-station overlay',()=>{
+ const snap=team('plan','Workshop')
+ const html=onDesktop(()=>renderToStaticMarkup(<OfficeView {...props} scope="session" snapshots={[snap]}/>))
+ assert.ok(html.includes('class="of-board" data-compact="true" data-painted="false" data-active="true"'))
+ for(const label of ['Research','Build','Review','Terminal']){
+  assert.ok(html.includes(`aria-label="${label}, Workshop, 0 working"`),label)
+  assert.ok(html.includes(`<span>${label}</span>`),label)
+ }
+ assert.ok(!html.includes('of-work-station'))
+})
 it('paints desk lights on a backdrop canvas under wall signs and boards',()=>{
  const html=onDesktop(()=>renderToStaticMarkup(<OfficeView {...props} scope="session" snapshots={[team('lights','Workshop')]}/>))
  const lights=html.indexOf('class="of-desk-lights"'),board=html.indexOf('class="of-board"'),foreground=html.indexOf('aria-label="Office with')

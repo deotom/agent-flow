@@ -85,7 +85,10 @@ function officeLifeFrame(actor: OfficeActor, time: number, context: OfficeLifeCo
   if (context.tripActive || actor.pose?.walk || actor.pose?.climb) return still
   if(actor.zone==='lounge'&&context.objectAction&&(RESTING.has(status)||status==='failed'))return objectFrame(context.objectAction,time,actor.party)
   // Idle leads remain seated at their report nook rather than falling asleep at a workstation.
-  if(actor.zone==='lounge'&&status==='idle'&&actor.agent.role==='lead'&&!actor.agent.parentId&&!actor.parentKey&&!actor.party)return objectFrame(actor.objectAction==='coffee'?'coffee':'book',time)
+  if(actor.zone==='lounge'&&status==='idle'&&actor.agent.role==='lead'&&!actor.agent.parentId&&!actor.parentKey&&!actor.party){
+    if(actor.stand&&!actor.objectAction)return frame({stand:true,turn:time?Math.sin(time*.5+officeSeed(actor.key)*6)*.45:0})
+    return objectFrame(actor.objectAction==='coffee'?'coffee':'book',time)
+  }
   if(!time)return actor.zone==='lounge'&&actor.objectAction?objectFrame(actor.objectAction,0,actor.party):still
   if (context.greet) return frame({ wave: true, turn: .5 })
   const s = officeSeed(actor.key)

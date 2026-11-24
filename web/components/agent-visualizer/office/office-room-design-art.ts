@@ -4,7 +4,7 @@ import {OFFICE_WORKROOM_WALL_CROP,OFFICE_WORKROOM_WALL_DEPTH,roomDesignFor,roomD
 import {OFFICE_WORKROOM_LIFT_DEPTH} from '../../../lib/office-navigation'
 import {officePaintedStationOccupancy} from '../../../lib/office-station-activity'
 
-export interface OfficeRoomArt {shell:CanvasImageSource;canteenShell?:CanvasImageSource;props:CanvasImageSource;breakRoom:CanvasImageSource;stations?:CanvasImageSource;stationAngles?:CanvasImageSource;worldStations?:CanvasImageSource;leadTable?:CanvasImageSource;leadRug?:CanvasImageSource;planningDesk?:CanvasImageSource}
+export interface OfficeRoomArt {shell:CanvasImageSource;canteenShell?:CanvasImageSource;props:CanvasImageSource;breakRoom?:CanvasImageSource;stations?:CanvasImageSource;stationAngles?:CanvasImageSource;worldStations?:CanvasImageSource;leadTable?:CanvasImageSource;leadRug?:CanvasImageSource;planningDesk?:CanvasImageSource}
 type Ctx=CanvasRenderingContext2D
 const liftFloor={left:.832,width:.137,soil:.955}
 /** Atlas uses equal cells: studio, operations, research / quality, reading nook, buffet. */

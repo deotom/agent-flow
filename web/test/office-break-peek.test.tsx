@@ -21,3 +21,9 @@ it('counts physical residents while a source-room actor is away for lunch',()=>{
  assert.ok(html.includes('1 here / 2 assigned'))
  assert.ok(html.includes('Team Board'))
 })
+it('omits seasonal phantom objects and includes hover cards for Desktop break rooms',()=>{
+ const html=renderToStaticMarkup(<OfficeBreakPeek floor={{...floor,desktopArt:true}} width={450} buildingHeight={1000} actors={[actor]} canvasRef={{current:null}} onClose={()=>{}} onSelect={()=>{}} onOpenTeam={()=>{}} onObject={()=>{}} now={new Date(2026,10,13,12).getTime()} selectedKey={null}/>)
+ assert.ok(!html.includes('Cool season')&&!html.includes('Songkran'))
+ assert.ok(html.includes('Reading corner')&&html.includes('Coffee break'))
+ assert.ok(html.includes('class="of-card"')&&html.includes('Agent · Codex · Sol'))
+})

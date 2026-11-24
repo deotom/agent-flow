@@ -1,8 +1,8 @@
 import {it} from 'node:test'
 import assert from 'node:assert/strict'
-import {drawOfficeDailyArt,type OfficeDailyVisualState} from '../components/agent-visualizer/office/office-daily-art'
+import {drawOfficeDailyArt,drawOfficeDailyEatingTrays,type OfficeDailyVisualState} from '../components/agent-visualizer/office/office-daily-art'
 import type {OfficeRoomArt} from '../components/agent-visualizer/office/office-room-design-art'
-import type {OfficeFloor,OfficeScene} from '../lib/office-types'
+import type {OfficeActor,OfficeFloor,OfficeScene} from '../lib/office-types'
 import {skyWeather} from '../lib/office-sky'
 const surface:OfficeFloor={id:'lounge',sessionId:null,title:'Garden',subtitle:'',color:'#abc',y:0,height:253,actorKeys:[],kind:'lounge'}
 const canteen:OfficeFloor={...surface,id:'daily-canteen',y:253,room:'room-canteen',kind:'break'}
@@ -56,4 +56,18 @@ it('keeps Desktop clear-lunch cues on the café counter without covering the tre
  assert.ok(!lunch.some(call=>Number(call[5])<450*.25&&Number(call[7])>=450*.15),'no legacy buffet covers the painted tree and bench')
  const coffee=render(9,0,{kind:'coffee',weather:'clear'},[desktopSurface,desktopBreak])
  assert.ok(!coffee.some(call=>Number(call[6])>=desktopBreak.y&&Number(call[5])<450*.2),'no legacy thermos covers the painted break-room bookshelf')
+})
+it('draws eating trays with depth scaling and skips hidden or lifted diners, while paintTrays:false keeps buffet meal cue only',()=>{
+ const diner={key:'diner',floorId:'lounge',x:180,y:160,hidden:false,pose:{}} as OfficeActor
+ const hidden={key:'hidden',floorId:'lounge',x:210,y:160,hidden:true,pose:{}} as OfficeActor
+ const inLift={key:'lifted',floorId:'lounge',x:240,y:160,hidden:false,pose:{inLift:true}} as OfficeActor
+ const calls:unknown[][]=[]
+ const ctx={drawImage:(...args:unknown[])=>calls.push(args),save(){},restore(){},fillRect(){}} as unknown as CanvasRenderingContext2D
+ const sc:OfficeScene={width:450,height:800,floors:[surface],actors:[diner,hidden,inLift],quietTeams:[],totalAgents:3,finishedCount:0}
+ drawOfficeDailyEatingTrays(ctx,sc,new Set(['diner','hidden','lifted']),art,()=>0.6)
+ assert.equal(calls.length,1)
+ assert.ok(Math.abs(Number(calls[0][7])-26*0.6)<1e-6&&Math.abs(Number(calls[0][8])-9.5*0.6)<1e-6)
+ calls.length=0
+ drawOfficeDailyArt(ctx,sc,new Date(2026,10,14,10,0),{weather:'clear',eatingKeys:new Set(['diner']),paintTrays:false},art)
+ assert.ok(calls.length>0&&!calls.some(call=>Number(call[5])===180-13))
 })

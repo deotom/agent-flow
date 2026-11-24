@@ -58,8 +58,9 @@ export function drawOfficeOutingArt(c:Ctx,scene:OfficeScene,time:number,art:Offi
    cartServed=true
   }
   if(guest.action==='drink'&&guest.phase==='eating'&&floor.kind!=='lounge'){
-   const x=guest.x+w*.034,y=guest.y-w*.045
-   if(y>=0&&x+w*.02<=w)detail(c,art,'thermos',x,y,w*.02,w*.039)
+   const depth=Number.isFinite(guest.scale)?Math.max(.5,Math.min(1.1,guest.scale!)):1
+   const x=guest.x+w*.034*depth,y=guest.y-w*.045*depth
+   if(y>=0&&x+w*.02*depth<=w)detail(c,art,'thermos',x,y,w*.02*depth,w*.039*depth)
   }
  }
 }

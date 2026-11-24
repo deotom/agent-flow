@@ -124,7 +124,7 @@ export interface OfficePaintOptions {
   /** Paint the unlit-station overlay on this canvas. OfficeView paints it on a backdrop canvas under wall signs. Default true. */
   paintDeskLights?:boolean
   exchange?:import('./office-communication').OfficeWorkExchange|null
-  roomArt?:{shell:CanvasImageSource;props:CanvasImageSource;breakRoom:CanvasImageSource;canteenShell?:CanvasImageSource;stations?:CanvasImageSource;stationAngles?:CanvasImageSource;worldStations?:CanvasImageSource}|null
+  roomArt?:{shell:CanvasImageSource;props:CanvasImageSource;breakRoom?:CanvasImageSource;canteenShell?:CanvasImageSource;stations?:CanvasImageSource;stationAngles?:CanvasImageSource;worldStations?:CanvasImageSource;leadTable?:CanvasImageSource;leadRug?:CanvasImageSource;planningDesk?:CanvasImageSource}|null
   avatarArt?:CanvasImageSource|null
   dailyArt?:OfficeDailyVisual
   lift?:OfficeLiftVisual

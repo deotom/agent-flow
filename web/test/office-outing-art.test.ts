@@ -88,3 +88,11 @@ it('places Desktop daytime service parcels on the painted café counter rather t
  assert.equal(calls.length,1)
  assert.ok(Number(calls[0][5])>=450*.52&&Number(calls[0][5])<=450*.64,'Desktop service parcel lands on the café countertop')
 })
+it('scales the indoor drink thermos with depth without clipping',()=>{
+ const base=render([guest({action:'drink',phase:'eating',night:true,floorId:'home',x:180,y:400})])
+ const scaled=render([guest({action:'drink',phase:'eating',night:true,floorId:'home',x:180,y:400,scale:.6})])
+ assert.equal(base.length,1);assert.equal(scaled.length,1)
+ assert.ok(Math.abs(Number(scaled[0][7])-Number(base[0][7])*.6)<1e-6)
+ assert.ok(Math.abs(Number(scaled[0][8])-Number(base[0][8])*.6)<1e-6)
+ assert.ok(Number(scaled[0][5])<Number(base[0][5])&&Number(scaled[0][6])>Number(base[0][6]))
+})

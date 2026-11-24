@@ -7,7 +7,7 @@ import { drawOfficeSky } from './office-sky-art'
 import { drawOfficeSeasonalRooms } from './office-seasonal-art'
 import { drawOfficeGarden, drawOfficeGardenActorShadow, gardenLampsOn } from './office-garden-art'
 import { drawOfficeInteriorDoors } from './office-door-art'
-import {drawOfficeDailyArt} from './office-daily-art'
+import {drawOfficeDailyArt,drawOfficeDailyEatingTrays} from './office-daily-art'
 import {drawOfficeCommunications} from './office-communication-art'
 import {officeRestConversations} from '../../../lib/office-communication'
 import {drawOfficeOutingArt,drawOfficeOutingParcel} from './office-outing-art'
@@ -25,8 +25,7 @@ import {drawOfficeVendor,drawOfficeShopQueue,officeVendorAvatarPose} from './off
 import {officeActorRenderScale} from '../../../lib/office-depth'
 import {officeVendorExchange,officeVendorCustomerApproaching} from '../../../lib/office-vendor'
 import {officeActorSupport,officeSeatFrame,officeStandsAtStation} from '../../../lib/office-support'
-import {agentWorkStation,officeStations} from '../../../lib/office-stations'
-import {roomDesktopWorkpoints} from '../../../lib/office-room-design'
+import {officeStations} from '../../../lib/office-stations'
 import {drawOfficeStation} from './office-station-art'
 import {drawOfficeRoomDeskLights} from './office-room-design-art'
 import {officeStationActivity} from '../../../lib/office-station-activity'
@@ -362,7 +361,7 @@ export const officePaintedWearScale={standing:32,seated:30,collar:-43} as const
 const paintedCloakFit={width:38,profileWidth:33,height:35,seatedHeight:31,top:-49} as const
 
 /** Layered character whose local origin is the seat/feet. */
-export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time:number,p:OfficeAvatarPose={},atlas?:CanvasImageSource|null,terminalStool=false) {
+export function drawOfficeAvatar(c:Ctx,a:OfficeAppearance,x:number,y:number,time:number,p:OfficeAvatarPose={},atlas?:CanvasImageSource|null) {
   c.save();c.translate(x,y)
   const art=a.kind==='human'?atlas:null
   const extraHeads=art?officeAvatarExtraHeadAtlases.get(art):undefined
@@ -916,17 +915,21 @@ function drawMood(c:Ctx,mood:OfficeMood,time:number){
 /** Bounded atmosphere: day butterflies and leaves or night fireflies; slow dust in rooms. */
 const DUST_CAP=20
 function drawAmbient(c:Ctx,scene:OfficeScene,time:number,night:boolean){
-  const w=scene.width,H=scene.floors.find(f=>f.kind==='lounge')?.height??0
+  const w=scene.width,surface=scene.floors.find(f=>f.kind==='lounge'),H=surface?.height??0,desktopGarden=Boolean(surface?.desktopArt)
   c.save()
   if(H&&night){
+    if(desktopGarden){c.save();c.beginPath();c.rect(0,0,w*.81,H);c.clip()}
     for(let i=0;i<6;i++){
-      const x=w*(.12+.14*i)+Math.sin(time*.5+i*1.7)*16,y=H*(.42+.05*(i%4))+Math.cos(time*.7+i)*8,a=.3+.35*(.5+.5*Math.sin(time*1.6+i*2.1))
+      const x=desktopGarden?w*(.08+.125*i)+Math.sin(time*.5+i*1.7)*12:w*(.12+.14*i)+Math.sin(time*.5+i*1.7)*16
+      const y=H*(.42+.05*(i%4))+Math.cos(time*.7+i)*8,a=.3+.35*(.5+.5*Math.sin(time*1.6+i*2.1))
       c.fillStyle=`rgba(255,236,140,${a*.3})`;c.beginPath();c.ellipse(x,y,5,5,0,0,Math.PI*2);c.fill()
       c.fillStyle=`rgba(255,240,160,${a})`;c.beginPath();c.ellipse(x,y,1.8,1.8,0,0,Math.PI*2);c.fill()
     }
+    if(desktopGarden)c.restore()
   } else if(H){
+    if(desktopGarden){c.save();c.beginPath();c.rect(0,0,w*.81,H);c.clip()}
     for(let i=0;i<2;i++){
-      const k=(time*.022+i*.5)%1,x=w*(.08+.84*k),y=H*(.36+.1*i)+Math.sin(time*1.3+i*3)*10,flap=Math.abs(Math.sin(time*12+i))
+      const k=(time*.022+i*.5)%1,x=w*((desktopGarden?.06:.08)+(desktopGarden?.70:.84)*k),y=H*(.36+.1*i)+Math.sin(time*1.3+i*3)*10,flap=Math.abs(Math.sin(time*12+i))
       c.fillStyle=i?'#f19bb8':'#f6c55a'
       c.beginPath();c.ellipse(x-2,y,.6+3*flap,3,0,0,Math.PI*2);c.ellipse(x+2,y,.6+3*flap,3,0,0,Math.PI*2);c.fill()
       c.fillStyle='#4b3025';c.fillRect(x-.5,y-2.5,1,5)
@@ -935,15 +938,18 @@ function drawAmbient(c:Ctx,scene:OfficeScene,time:number,night:boolean){
       const k=((time+i*4.5)%9)/9,x=w*(.1+.12*i)+Math.sin(k*Math.PI*4)*10+k*24,y=H*(.12+k*.5)
       c.globalAlpha=k>.85?(1-k)/.15:1;c.save();c.translate(x,y);c.rotate(Math.sin(k*Math.PI*6));c.fillStyle=i?'#9cbf55':'#d99a3e';c.beginPath();c.ellipse(0,0,3.2,1.6,0,0,Math.PI*2);c.fill();c.restore()
     }
+    if(desktopGarden)c.restore()
     c.globalAlpha=1
   }
   // Confetti over the lounge while any team is celebrating.
   if(H&&scene.actors.some(a=>a.party&&!a.hidden)){
+    if(desktopGarden){c.save();c.beginPath();c.rect(0,0,w*.81,H);c.clip()}
     const colors=['#ff7aa8','#7bc8ff','#ffd35a','#8be08b','#c89bff']
     for(let i=0;i<14;i++){
-      const k=((time*.18+i*.0714)%1),x=w*(.22+.7*((i*37%14)/14))+Math.sin(time*2+i)*8,y=H*(.05+k*.7)
+      const k=((time*.18+i*.0714)%1),x=w*((desktopGarden?.10:.22)+(desktopGarden?.66:.7)*((i*37%14)/14))+Math.sin(time*2+i)*8,y=H*(.05+k*.7)
       c.save();c.translate(x,y);c.rotate(time*3+i);c.globalAlpha=k>.85?(1-k)/.15:1;c.fillStyle=colors[i%colors.length];c.fillRect(-2,-1,4,2);c.restore()
     }
+    if(desktopGarden)c.restore()
     c.globalAlpha=1
   }
   let dust=0
@@ -952,7 +958,7 @@ function drawAmbient(c:Ctx,scene:OfficeScene,time:number,night:boolean){
     if(f.kind!=='team')continue
     const h=f.height??0
     for(let j=0;j<2&&dust<DUST_CAP;j++,dust++){
-      const k=(time*.015+officeSeed(`${f.id}${j}`))%1,x=w*(.08+.84*k),y=f.y+h*(.35+.25*j)+Math.sin(time*.4+j*2)*6
+      const k=(time*.015+officeSeed(`${f.id}${j}`))%1,x=w*((f.desktopArt?.06:.08)+(f.desktopArt?.72:.84)*k),y=f.y+h*(.35+.25*j)+Math.sin(time*.4+j*2)*6
       c.beginPath();c.ellipse(x,y,1.2,1.2,0,0,Math.PI*2);c.fill()
     }
   }
@@ -973,7 +979,8 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
   drawOfficeSky(c,scene,time,o.date)
   drawOfficeGarden(c,scene,o.date,time,daylight)
   drawOfficeSeasonalRooms(c,{...scene,floors:scene.floors.filter(f=>!f.desktopArt&&(!f.annexOf||!scene.floors.some(p=>p.id===f.annexOf)))},o.date,time)
-  drawOfficeDailyArt(c,scene,o.date,{kind:o.dailyArt?.kind,delivered:o.dailyArt?.delivery,cleanup:o.dailyArt?.cleanup,eatingKeys:new Set(o.dailyArt?.guests.filter(g=>g.phase==='eating'&&g.kind==='lunch').map(g=>g.actorKey))},o.roomArt)
+  const eatingKeys=new Set(o.dailyArt?.guests.filter(g=>g.phase==='eating'&&g.kind==='lunch').map(g=>g.actorKey))
+  drawOfficeDailyArt(c,scene,o.date,{kind:o.dailyArt?.kind,delivered:o.dailyArt?.delivery,cleanup:o.dailyArt?.cleanup,eatingKeys,paintTrays:false},o.roomArt)
   if(o.roomArt?.canteenShell&&o.paintDeskLights!==false)for(const floor of scene.floors){
     if(floor.desktopArt&&floor.kind==='team'&&!floor.constructing&&!floor.annexOf)drawOfficeRoomDeskLights(c,scene,floor,o.roomArt)
   }
@@ -1041,7 +1048,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     const floor=floorsById.get(actor.floorId)
     const inMeeting=Boolean(actor.pose?.meeting)
     const basePose={wardrobeTransition:o.wardrobeLooks?.get(actor.key),dressing:o.wardrobeLooks?.get(actor.key)?.dressing,wardrobe:officeWardrobeFor(wardrobeTheme,actor.appearance.slot,floor?.kind==='lounge'),sit:!moving&&!inMeeting&&!life.stand&&!actor.stand,walk:life.walk,typing:o.live&&life.typing&&!moving&&!inMeeting,hand:o.live&&waiting&&!inMeeting,
-      mug:!inMeeting&&actor.zone==='lounge'&&!moving&&(!life.objectAction||life.objectAction==='coffee'),objectAction:inMeeting?undefined:life.objectAction,lead:actor.agent.role==='lead'||actor.pod,cup:!inMeeting&&life.cup,stretch:inMeeting?0:life.stretch,lean:inMeeting?0:life.lean,doze:!inMeeting&&life.doze,
+      mug:!inMeeting&&actor.zone==='lounge'&&!moving&&(life.objectAction==='coffee'||(!life.objectAction&&!(floor?.desktopArt&&floor.kind==='team'&&actor.agent.role==='lead'&&!actor.parentKey))),objectAction:inMeeting?undefined:life.objectAction,lead:actor.agent.role==='lead'||actor.pod,cup:!inMeeting&&life.cup,stretch:inMeeting?0:life.stretch,lean:inMeeting?0:life.lean,doze:!inMeeting&&life.doze,
       slump:!inMeeting&&life.slump,scratch:!inMeeting&&life.scratch,wave:(inMeeting?false:life.wave)||interaction?.speaking,turn:interaction?(interaction.speaking ? .25 : -.2):life.turn,face:life.face,hop:inMeeting?0:life.hop,runtime:actor.agent.runtime,party:actor.party,...actor.pose,...sharedPoses.get(actor.key),...(interaction?{face:interaction.face}:{}),...(vendorExchange?.actorKey===actor.key?{face:1 as const,offer:.8,mug:false,hand:false,typing:false,objectAction:undefined,sit:false}:{}),climb:false}
     const seated=basePose.sit&&!officeStandsAtStation(floor,actor,basePose)
     const larger=!floor?.desktopArt&&o.avatarArt&&actor.appearance.kind==='human'&&!basePose.meeting&&!seated&&
@@ -1054,10 +1061,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     c.globalAlpha=(Number.isFinite(c.globalAlpha)?c.globalAlpha:1)*(actor.pose?.opacity??1);c.translate(actor.x+life.dx,actor.y);c.scale(actorScale,actorScale)
     if(floor?.desktopArt&&floor.kind==='lounge'&&!basePose.inLift)drawOfficeGardenActorShadow(c,daylight)
     const avatarPose=officeActorSupport(scene,actor,{stepLength:22*scale/actorScale,...basePose},actorScale,{x:actor.x+life.dx,y:actor.y},t,o.live)
-    const terminalStool=Boolean(floor?.desktopArt&&o.roomArt?.canteenShell&&avatarPose.sit&&avatarPose.seatHeight!==undefined&&
-      (actor.workStation??agentWorkStation(actor.agent))==='terminal'&&
-      roomDesktopWorkpoints(floor,scene.width,'terminal').some(({feet})=>Math.hypot(feet.x-actor.x,feet.y-actor.y)<.01))
-    const contact=drawOfficeAvatar(c,actor.appearance,0,0,t,{...avatarPose,workwear:floor?.desktopArt,acknowledgment:officeSelectionGesture(actor.key,avatarPose,o.selectionCue,o.time,o.live&&o.motion)},o.avatarArt,terminalStool)
+    const contact=drawOfficeAvatar(c,actor.appearance,0,0,t,{...avatarPose,workwear:floor?.desktopArt,acknowledgment:officeSelectionGesture(actor.key,avatarPose,o.selectionCue,o.time,o.live&&o.motion)},o.avatarArt)
     handFrames.set(actor.key,{x:actor.x+life.dx+contact.right.x*actorScale,y:actor.y+contact.right.y*actorScale})
     if(life.mood){c.translate(0,-life.hop);drawMood(c,life.mood,t)}
     c.restore()
@@ -1083,6 +1087,7 @@ export function drawOfficeFrame(c:Ctx,scene:OfficeScene,o:OfficePaintOptions):Ma
     const actor=scene.actors.find(a=>a.key===guest.actorKey)
     return guest.kind==='outing'&&guest.action&&actor?[{actorKey:actor.key,action:guest.action,phase:guest.phase,floorId:actor.floorId,x:actor.x,y:actor.y,night:guest.night??false,collected:guest.collected??false,handoff:vendorExchange?.actorKey===actor.key,scale:renderedScale(actor)/scale,hand:handFrames.get(actor.key)}]:[]
   }))
+  drawOfficeDailyEatingTrays(c,scene,eatingKeys,o.roomArt??null,renderedScale)
   drawOfficeShaft(c,scene,true,o.architectureArt,o.liftSurfaceOpen,o.lift,gardenLampsOn(o.date))
   if(crossing.length){
     // The open landing is in front of the jamb. Keep the far side of the aperture occluded.

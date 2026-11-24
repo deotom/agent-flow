@@ -1,4 +1,4 @@
-import type {OfficeScene} from '../../../lib/office-types'
+import type {OfficeActor,OfficeScene} from '../../../lib/office-types'
 import {drawOfficeRoomShell,drawRoomProp,type OfficeRoomArt} from './office-room-design-art'
 import {skyWeather,type Weather} from '../../../lib/office-sky'
 
@@ -9,6 +9,7 @@ export interface OfficeDailyVisualState {
  cleanup?:boolean
  weather?:Weather
  eatingKeys?:ReadonlySet<string>
+ paintTrays?:boolean
 }
 type Ctx=CanvasRenderingContext2D
 type LunchStage='delivery'|'meal'|'cleanup'|null
@@ -50,7 +51,7 @@ export function drawOfficeDailyArt(c:Ctx,scene:OfficeScene,date:Date,state:Offic
    c.drawImage(art.props,sw,sh+sh*.21,sw*.65,sh*.74,w*(x-.046),floor.y+h*.70-w*.095,w*.092,w*.105)
   }
   // Reuse the old painted wooden game table as two dining tables, covering its board with food.
-  for(const x of [.29,.62]){
+  if(art.breakRoom)for(const x of [.29,.62]){
    c.drawImage(art.breakRoom,280,327,165,73,w*x,floor.y+h*.70-w*.035,w*.16,w*.075)
    if(stage==='meal'){
     const p=art.props as CanvasImageSource&{naturalWidth?:number;naturalHeight?:number}
@@ -86,11 +87,17 @@ export function drawOfficeDailyArt(c:Ctx,scene:OfficeScene,date:Date,state:Offic
    c.drawImage(art.props,sw*2+sw*.74,sh+sh*.16,sw*.24,sh*.43,w*.105,floor.y+w*.29,w*.04,w*.072)
   }
  }
- if(state.eatingKeys)for(const actor of scene.actors){
-  if(actor.hidden||!state.eatingKeys.has(actor.key))continue
-  // A held painted food tray, attached to the actual animated body position.
-  const p=art.props as CanvasImageSource&{naturalWidth?:number;naturalHeight?:number}
-  const sw=(p.naturalWidth??1536)/3,sh=(p.naturalHeight??1024)/2
-  c.drawImage(art.props,sw*2+sw*.10,sh+sh*.36,sw*.55,sh*.15,actor.x-w*.027,actor.y-w*.044,w*.054,w*.02)
+ if(state.paintTrays!==false)drawOfficeDailyEatingTrays(c,scene,state.eatingKeys,art)
+}
+/** Held lunch tray in front of seated/resting diners, scaled with body depth. */
+export function drawOfficeDailyEatingTrays(c:Ctx,scene:OfficeScene,eatingKeys:ReadonlySet<string>|undefined,art:OfficeRoomArt|null,scaleFor?:(actor:OfficeActor)=>number){
+ if(!art||!eatingKeys?.size)return
+ const p=art.props as CanvasImageSource&{naturalWidth?:number;naturalHeight?:number;width?:number;height?:number}
+ const sw=(p.naturalWidth??p.width??1536)/3,sh=(p.naturalHeight??p.height??1024)/2
+ for(const actor of scene.actors){
+  if(actor.hidden||actor.pose?.inLift||!eatingKeys.has(actor.key))continue
+  const raw=scaleFor?scaleFor(actor):scene.width/450
+  const s=Number.isFinite(raw)&&raw>0?raw:scene.width/450
+  c.drawImage(art.props,sw*2+sw*.10,sh+sh*.36,sw*.55,sh*.15,actor.x-13*s,actor.y-22*s,26*s,9.5*s)
  }
 }
