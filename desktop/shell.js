@@ -108,4 +108,8 @@ window.addEventListener('message', async event => {
   source.postMessage(response, origin)
 })
 api.onState(render)
+api.onFocusAgent?.(target => {
+  if (!currentURL || !target || typeof target.sessionId !== 'string' || typeof target.agentId !== 'string' || !target.sessionId || !target.agentId) return
+  element('graph').contentWindow?.postMessage({ type: 'desktop:focus-agent', sessionId: target.sessionId, agentId: target.agentId }, currentURL)
+})
 act(api.state)

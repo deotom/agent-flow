@@ -11,16 +11,28 @@ const { pathToFileURL } = require('node:url')
 test('desktop preload exposes prompt and project invokes only in the main frame', async () => {
   let api
   const calls = []
+  const ipcListeners = new Map()
   const source = fs.readFileSync(path.resolve(__dirname, '../preload.cjs'), 'utf8')
   const run = isMainFrame => vm.runInNewContext(source, {
     process: { isMainFrame },
     require: () => ({ contextBridge: { exposeInMainWorld(_name, value) { api = value } },
-      ipcRenderer: { invoke: async (...args) => { calls.push(args); return 'result' } } }),
+      ipcRenderer: {
+        invoke: async (...args) => { calls.push(args); return 'result' },
+        on: (channel, handler) => ipcListeners.set(channel, handler),
+        removeListener: (channel, handler) => { if (ipcListeners.get(channel) === handler) ipcListeners.delete(channel) },
+      } }),
   })
   run(false); assert.equal(api, undefined)
   run(true)
   for (const method of ['t3Send', 't3Start', 'openProject', 'notify']) assert.equal(await api[method]({ value: method }), 'result')
   assert.deepEqual(calls, [['desktop:t3-send', { value: 't3Send' }], ['desktop:t3-start', { value: 't3Start' }], ['desktop:open-project', { value: 'openProject' }], ['desktop:notify', { value: 'notify' }]])
+  const focused = []
+  const offFocus = api.onFocusAgent(target => focused.push(target))
+  assert.equal(typeof ipcListeners.get('desktop:focus-agent'), 'function')
+  ipcListeners.get('desktop:focus-agent')({}, { sessionId: 't3:1', agentId: 'lead' })
+  assert.deepEqual(focused, [{ sessionId: 't3:1', agentId: 'lead' }])
+  offFocus()
+  assert.equal(ipcListeners.has('desktop:focus-agent'), false)
 })
 
 test('shell prompt bridge checks iframe source, origin, id and action and replies with the request id', async () => {
@@ -34,11 +46,13 @@ test('shell prompt bridge checks iframe source, origin, id and action and replie
     return elements.get(id)
   }
   let fail = false
+  let onFocus
   const api = {
     t3Send: async payload => { calls.push(['send', payload]); if (fail) throw new Error('Send failed'); return { ok: true, threadId: 'test-thread' } },
     t3Start: async payload => { calls.push(['start', payload]); return { ok: true, threadId: 'new-thread' } },
     openProject: async payload => { calls.push(['open', payload]); return { folder: payload.root } },
     notify: async payload => { calls.push(['notify', payload]); return { shown: true } },
+    onFocusAgent: handler => { onFocus = handler; return () => { onFocus = undefined } },
     onState() {}, state: () => new Promise(() => {}),
   }
   const context = vm.createContext({ window: { agentFlowDesktop: api, addEventListener: (name, handler) => listeners.set(name, handler) },
@@ -64,6 +78,8 @@ test('shell prompt bridge checks iframe source, origin, id and action and replie
   await receive(event)
   assert.equal(replies.at(-1).value.ok, false)
   assert.equal(replies.at(-1).value.error, 'Send failed')
+  onFocus({ sessionId: 't3:1', agentId: 'a1' })
+  assert.deepEqual({ origin: replies.at(-1).origin, value: { ...replies.at(-1).value } }, { value: { type: 'desktop:focus-agent', sessionId: 't3:1', agentId: 'a1' }, origin: 'http://127.0.0.1:42001' })
 })
 
 test('orb preload exposes prompt invokes and fire-and-forget window actions in the main frame', async () => {
@@ -129,12 +145,13 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   const menus = []
   const children = []
   const notifications = []
+  const appUserModelIds = []
   let notificationSupported = true
   let window
   let selected
   let failNext = false
   const app = Object.assign(new EventEmitter(), {
-    setName() {}, getPath: () => root, requestSingleInstanceLock: () => true,
+    setName() {}, setAppUserModelId: id => appUserModelIds.push(id), getPath: () => root, requestSingleInstanceLock: () => true,
     whenReady: async () => {}, quit() {},
   })
   class MockNotification extends EventEmitter {
@@ -147,9 +164,10 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
       super(); if (!window) window = this
       windows.push(this); this.options = options; this.pin = options.alwaysOnTop
       this.bounds = { x: options.x ?? 1700, y: options.y ?? 900, width: options.width, height: options.height }
+      this.sent = []
       this.webContents = Object.assign(new EventEmitter(), {
         mainFrame: { url: pathToFileURL(path.resolve(__dirname, '../shell.html')).href },
-        send() {}, setWindowOpenHandler: handler => { this.openHandler = handler }, session: { setPermissionRequestHandler: handler => { this.permissionHandler = handler } },
+        send: (channel, value) => this.sent.push([channel, value]), setWindowOpenHandler: handler => { this.openHandler = handler }, session: { setPermissionRequestHandler: handler => { this.permissionHandler = handler } },
       })
     }
     hookWindowMessage(id, callback) { this.hooks ??= new Map(); this.hooks.set(id, callback) }
@@ -535,32 +553,37 @@ test('window actions persist pin/folder, cancel safely, isolate IPC and retire o
   sendOrb(orb, 'set-expanded', false)
   assert.deepEqual([orb.bounds.width, orb.bounds.height], [169, 215])
 
+  assert.deepEqual(appUserModelIds, ['com.agentflow.desktop'])
   // Native desktop / orb waiting notifications: trust isolation, suppression, sanitization, throttling, click-to-focus.
   assert.throws(() => handlers.get('desktop:notify')({ ...trusted, sender: {} }, {}), /Untrusted desktop request/)
   assert.equal((await invoke('notify', { title: 'Approval needed', body: 'Lead · Team' })).shown, false, 'Main window notification is suppressed while orb is open')
   assert.throws(() => handlers.get('orb:notify')({ sender: window.webContents }, {}), /Untrusted orb request/)
   assert.throws(() => handlers.get('orb:notify')({ sender: orb.webContents, senderFrame: { url: orb.url } }, {}), /Untrusted orb request/)
   now += 2000
-  assert.equal((await handlers.get('orb:notify')({ sender: orb.webContents, senderFrame: orb.webContents.mainFrame }, { title: '  Approval\n needed  ', body: 'Lead · Team', tag: 'o1' })).shown, true)
+  assert.equal((await handlers.get('orb:notify')({ sender: orb.webContents, senderFrame: orb.webContents.mainFrame }, { title: '  Approval\n needed  ', body: 'Lead · Team', tag: 'o1', sessionId: 't3:1', agentId: 'lead' })).shown, true)
   assert.deepEqual({ ...notifications.at(-1).options }, { title: 'Approval needed', body: 'Lead · Team', silent: false })
   assert.equal(notifications.at(-1).shown, true)
   notifications.at(-1).emit('click')
   assert.equal(orb.destroyed, true)
   assert.equal(window.hidden, false)
   assert.equal(window.focused, true)
+  assert.deepEqual({ ...window.sent.at(-1)[1] }, { sessionId: 't3:1', agentId: 'lead' })
+  assert.equal(window.sent.at(-1)[0], 'desktop:focus-agent')
   assert.equal((await invoke('notify', { title: 'Input needed', body: 'Lead · Team' })).shown, false, 'Notification is suppressed when main window is visible and focused')
   window.minimize(); window.focused = false
   now += 2000
-  assert.equal((await invoke('notify', { title: 'Input needed', body: 'x'.repeat(200), tag: 'm1' })).shown, true)
+  assert.equal((await invoke('notify', { title: 'Input needed', body: 'x'.repeat(200), tag: 'm1', sessionId: 't3:2', agentId: 'w1' })).shown, true)
   assert.equal(notifications.at(-1).options.body.length, 140)
   now += 100
   assert.equal((await invoke('notify', { title: 'Input needed', body: 'Other', tag: 'm2' })).shown, false, 'Global rate limit throttles rapid notifications')
   now += 2000
   assert.equal((await invoke('notify', { title: 'Input needed', body: 'Same tag', tag: 'm1' })).shown, false, 'Same tag is deduped within 15 seconds')
-  assert.equal((await invoke('notify', { title: 'Input needed', body: 'Worker · Team', tag: 'm2' })).shown, true)
+  assert.equal((await invoke('notify', { title: 'Input needed', body: 'Worker · Team', tag: 'm2', sessionId: 't3:2', agentId: 'w1' })).shown, true)
   notifications.at(-1).emit('click')
   assert.equal(window.minimized, false)
   assert.equal(window.focused, true)
+  assert.deepEqual({ ...window.sent.at(-1)[1] }, { sessionId: 't3:2', agentId: 'w1' })
+  assert.equal(window.sent.at(-1)[0], 'desktop:focus-agent')
   notificationSupported = false
   window.minimize(); window.focused = false; now += 2000
   assert.equal((await invoke('notify', { title: 'Input needed', body: 'Worker · Team', tag: 'm3' })).shown, false)

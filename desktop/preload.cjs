@@ -25,4 +25,9 @@ if (process.isMainFrame) contextBridge.exposeInMainWorld('agentFlowDesktop', {
     ipcRenderer.on('desktop:state', listener)
     return () => ipcRenderer.removeListener('desktop:state', listener)
   },
+  onFocusAgent: callback => {
+    const listener = (_event, target) => callback(target)
+    ipcRenderer.on('desktop:focus-agent', listener)
+    return () => ipcRenderer.removeListener('desktop:focus-agent', listener)
+  },
 })

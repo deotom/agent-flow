@@ -79,6 +79,7 @@ interface OfficeViewProps {
   attentionCueTick?: number
   attentionNotify?: boolean
   onToggleAttentionNotify?: () => void
+  focusRevealTick?: number
 }
 const COLLABORATION_STORAGE='agent-flow.office.collaboration.v1'
 const readCollaboration=()=>{try{return parseOfficeCollaborationOverrides(localStorage.getItem(COLLABORATION_STORAGE))}catch{return parseOfficeCollaborationOverrides(null)}}
@@ -109,7 +110,7 @@ type Moving = { actor: OfficeActor; caption: string; elevatorY: number | null; s
 type Pending = { event: OfficeEvent; before: OfficeScene }
 const EMPTY_REST_MOVING: Moving[] = []
 
-export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam, live, connection, visible, animationMode, now, identitySlots, attentionCueTick, attentionNotify, onToggleAttentionNotify }: OfficeViewProps) {
+export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam, live, connection, visible, animationMode, now, identitySlots, attentionCueTick, attentionNotify, onToggleAttentionNotify, focusRevealTick }: OfficeViewProps) {
   const desktopArt=typeof document!=='undefined'&&document.documentElement.dataset.agentFlowHost==='desktop'
   const stationNames=desktopArt?OFFICE_DESKTOP_STATION_NAMES:OFFICE_STATION_NAMES
   const [collaborationOverrides,setCollaborationOverrides]=useState(readCollaboration)
@@ -521,6 +522,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   // Paint on mount and scene changes even when the animation loop is suspended.
   // A restored/hidden pane must never leave a newly mounted canvas transparent.
   // The RAF owns moving actors. A clock/snapshot repaint must not flash them back to a desk.
+  const wallMinute = Math.floor(now / 60_000)
   useEffect(() => {
     const displayChanged=paintedCollaboration.current!==collaborationOverrides
     paintedCollaboration.current=collaborationOverrides
@@ -529,11 +531,11 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     if(displayChanged){paint(lastPainted.current);return}
     if (!live && painted.current) {
       // Daylight and lamps follow the wall clock even when scene updates are paused.
-      if (desktopArt&&paintedMinute.current!==Math.floor(now/60_000)) paint(lastPainted.current)
+      if (desktopArt&&paintedMinute.current!==wallMinute) paint(lastPainted.current)
       return
     }
     if (!enabled || (!active.current&&!queue.current.length)) paint(null)
-  }, [visualScene, now, enabled, live, selectedKey, petEvent, peekId,architectureArt,collaborationOverrides,desktopArt])
+  }, [visualScene, wallMinute, enabled, live, selectedKey, petEvent, peekId, architectureArt, collaborationOverrides, desktopArt])
   useEffect(()=>{if(architectureArt||avatarArt)paint(lastPainted.current)},[architectureArt,avatarArt])
   const roomPaintKey=JSON.stringify([visualScene.width,visualScene.height,...visualScene.floors.filter(f=>f.kind==='team').map(f=>[f.id,f.sessionId,f.title,f.room,f.y,f.height,f.constructing])])
   useEffect(()=>{
@@ -814,6 +816,13 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     }))
     return true
   }
+  const lastFocusReveal = useRef(focusRevealTick)
+  useEffect(() => {
+    if (focusRevealTick !== undefined && focusRevealTick !== lastFocusReveal.current) {
+      lastFocusReveal.current = focusRevealTick
+      if (focusRevealTick > 0 && selectedKey) revealAgent(selectedKey)
+    }
+  }, [focusRevealTick, selectedKey])
   const locateSelected=()=>{
     if(!selectedInfo||!selectedKey)return
     discovery.dismiss()
@@ -937,7 +946,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
               </span>
             })}
             <canvas ref={canvas} role="img" aria-label={`Office with ${displayed.filter(a=>!a.hidden).length} visible agents from ${snapshots.length} T3 teams. Choose an agent for details. ${vendorLabel}.`} />
-            <button ref={hatchButton} type="button" className="of-hatch-hit" aria-label="Call lift to garden" aria-expanded="false" onClick={()=>{toggleOfficeGardenLift(lift.current!,current.current.scene,motionClock.current,current.current.enabled);paint(lastPainted.current)}} style={{left:`${(officeNavigation(visualScene).shaftX-28*visualScene.width/450)/visualScene.width*100}%`,width:`${56/450*100}%`,top:`${((officeLanding(visualScene,'lounge')?.y??0)-96*visualScene.width/450)/visualScene.height*100}%`,height:`${100*visualScene.width/450/visualScene.height*100}%`}}>{desktopArt&&<span className="of-lift-call-plate" aria-hidden="true">↕</span>}</button>
+            <button ref={hatchButton} type="button" className="of-hatch-hit" aria-label="Call lift to garden" aria-expanded="false" onClick={()=>{toggleOfficeGardenLift(lift.current!,current.current.scene,motionClock.current,current.current.enabled);paint(lastPainted.current)}} style={{left:`${(officeNavigation(visualScene).shaftX-28*visualScene.width/450)/visualScene.width*100}%`,width:`${56/450*100}%`,top:`${((officeLanding(visualScene,'lounge')?.y??0)-96*visualScene.width/450)/visualScene.height*100}%`,height:`${100*visualScene.width/450/visualScene.height*100}%`}}>{desktopArt&&<span className="of-lift-call-plate" aria-hidden="true" />}</button>
             {publicFloors.filter(f=>f.kind==='break'||f.kind==='lounge').flatMap(floor=>{
               if(!visualScene.actors.some(a=>a.floorId===floor.id&&a.zone==='lounge'&&!a.hidden))return []
               return [...officeLeisureObjects(floor,visualScene.width).map(object=>({...object,label:OFFICE_OBJECT_NAMES[object.kind]})),...officeSeasonalObjects(floor,visualScene.width,new Date(now))].map((object,index)=><button key={`${floor.id}-${object.kind}-${index}`} type="button" className="of-object-hit" disabled={!officeVendorAllowsObject(new Date(now),floor.kind,object.kind)} aria-label={`${floor.kind==='lounge'&&object.kind==='coffee'?vendorLabel:object.label}, ${floor.title}`}

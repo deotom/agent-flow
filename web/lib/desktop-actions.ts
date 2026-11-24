@@ -10,6 +10,8 @@ export interface DesktopNotificationPayload {
   body: string
   tag?: string
   silent?: boolean
+  sessionId?: string
+  agentId?: string
 }
 
 interface OrbPromptApi {

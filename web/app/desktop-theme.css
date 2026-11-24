@@ -244,13 +244,23 @@
 [data-agent-flow-host="desktop"] .of-break-peek { clip-path: inset(0 17% 0 0); }
 [data-agent-flow-host="desktop"] .of-break-peek-header { right: 19%; }
 [data-agent-flow-host="desktop"] .of-lift-call-plate {
-  position: absolute; top: 63%; left: 0; display: grid; place-items: center;
-  width: 13px; height: 17px; border: 1px solid #ae783d; border-radius: 3px;
-  background: #422b19; color: #ffe0a3; font: 700 11px/1 system-ui;
-  box-shadow: 0 1px 3px #251407a0;
+  position: absolute; top: 58%; left: 1%; display: grid; place-items: center;
+  width: 11%; height: 12%; min-width: 5px; min-height: 8px; box-sizing: border-box;
+  border: 1px solid #8a5b2c99; border-radius: 2px;
+  background: #4c311d; box-shadow: 0 1px 2px #1c0f0699;
 }
-[data-agent-flow-host="desktop"] .of-hatch-hit[data-lift-state="waiting"] .of-lift-call-plate { background: #f0aa46; color: #2c1b0c; }
-[data-agent-flow-host="desktop"] .of-hatch-hit:is([data-lift-state="boarding"],[data-lift-state="open"]) .of-lift-call-plate { background: #a4c27b; color: #253020; }
+[data-agent-flow-host="desktop"] .of-lift-call-plate::after {
+  content: ""; width: 44%; height: 42%; border-radius: 1px; background: #cc9455;
+}
+[data-agent-flow-host="desktop"] .of-hatch-hit:is(:hover,:focus-visible) .of-lift-call-plate::after {
+  background: #f3c878; box-shadow: 0 0 4px #ffd98a80;
+}
+[data-agent-flow-host="desktop"] .of-hatch-hit[data-lift-state="waiting"] .of-lift-call-plate::after {
+  background: #ffb54c;
+}
+[data-agent-flow-host="desktop"] .of-hatch-hit:is([data-lift-state="boarding"],[data-lift-state="open"]) .of-lift-call-plate::after {
+  background: #bfdb97;
+}
 @media (min-width: 640px) {
   [data-agent-flow-host="desktop"] .of-scroll { container-type: size; background: radial-gradient(ellipse at center, #322c20, var(--desktop-bg) 75%); }
   [data-agent-flow-host="desktop"] .of-building { width: min(100%, 138cqh); }

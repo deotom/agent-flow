@@ -72,6 +72,8 @@ it('alerts on live waiting transitions, throttles flapping, strips paths, and gr
     title: 'Approval needed',
     body: first[0].body,
     tag: 'attention:t3:1:lead',
+    sessionId: 't3:1',
+    agentId: 'lead',
   })
 
   // Flapping back to running then waiting within cooldown is suppressed for the same agent.
@@ -90,6 +92,8 @@ it('alerts on live waiting transitions, throttles flapping, strips paths, and gr
     title: '2 agents need you',
     body: 'Alpha, Beta',
     tag: 'attention:t3:2:a1',
+    sessionId: 't3:2',
+    agentId: 'a1',
   })
   assert.equal(formatAttentionNotification([]), null)
 })

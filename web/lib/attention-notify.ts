@@ -104,11 +104,11 @@ export function collectAttentionAlerts(
 /** Collapse concurrent waiting transitions into one compact native notification payload. */
 export function formatAttentionNotification(
   alerts: readonly AttentionAlert[],
-): { title: string; body: string; tag: string } | null {
+): { title: string; body: string; tag: string; sessionId: string; agentId: string } | null {
   if (alerts.length === 0) return null
   if (alerts.length === 1) {
     const [first] = alerts
-    return { title: first.title, body: first.body, tag: first.tag }
+    return { title: first.title, body: first.body, tag: first.tag, sessionId: first.sessionId, agentId: first.agentId }
   }
   const names = alerts.slice(0, 3).map(alert => alert.name).join(', ')
   const extra = alerts.length > 3 ? ` +${alerts.length - 3}` : ''
@@ -116,5 +116,7 @@ export function formatAttentionNotification(
     title: `${alerts.length} agents need you`,
     body: `${names}${extra}`,
     tag: alerts[0].tag,
+    sessionId: alerts[0].sessionId,
+    agentId: alerts[0].agentId,
   }
 }

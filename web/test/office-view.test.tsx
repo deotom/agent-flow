@@ -140,3 +140,12 @@ it('labels the empty garden and private lounge entrance without filling the main
   const home=team('b','Home');home.agents[0].status='idle'
   assert.ok(renderToStaticMarkup(<OfficeView {...props} snapshots={[home]}/>).includes('Show history'))
 })
+
+it('renders a compact proportional lift call plate without an oversized arrow glyph on Desktop', () => {
+  const snap = team('lift', 'Workshop')
+  const html = onDesktop(() => renderToStaticMarkup(<OfficeView {...props} snapshots={[snap]} />))
+  const hatch = html.match(/<button[^>]*class="of-hatch-hit"[^>]*>(.*?)<\/button>/)
+  assert.ok(hatch, 'garden lift button renders')
+  assert.equal(hatch[1], '<span class="of-lift-call-plate" aria-hidden="true"></span>')
+  assert.ok(!hatch[1].includes('↕'))
+})

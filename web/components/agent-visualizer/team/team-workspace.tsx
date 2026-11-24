@@ -48,9 +48,16 @@ const providerName = (runtime: TeamAgentRow['runtime']) => runtime ? PROVIDER_NA
 const modelName = (agent: TeamAgentRow) => agent.model ? formatModelName(agent.model) : 'Model not reported'
 const stamp = (time: number | null) => time ? new Date(time).toLocaleString() : 'Not reported'
 
-function useClock(intervalMs: number): number {
+export function workspaceClockIntervalMs(pane: TeamPane, visible: boolean): number | null {
+  if (!visible) return null
+  return pane === 'office' ? 10_000 : 1_000
+}
+
+function useClock(intervalMs: number | null): number {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
+    if (intervalMs === null) return
+    setNow(Date.now())
     const timer = setInterval(() => setNow(Date.now()), intervalMs)
     return () => clearInterval(timer)
   }, [intervalMs])
@@ -352,7 +359,7 @@ function DetailPanel({ snapshot, agentId, live, now, portrait, onSelect, onClose
 }
 
 export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSession, teamSnapshots, health, transport, animationMode, visible = true, scope, onScope, pane, onPane, viewerControls, renderGraph, promptBar }: TeamWorkspaceProps) {
-  const now = useClock(1000)
+  const now = useClock(workspaceClockIntervalMs(pane, visible))
   const snapshot = selectedSessionId ? teamSnapshots[selectedSessionId] ?? null : null
   const connection = connectionView(transport, health, now)
   const live = connection.live
@@ -375,6 +382,21 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
   const workspaceOptions = useRef<HTMLDetailsElement>(null)
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null)
   const [officeSelection, setOfficeSelection] = useState<{ sessionId: string; agentId: string } | null>(null)
+  const [focusRevealTick, setFocusRevealTick] = useState(0)
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== window.parent) return
+      const data = event.data as { type?: unknown; sessionId?: unknown; agentId?: unknown } | null
+      if (data?.type !== 'desktop:focus-agent' || typeof data.sessionId !== 'string' || typeof data.agentId !== 'string' || !data.sessionId || !data.agentId) return
+      selections.current.set(data.sessionId, data.agentId)
+      onSelectSession(data.sessionId)
+      setSelectedAgentId(data.agentId)
+      setOfficeSelection({ sessionId: data.sessionId, agentId: data.agentId })
+      setFocusRevealTick(tick => tick + 1)
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [onSelectSession])
   const [officeComposerOpen, setOfficeComposerOpen] = useState(false)
   const office = pane === 'office'
   const officeSnapshots = useMemo(() => sessions.flatMap(session => teamSnapshots[session.id] ? [teamSnapshots[session.id]] : []), [sessions, teamSnapshots])
@@ -522,7 +544,7 @@ export function TeamWorkspace({ widget, sessions, selectedSessionId, onSelectSes
           onSelect={(sessionId, agentId) => setOfficeSelection(previous => previous?.sessionId === sessionId && previous.agentId === agentId ? null : { sessionId, agentId })}
           onOpenTeam={(sessionId, agentId) => { selections.current.set(sessionId, agentId); setSelectedAgentId(agentId); onSelectSession(sessionId); onPane('board') }}
           live={live} connection={connection} visible={visible} animationMode={animationMode} now={now}
-          attentionCueTick={attentionCueTick} attentionNotify={attentionNotify} onToggleAttentionNotify={toggleAttentionNotify} /> : showGraph ? <div className="jv-graph">{desktopPortraits&&mission?
+          attentionCueTick={attentionCueTick} attentionNotify={attentionNotify} onToggleAttentionNotify={toggleAttentionNotify} focusRevealTick={focusRevealTick} /> : showGraph ? <div className="jv-graph">{desktopPortraits&&mission?
             <DesktopMissionTree mission={mission} selected={selectedAgentId} live={live} atlas={avatarArt} onSelect={select} appearanceFor={id=>{
               const slot=identitySlots.get(officeKey(snapshot!.sessionId,id))
               return slot===undefined?undefined:officeAppearance(slot)

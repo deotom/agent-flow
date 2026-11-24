@@ -6,6 +6,9 @@ const { pathToFileURL } = require('node:url')
 const t3CLI = require('./t3-cli.cjs').createT3CLI()
 
 app.setName('Agent Flow')
+if (process.platform === 'win32' && typeof app.setAppUserModelId === 'function') {
+  app.setAppUserModelId('com.agentflow.desktop')
+}
 const shellURL = pathToFileURL(path.join(__dirname, 'shell.html')).href
 let win
 let orbWin
@@ -26,6 +29,8 @@ function showDesktopNotification(payload, source) {
   const body = cleanText(payload.body, 140)
   if (!title || !body) return { shown: false }
   const tag = cleanText(payload.tag, 120)
+  const sessionId = cleanText(payload.sessionId, 128)
+  const agentId = cleanText(payload.agentId, 128)
   const now = Date.now()
   for (const [key, at] of recentNotificationTags) {
     if (now - at >= 15000) recentNotificationTags.delete(key)
@@ -36,11 +41,17 @@ function showDesktopNotification(payload, source) {
   if (tag) recentNotificationTags.set(tag, now)
   const notice = new Notification({ title, body, silent: payload.silent === true })
   notice.on?.('click', () => {
-    if (orbWin) { closeOrb(); return }
-    if (win && !win.isDestroyed() && typeof win.isMinimized === 'function' && win.isMinimized() && typeof win.restore === 'function') {
-      win.restore()
+    if (orbWin) {
+      closeOrb()
+    } else {
+      if (win && !win.isDestroyed() && typeof win.isMinimized === 'function' && win.isMinimized() && typeof win.restore === 'function') {
+        win.restore()
+      }
+      restoreMain()
     }
-    restoreMain()
+    if (sessionId && agentId && win && !win.isDestroyed()) {
+      win.webContents.send('desktop:focus-agent', { sessionId, agentId })
+    }
   })
   notice.show()
   return { shown: true }
