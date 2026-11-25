@@ -1,6 +1,6 @@
 import { it } from 'node:test'
 import assert from 'node:assert/strict'
-import { officeLiveliness, officeLivelinessPolicy } from '../lib/office-liveliness'
+import { officeCanvasScale, officeFrameInterval, officeLiveliness, officeLivelinessPolicy } from '../lib/office-liveliness'
 
 it('validates persisted atmosphere without coercing malformed values',()=>{
  for(const mode of ['quiet','normal','lively'] as const)assert.equal(officeLiveliness(mode),mode)
@@ -26,4 +26,15 @@ it('provides calmer optional social/object cadence at night without meal or work
   assert.ok(Object.isFrozen(day));assert.ok(Object.isFrozen(day.outingGapMs))
   assert.equal('mealLimit' in day,false);assert.equal('workCadence' in day,false)
  }
+})
+it('scales adaptive frame cadence and caps canvas pixel ratio',()=>{
+ assert.equal(officeFrameInterval('full',true),1000/45)
+ assert.equal(officeFrameInterval('low',true),1000/24)
+ assert.equal(officeFrameInterval('full',false),1000/15)
+ assert.equal(officeFrameInterval('low',false),1000/10)
+ assert.ok(officeFrameInterval('full',false)>officeFrameInterval('full',true))
+ assert.equal(officeCanvasScale(450,450,3),2)
+ assert.equal(officeCanvasScale(900,450,2),2)
+ assert.equal(officeCanvasScale(450,450,1.2),1.25)
+ assert.equal(officeCanvasScale(200,450,1),1)
 })

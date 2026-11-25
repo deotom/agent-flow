@@ -3,6 +3,7 @@ import type {officePaintedAvatarLook} from '../../../lib/office-painted-avatar'
 type Look=ReturnType<typeof officePaintedAvatarLook>
 type HeadView='front'|'back'|'profile'
 const paintedSkin=['#dd9d6e','#e7ab80','#a76b46','#df9e6b','#e4a47b','#995c3b','#c58b60','#945d42','#e7aa78','#c99065']
+export const MAX_TINTED_HEADS=64
 const heads=new WeakMap<CanvasImageSource,Map<string,HTMLCanvasElement|null>>()
 const rgb=(hex:string)=>[1,3,5].map(offset=>Number.parseInt(hex.slice(offset,offset+2),16))
 const ramp=(value:number,low:number,high:number)=>Math.max(0,Math.min(1,(value-low)/(high-low)))
@@ -14,7 +15,7 @@ export function officeTintedHead(source:CanvasImageSource,row:number,column:numb
  let variants=heads.get(source)
  if(!variants){variants=new Map();heads.set(source,variants)}
  const key=`${view}:${row}:${column}:${look.tone}:${top}`
- if(variants.has(key))return variants.get(key)??undefined
+ if(variants.has(key)){const hit=variants.get(key)??null;variants.delete(key);variants.set(key,hit);return hit??undefined}
  const side=96,canvas=document.createElement('canvas')
  canvas.width=side;canvas.height=side
  const context=canvas.getContext('2d',{willReadFrequently:true})
@@ -41,6 +42,14 @@ export function officeTintedHead(source:CanvasImageSource,row:number,column:numb
   tinted=canvas
  }catch{
   // A canvas with unreadable pixels still draws the original asset.
+ }
+ if(variants.size>=MAX_TINTED_HEADS){
+  const oldest=variants.keys().next().value
+  if(oldest!==undefined){
+   const evicted=variants.get(oldest)
+   if(evicted){evicted.width=0;evicted.height=0}
+   variants.delete(oldest)
+  }
  }
  variants.set(key,tinted)
  return tinted??undefined

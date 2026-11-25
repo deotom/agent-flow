@@ -178,16 +178,17 @@ poll(): void {
         created_at, updated_at, archived_at, deleted_at,
         json_object('lineage', json_extract(payload_json, '$.lineage'), 'modelSelection', json_extract(payload_json, '$.modelSelection'),
           'activeProviderThreadId', json_extract(payload_json, '$.activeProviderThreadId')) AS payload_json
-        FROM orchestration_v2_projection_threads`).all()
+        FROM orchestration_v2_projection_threads WHERE deleted_at IS NULL`).all()
+      const subagentLinks = db.prepare(`SELECT thread_id, child_thread_id FROM main.orchestration_v2_projection_subagents WHERE child_thread_id IS NOT NULL`).all()
+      const skeleton: T3Projection = { projects, threads, subagents: subagentLinks, runs: [], items: [], providerThreads: [], requests: [] }
+      const selected = selectT3ThreadIds(skeleton, this.workspaces)
+      const placeholders = selected.map(() => '?').join(',') || 'NULL'
       const subagents = db.prepare(`SELECT subagent_id, thread_id, run_id, parent_node_id, provider, provider_thread_id,
         child_thread_id, status, started_at, completed_at, updated_at, driver, completion_delivery_state,
         json_object('title', json_extract(payload_json, '$.title'), 'model', json_extract(payload_json, '$.model'), 'role', json_extract(payload_json, '$.role'),
-          'prompt', json_extract(payload_json, '$.prompt'), 'result', json_extract(payload_json, '$.result'),
+          'prompt', substr(json_extract(payload_json, '$.prompt'), 1, 2000), 'result', substr(json_extract(payload_json, '$.result'), 1, 2000),
           'completionDelivery', json_object('observedByRunId', json_extract(payload_json, '$.completionDelivery.observedByRunId'))) AS payload_json
-        FROM orchestration_v2_projection_subagents`).all()
-      const skeleton: T3Projection = { projects, threads, subagents, runs: [], items: [], providerThreads: [], requests: [] }
-      const selected = selectT3ThreadIds(skeleton, this.workspaces)
-      const placeholders = selected.map(() => '?').join(',') || 'NULL'
+        FROM orchestration_v2_projection_subagents WHERE thread_id IN (${placeholders})`).all(...selected)
       const runs = db.prepare(`SELECT run_id, thread_id, ordinal, status, provider_thread_id, completed_at,
         json_object('modelSelection', json_extract(payload_json, '$.modelSelection')) AS payload_json
         FROM orchestration_v2_projection_runs WHERE thread_id IN (${placeholders})`).all(...selected)

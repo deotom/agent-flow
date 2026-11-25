@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { gardenWetness, moonAge, officeClouds, officeSky, officeSkyIcon, skyEvent, skyHoliday, skyPhase, skySeason, skyWeather, SKY_EVENT_SLOT_MS } from '../lib/office-sky'
-import { DESKTOP_BACKGROUND_SKY_EVENTS, drawOfficeForegroundWeather, drawOfficeSky, drawOfficeSkyBackgroundEvents, drawOfficeSkyBalloon } from '../components/agent-visualizer/office/office-sky-art'
+import { DESKTOP_BACKGROUND_SKY_EVENTS, drawOfficeForegroundWeather, drawOfficeNightSky, drawOfficeSky, drawOfficeSkyBackgroundEvents, drawOfficeSkyBalloon } from '../components/agent-visualizer/office/office-sky-art'
 import type {OfficeScene} from '../lib/office-types'
 
 const at = (y: number, m: number, d: number, h = 12, min = 0, s = 0) => new Date(y, m - 1, d, h, min, s)
@@ -315,4 +315,38 @@ test('separates mist, rain/storm, and Christmas snow into background valley mist
     drawOfficeForegroundWeather(out.c, scene, 1, date, sky)
     assert.ok(out.ops.length > 0, `foreground weather paints ${sky.holiday ?? sky.weather}`)
   }
+})
+
+test('avoids shadowBlur on night and holiday sky elements', () => {
+  const blurs: number[] = []
+  const noop = () => {}
+  const grad = { addColorStop: noop }
+  let shadowBlur = 0
+  const c = {
+    fillStyle: '', strokeStyle: '', shadowColor: '', lineWidth: 1, globalAlpha: 1,
+    set shadowBlur(v: number) { shadowBlur = v; if (v > 0) blurs.push(v) },
+    get shadowBlur() { return shadowBlur },
+    save: noop, restore: noop, beginPath: noop, closePath: noop, rect: noop, clip: noop,
+    translate: noop, rotate: noop, moveTo: noop, lineTo: noop, quadraticCurveTo: noop, bezierCurveTo: noop,
+    fill: noop, fillRect: noop, stroke: noop, ellipse: noop,
+    createLinearGradient: () => grad,
+  } as unknown as CanvasRenderingContext2D
+  const scene: OfficeScene = {
+    width: 450, height: 500,
+    floors: [{ id: 'lounge', kind: 'lounge', sessionId: null, title: 'Garden', subtitle: '', color: '#abc', y: 0, height: 195, actorKeys: [], desktopArt: true }],
+    actors: [], quietTeams: [], totalAgents: 0, finishedCount: 0,
+  }
+  const cases = [
+    { date: at(2026, 11, 24, 21), holiday: 'loy-krathong' as const, event: { kind: 'fireflies' as const, seed: .5, progress: .5 } },
+    { date: at(2026, 10, 31, 21), holiday: 'halloween' as const, event: null },
+    { date: at(2026, 12, 25, 21), holiday: 'christmas' as const, event: null },
+  ]
+  for (const item of cases) {
+    const sky = { ...officeSky(item.date), phase: 'night' as const, weather: 'clear' as const, holiday: item.holiday, event: item.event }
+    drawOfficeNightSky(c, scene, item.date, 1)
+    drawOfficeSky(c, scene, 1, item.date, sky)
+    drawOfficeSkyBackgroundEvents(c, scene, 1, item.date, sky, { holiday: item.holiday, startedAt: 0, seed: .5, x: 186, y: 164 })
+    drawOfficeForegroundWeather(c, scene, 1, item.date, sky)
+  }
+  assert.deepEqual(blurs, [])
 })

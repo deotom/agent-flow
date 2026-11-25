@@ -4,18 +4,20 @@ import { buildSync } from 'esbuild'
 import { runInNewContext } from 'node:vm'
 import type { SourceHealth } from '../web/lib/team-types'
 
-const bundle = buildSync({ stdin: { contents: `export { distributeRelayMessage, distributeRelayValue, t3ConnectionStatus, allowLocalRequest, bufferRelayHistory } from './scripts/relay'`,
+const bundle = buildSync({ stdin: { contents: `export { distributeRelayMessage, distributeRelayValue, t3ConnectionStatus, allowLocalRequest, bufferRelayHistory, MAX_EVENT_BUFFER, MAX_BUFFERED_SESSIONS } from './scripts/relay'`,
   resolveDir: process.cwd(), loader: 'ts' }, bundle: true, platform: 'node', format: 'cjs', external: ['vscode'], write: false })
 const bundledModule = { exports: {} as { distributeRelayMessage: typeof import('./relay').distributeRelayMessage;
   distributeRelayValue: typeof import('./relay').distributeRelayValue;
   t3ConnectionStatus: typeof import('./relay').t3ConnectionStatus;
   allowLocalRequest: typeof import('./relay').allowLocalRequest;
-  bufferRelayHistory: typeof import('./relay').bufferRelayHistory } }
+  bufferRelayHistory: typeof import('./relay').bufferRelayHistory;
+  MAX_EVENT_BUFFER: typeof import('./relay').MAX_EVENT_BUFFER;
+  MAX_BUFFERED_SESSIONS: typeof import('./relay').MAX_BUFFERED_SESSIONS } }
 runInNewContext(bundle.outputFiles[0].text, { module: bundledModule, exports: bundledModule.exports,
   require: (name: string) => name === 'vscode' ? {} : require(name), process, Buffer, console,
   TextEncoder, TextDecoder, URL, URLSearchParams, AbortController, fetch, structuredClone, queueMicrotask,
   setTimeout, clearTimeout, setInterval, clearInterval, setImmediate, clearImmediate })
-const { distributeRelayMessage, distributeRelayValue, t3ConnectionStatus, allowLocalRequest, bufferRelayHistory } = bundledModule.exports
+const { distributeRelayMessage, distributeRelayValue, t3ConnectionStatus, allowLocalRequest, bufferRelayHistory, MAX_EVENT_BUFFER, MAX_BUFFERED_SESSIONS } = bundledModule.exports
 
 const unavailable: SourceHealth = { source: 't3', state: 'unavailable', checkedAt: 1, lastSuccessAt: null,
   lastChangeAt: null, pollIntervalMs: 2000, reason: 'T3 projection unavailable.' }
@@ -101,4 +103,23 @@ test('replaced shared state stays unencoded until a slow recipient drains', () =
  assert.equal(encodes,1)
  assert.equal(JSON.parse(writes[1].slice(6)).health.revision,99)
  listeners.get('close')?.()
+})
+
+test('bounds buffered native session history to MAX_BUFFERED_SESSIONS LRU entries', () => {
+  const buffers = new Map<string, import('../extension/src/protocol').AgentEvent[]>()
+  for (let i = 0; i < MAX_BUFFERED_SESSIONS; i++) {
+    bufferRelayHistory(buffers, { sessionId: `s-${i}`, time: i, type: 'message', payload: { text: 'hi' } })
+  }
+  assert.equal(buffers.size, MAX_BUFFERED_SESSIONS)
+  // Touch s-0 so s-1 becomes the oldest.
+  bufferRelayHistory(buffers, { sessionId: 's-0', time: 100, type: 'message', payload: { text: 'touch' } })
+  bufferRelayHistory(buffers, { sessionId: 's-new', time: 101, type: 'message', payload: { text: 'new' } })
+  assert.equal(buffers.size, MAX_BUFFERED_SESSIONS)
+  assert.equal(buffers.has('s-0'), true, 'recently updated session stays buffered')
+  assert.equal(buffers.has('s-1'), false, 'oldest idle session is evicted')
+  assert.equal(buffers.has('s-new'), true)
+  for (let i = 0; i < MAX_EVENT_BUFFER + 25; i++) {
+    bufferRelayHistory(buffers, { sessionId: 's-new', time: i, type: 'message', payload: { i } })
+  }
+  assert.equal(buffers.get('s-new')!.length, MAX_EVENT_BUFFER)
 })

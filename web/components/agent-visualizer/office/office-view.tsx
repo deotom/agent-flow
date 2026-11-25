@@ -18,7 +18,7 @@ import { drawOfficeAvatar, drawOfficeFrame, officeAmbient } from './office-art'
 import {mergeOfficeHolograms,pruneOfficeHolograms,officeHologramFrames,type OfficeHologramState} from '../../../lib/office-hologram'
 import {drawOfficeHolograms} from './office-hologram-art'
 import { drawOfficeDaylight } from './office-daylight-art'
-import { drawOfficeSkyBackgroundEvents } from './office-sky-art'
+import { DESKTOP_BACKGROUND_SKY_EVENTS, drawOfficeSkyBackgroundEvents } from './office-sky-art'
 import { officeDaylight, officeDesktopGardenLighting } from '../../../lib/office-daylight'
 import { officeWorkEvents, officeWorkPulse, officeWorkStation } from '../../../lib/office-work'
 import {officeActorAtWorkPlace,officeSceneAtWorkPlaces,officeWorkPresenceTarget,rememberOfficeWorkPlace,type OfficeWorkPlace} from '../../../lib/office-work-presence'
@@ -52,7 +52,7 @@ import {officeSharedRest} from '../../../lib/office-shared-rest'
 import {skyWeather} from '../../../lib/office-sky'
 import {officeDoorTraffic} from '../../../lib/office-door-traffic'
 import {officeVendorAllowsObject,officeVendorState} from '../../../lib/office-vendor'
-import {officeLiveliness,officeLivelinessPolicy} from '../../../lib/office-liveliness'
+import {officeCanvasScale,officeFrameInterval,officeLiveliness,officeLivelinessPolicy} from '../../../lib/office-liveliness'
 import {officeWardrobeTheme} from '../../../lib/office-wardrobe'
 import {officeWardrobeTransitionFrame,type OfficeWardrobeTransitionState} from '../../../lib/office-wardrobe-transition'
 
@@ -297,9 +297,19 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const greet = useRef<{ key: string; until: number } | null>(null)
   const greetCooldown = useRef(new Map<string, number>())
   const [inspectedKey, setInspectedKey] = useState<string | null>(null)
-  const current = useRef({ scene: visualScene,target:layoutTarget,sourceScene:scene, selectedKey, pets, petEvent, enabled, live, peekId,architectureArt,roomArt,avatarArt,liveliness,wallNow:now })
+  const skyPainted = useRef<{ key: string; at: number }>({ key: '', at: -Infinity })
+  useEffect(() => {
+    if (visible && pageVisible) return
+    for (const ref of [canvas, skyCanvas, roomCanvas, deskLightCanvas, peekCanvas]) {
+      const el = ref.current
+      if (el && (el.width > 1 || el.height > 1)) { el.width = 1; el.height = 1 }
+    }
+    deskLightPainted.current = null
+    skyPainted.current = { key: '', at: -Infinity }
+  }, [visible, pageVisible])
+  const current = useRef({ scene: visualScene,target:layoutTarget,sourceScene:scene, selectedKey, pets, petEvent, enabled, live, visible, pageVisible, peekId,architectureArt,roomArt,avatarArt,liveliness,wallNow:now })
   const doorTrips=()=>[active.current,...arrivalTrips.current.values(),...[...daily.current!.guests.values()].map(guest=>guest.trip)]
-  current.current = { scene: visualScene,target:layoutTarget,sourceScene:scene, selectedKey, pets, petEvent, enabled, live, peekId,architectureArt,roomArt,avatarArt,liveliness,wallNow:now }
+  current.current = { scene: visualScene,target:layoutTarget,sourceScene:scene, selectedKey, pets, petEvent, enabled, live, visible, pageVisible, peekId,architectureArt,roomArt,avatarArt,liveliness,wallNow:now }
   const arrivalSceneWithMeetings=(base:OfficeScene)=>!desktopArt||!pendingArrivalMeetings.current.size?base:{
     ...base,
     actors:base.actors.map(actor=>{
@@ -422,13 +432,13 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
 
   const paint = (movement: Moving | null) => {
     const element = canvas.current, context = element?.getContext('2d')
-    if (!element || !context) return
+    if (!element || !context || !current.current.visible || !current.current.pageVisible) return
     painted.current = true
     lastPainted.current=movement
     const input = current.current, wallDate = new Date(input.wallNow)
     paintedMinute.current=Math.floor(input.wallNow/60_000)
-    // Backing store follows rendered size × device pixel ratio so wide views stay crisp.
-    const ratio = Math.max(1, Math.min(4, Math.ceil((element.clientWidth || input.scene.width) * (window.devicePixelRatio || 1) / input.scene.width * 4) / 4))
+    // Backing store follows rendered size × device pixel ratio, capped at 2× to save canvas RAM.
+    const ratio = officeCanvasScale(element.clientWidth, input.scene.width, window.devicePixelRatio || 1, 2)
     const w = Math.round(input.scene.width * ratio), h = Math.round(input.scene.height * ratio)
     if (element.width !== w || element.height !== h) { element.width = w; element.height = h }
     const dailyActors=daily.current!.actors(input.scene,motionClock.current,wallDate)
@@ -458,10 +468,17 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     }
     const activeBurst = holidayBurst.current && (!input.enabled || elapsed.current - holidayBurst.current.startedAt < 4.5) ? holidayBurst.current : null
     if(skyElement&&skyContext){
-      if(skyElement.width!==w||skyElement.height!==Math.round(surfaceHeight*ratio)){skyElement.width=w;skyElement.height=Math.round(surfaceHeight*ratio)}
-      skyContext.setTransform(ratio,0,0,ratio,0,0)
-      drawOfficeDaylight(skyContext,input.scene,wallDate,elapsed.current)
-      drawOfficeSkyBackgroundEvents(skyContext,input.scene,input.enabled?elapsed.current:0,wallDate,undefined,activeBurst)
+      const skyH=Math.round(surfaceHeight*ratio),skyNow=officeSky(wallDate)
+      const skyKey=`${w}x${skyH}:${Math.floor(input.wallNow/60_000)}:${skyNow.holiday??''}:${skyNow.weather}:${skyNow.event?.kind??''}:${input.enabled}`
+      const skyDynamic=Boolean(activeBurst||(skyNow.event&&DESKTOP_BACKGROUND_SKY_EVENTS.has(skyNow.event.kind))||((skyNow.holiday==='new-year'||skyNow.holiday==='halloween')&&(skyNow.phase==='night'||skyNow.phase==='dusk')))
+      const nowMs=typeof performance!=='undefined'?performance.now():Date.now()
+      if(skyElement.width!==w||skyElement.height!==skyH||skyPainted.current.key!==skyKey||skyDynamic||(input.enabled&&nowMs-skyPainted.current.at>=160)){
+        if(skyElement.width!==w||skyElement.height!==skyH){skyElement.width=w;skyElement.height=skyH}
+        skyContext.setTransform(ratio,0,0,ratio,0,0)
+        drawOfficeDaylight(skyContext,input.scene,wallDate,elapsed.current)
+        drawOfficeSkyBackgroundEvents(skyContext,input.scene,input.enabled?elapsed.current:0,wallDate,undefined,activeBurst)
+        skyPainted.current={key:skyKey,at:nowMs}
+      }
     }
     const sharingPeer=daily.current!.sharingPeer(input.scene,motionClock.current,actors)
     const greeting = greet.current && greet.current.until > elapsed.current ? greet.current.key : sharingPeer
@@ -549,9 +566,10 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   const lastPaintSeq = useRef(0)
   const roomPaintKey=JSON.stringify([visualScene.width,visualScene.height,...visualScene.floors.filter(f=>f.kind==='team').map(f=>[f.id,f.sessionId,f.title,f.room,f.y,f.height,f.constructing,f.clipHeight,f.transitionOpacity,f.exiting])])
   useIsomorphicLayoutEffect(()=>{
+    if(!visible||!pageVisible)return
     const element=roomCanvas.current,context=element?.getContext('2d')
     if(!element||!context)return
-    const ratio=Math.max(1,Math.min(3,window.devicePixelRatio||1))
+    const ratio=Math.max(1,Math.min(2,window.devicePixelRatio||1))
     const width=Math.round(visualScene.width*ratio),height=Math.round(visualScene.height*ratio)
     if(element.width!==width)element.width=width
     if(element.height!==height)element.height=height
@@ -559,7 +577,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
     for(const floor of visualScene.floors)drawOfficeRoomDesign(context,visualScene,floor,roomArt)
     paint(lastPainted.current)
     lastPaintSeq.current=renderSeq.current
-  },[roomPaintKey,roomArt])
+  },[roomPaintKey,roomArt,visible,pageVisible])
   const wallMinute = Math.floor(now / 60_000)
   useIsomorphicLayoutEffect(() => {
     const displayChanged=paintedCollaboration.current!==collaborationOverrides
@@ -589,8 +607,7 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
   }, [snapshots.length === 0])
   useEffect(() => {
     if (!enabled) return
-    let handle = 0, lastTime = 0, lastPaint = 0, lastLabels = 0
-    const interval = animationMode === 'low' ? 1000 / 24 : 1000 / 45
+    let handle = 0, lastTime = 0, lastPaint = 0, lastLabels = 0, lastLedgerCheck = 0
     const tick = (time: number) => {
       handle = requestAnimationFrame(tick)
       if (!lastTime) lastTime = time
@@ -603,9 +620,17 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
         for(const [key,trip] of arrivalTrips.current)arrivalTrips.current.set(key,{...trip,startedAt:trip.startedAt+delta,endsAt:trip.endsAt+delta})
         shiftOfficeLiftTime(lift.current!,delta)
         daily.current!.shiftMotion(delta)
-        if(active.current?.segments.some(s=>s.liftPhase))active.current={...active.current,startedAt:active.current.startedAt+delta,endsAt:active.current.endsAt+delta}
+        if(active.current?.segments.some(s=>s.liftPhase))active.current={...active.current,startedAt:active.current.startedAt+delta,endsAt:active.current.startedAt+delta}
       }
-      if (time - lastPaint < interval) return
+      const busyMotion=Boolean(
+        active.current||queue.current.length||leisureTrips.current.size||arrivalTrips.current.size||
+        daily.current!.guests.size||held.current||officeLiftFrame(lift.current!,motionClock.current).moving||
+        holograms.current.cues.length||
+        (holidayBurst.current&&elapsed.current-holidayBurst.current.startedAt<4.5)||
+        (selectionCue.current&&elapsed.current-selectionCue.current.startedAt<1.2)||
+        current.current.scene.floors.some(f=>f.constructing||f.clipHeight!==undefined||f.exiting)
+      )
+      if (time - lastPaint < officeFrameInterval(animationMode, busyMotion)) return
       lastPaint = time
       const input = current.current
       {
@@ -650,10 +675,14 @@ export function OfficeView({ snapshots, scope, selectedKey, onSelect, onOpenTeam
           else active.current=trip
         }
       }})
-      if(dailyBefore.count!==daily.current!.guests.size||dailyBefore.open!==daily.current!.canteenOpen)setDailyVersion(n=>n+1)
+      const dailyChanged=dailyBefore.count!==daily.current!.guests.size||dailyBefore.open!==daily.current!.canteenOpen
+      if(dailyChanged)setDailyVersion(n=>n+1)
       for(const [key,origin] of daily.current!.completedOrigins)if(leadOrigins.current.has(key))leadOrigins.current.set(key,origin)
-      const ledger=JSON.stringify(daily.current!.ledger)
-      if(ledger!==persistedDaily.current){persistedDaily.current=ledger;try{localStorage.setItem(OFFICE_DAILY_STORAGE,ledger)}catch{}}
+      if(dailyChanged||time-lastLedgerCheck>=1000){
+        lastLedgerCheck=time
+        const ledger=JSON.stringify(daily.current!.ledger)
+        if(ledger!==persistedDaily.current){persistedDaily.current=ledger;try{localStorage.setItem(OFFICE_DAILY_STORAGE,ledger)}catch{}}
+      }
       queue.current=queue.current.map(p=>(daily.current!.completedOrigins.has(p.event.actorKey)||Boolean(p.event.parentKey&&daily.current!.completedOrigins.has(p.event.parentKey)))?{...p,event:{...p.event,at:Date.now()}}:p)
       if (held.current && !active.current && !queue.current.some(pending => pending.event.kind === 'left')) {
         holdLayout(null); setMoving(null); return

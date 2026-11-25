@@ -26,7 +26,8 @@ import type { TelemetryClient } from './telemetry'
 import type { SourceHealth } from '../web/lib/team-types'
 import {SSEWriter,type SSESink} from './sse-writer'
 
-const MAX_EVENT_BUFFER = 5000
+export const MAX_EVENT_BUFFER = 2500
+export const MAX_BUFFERED_SESSIONS = 12
 const DISCOVERY_DIR = path.join(os.homedir(), '.claude', 'agent-flow')
 const CLAUDE_DIR = path.join(os.homedir(), '.claude', 'projects')
 
@@ -152,7 +153,13 @@ export function bufferRelayHistory(buffers: Map<string, AgentEvent[]>, event: Ag
     if (buf.length > MAX_EVENT_BUFFER) {
       buf = buf.slice(buf.length - MAX_EVENT_BUFFER)
     }
+    buffers.delete(event.sessionId)
     buffers.set(event.sessionId, buf)
+    while (buffers.size > MAX_BUFFERED_SESSIONS) {
+      const oldest = buffers.keys().next().value
+      if (oldest === undefined) break
+      buffers.delete(oldest)
+    }
   }
 }
 
@@ -654,6 +661,7 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
       }
       codexWatcher?.dispose()
       t3Watcher?.dispose()
+      eventBuffer.clear()
     },
   }
 }

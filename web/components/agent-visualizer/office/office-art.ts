@@ -361,21 +361,42 @@ export function officeLowerBodyFit(pose:LowerBodyPose,hipHeight:number){
   return {size,shin:hipHeight-(top-part.hipY)*size-(part.ground-bottom)*size,top,bottom}
 }
 
+const brightenedLegAtlases=new WeakMap<CanvasImageSource,HTMLCanvasElement|null>()
+function brightenedLegAtlas(atlas:CanvasImageSource){
+  if(typeof document==='undefined')return null
+  const cached=brightenedLegAtlases.get(atlas)
+  if(cached!==undefined)return cached
+  let offscreen:HTMLCanvasElement|null=null
+  const record=atlas as {naturalWidth?:number;naturalHeight?:number;width?:number;height?:number}
+  const w=record.naturalWidth||record.width||0,h=record.naturalHeight||record.height||0
+  if(w>0&&h>0)try{
+    const canvas=document.createElement('canvas')
+    canvas.width=w;canvas.height=h
+    const offCtx=canvas.getContext('2d')
+    if(offCtx){offCtx.filter='brightness(1.15)';offCtx.drawImage(atlas,0,0);offscreen=canvas}
+  }catch{offscreen=null}
+  brightenedLegAtlases.set(atlas,offscreen)
+  return offscreen
+}
+
 function drawLowerBody(c:Ctx,atlas:CanvasImageSource,pose:LowerBodyPose,hipHeight:number){
   const part=lowerBody[pose]
   const {size,shin,top,bottom}=officeLowerBodyFit(pose,hipHeight)
   const width=size*part.width,x=-part.hipX*width,sx=part.column*256,sy=part.row*256
+  const seatedPose=pose==='reading'||pose==='workSeat'||pose==='rearSeat'||pose==='terminalSeat'
+  const bright=seatedPose?brightenedLegAtlas(atlas):null
+  const source=bright??atlas
   c.save()
-  if(pose==='reading'||pose==='workSeat'||pose==='rearSeat'||pose==='terminalSeat')c.filter='brightness(1.15)'
+  if(seatedPose&&!bright)c.filter='brightness(1.15)'
   if(Math.abs(shin-(bottom-top)*size)<.01){
-    c.drawImage(atlas,sx,sy,256,256,x,-part.ground*size,width,size)
+    c.drawImage(source,sx,sy,256,256,x,-part.ground*size,width,size)
   }else{
     // Thighs and boots keep the painted scale; the plain shin band takes up the stool height.
     const hip=-hipHeight-part.hipY*size,band=hip+top*size,floor=-(part.ground-bottom)*size
-    c.drawImage(atlas,sx,sy,256,256*top,x,hip,width,top*size)
+    c.drawImage(source,sx,sy,256,256*top,x,hip,width,top*size)
     // The shin band overlaps both seams by a hair so no gap shows between draws.
-    c.drawImage(atlas,sx,sy+256*top,256,256*(bottom-top),x,band-.3,width,floor-band+.6)
-    c.drawImage(atlas,sx,sy+256*bottom,256,256*(1-bottom),x,floor,width,(1-bottom)*size)
+    c.drawImage(source,sx,sy+256*top,256,256*(bottom-top),x,band-.3,width,floor-band+.6)
+    c.drawImage(source,sx,sy+256*bottom,256,256*(1-bottom),x,floor,width,(1-bottom)*size)
   }
   c.restore()
 }

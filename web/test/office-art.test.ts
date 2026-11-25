@@ -7,6 +7,7 @@ import { officeAppearance } from '../lib/office-model'
 import { officeNavigation } from '../lib/office-navigation'
 import { officeAvatarHeadAtlases, officeAvatarCoatAtlases, officeAvatarLegAtlases, officeAvatarProfileAtlases, officeAvatarExtraHeadAtlases, officeAvatarWorkwearV1Atlases, officeAvatarWorkwearV2Atlases } from '../components/agent-visualizer/office/office-avatar-atlas'
 import { officePaintedAvatarLook } from '../lib/office-painted-avatar'
+import { MAX_TINTED_HEADS, officeTintedHead } from '../components/agent-visualizer/office/office-avatar-tone'
 import { officeElbowSide, officeLimbBend } from '../lib/office-limb-pose'
 import { drawOfficePaintedWorkwear } from '../components/agent-visualizer/office/office-wardrobe-art'
 import { officeWardrobeFor, officeWardrobeTheme } from '../lib/office-wardrobe'
@@ -790,5 +791,30 @@ it('paints morning mist, rain, and Christmas snow in front of the garden shopkee
 
   for(const c of [mistCtx,rainCtx,xmasCtx]){
     for(const call of c.calls)for(const arg of call.args)assert.ok(typeof arg!=='number'||Number.isFinite(arg))
+  }
+})
+
+it('caps cached tinted head canvases with LRU eviction in officeTintedHead',()=>{
+  const previous=Object.getOwnPropertyDescriptor(globalThis,'document')
+  const created:{width:number;height:number}[]=[]
+  const offCtx={drawImage(){},getImageData:(_x:number,_y:number,w:number,h:number)=>({data:new Uint8ClampedArray(w*h*4)}),putImageData(){}}
+  Object.defineProperty(globalThis,'document',{configurable:true,value:{createElement:()=>{const el={width:0,height:0,getContext:()=>offCtx};created.push(el);return el}}})
+  try{
+    const atlas={} as HTMLImageElement,look=officePaintedAvatarLook(0,6)
+    for(let row=0;row<MAX_TINTED_HEADS;row++)assert.ok(officeTintedHead(atlas,row,0,'front',look))
+    assert.equal(created.length,MAX_TINTED_HEADS)
+    // Promote row 0 to MRU, making row 1 the oldest candidate for eviction.
+    assert.equal(officeTintedHead(atlas,0,0,'front',look),created[0] as unknown as HTMLCanvasElement)
+    assert.equal(created.length,MAX_TINTED_HEADS)
+    assert.ok(officeTintedHead(atlas,MAX_TINTED_HEADS,0,'front',look))
+    assert.equal(created[0].width,96,'recently used head survives eviction')
+    assert.equal(created[1].width,0,'evicted canvas releases its pixel buffer width')
+    assert.equal(created[1].height,0,'evicted canvas releases its pixel buffer height')
+    // Evicted row 1 must be recomputed on next request.
+    assert.ok(officeTintedHead(atlas,1,0,'front',look))
+    assert.equal(created.length,MAX_TINTED_HEADS+2)
+  }finally{
+    if(previous)Object.defineProperty(globalThis,'document',previous)
+    else Reflect.deleteProperty(globalThis,'document')
   }
 })

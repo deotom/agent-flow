@@ -139,7 +139,9 @@ function stars(c: Ctx, w: number, H: number, time: number, sky: OfficeSky) {
 /** Moon with its real phase: lit disc, then the shadowed part as an offset ellipse. */
 function moon(c: Ctx, sky: OfficeSky, w: number, H: number, k: number) {
   const x = w * .8, y = H * .14, r = 9 * k, age = sky.moon
-  c.save(); c.shadowColor = '#fff5c8'; c.shadowBlur = 10 * k; disc(c, x, y, r, '#fff3c4'); c.restore()
+  disc(c, x, y, r * 1.65, 'rgba(255,245,200,.22)')
+  disc(c, x, y, r * 1.25, 'rgba(255,245,200,.32)')
+  disc(c, x, y, r, '#fff3c4')
   // Illuminated fraction; waxing lit on the right, waning lit on the left.
   const lit = (1 - Math.cos(age * Math.PI * 2)) / 2, waxing = age < .5
   if (lit > .98) return
@@ -251,7 +253,8 @@ function water(c: Ctx, w: number, H: number, k: number, time: number, desktop = 
 function lanterns(c: Ctx, w: number, H: number, k: number, time: number) {
   for (let i = 0; i < 8; i++) {
     const p = time ? ((time * .03 + rnd(i, 12)) % 1) : rnd(i, 12), x = w * (.15 + rnd(i, 13) * .7) + (time ? Math.sin(time * .7 + i) * 6 * k : 0), y = H * (.7 - p * .68)
-    c.save(); c.globalAlpha = p > .85 ? (1 - p) / .15 : 1; c.shadowColor = '#ffb347'; c.shadowBlur = 8 * k
+    c.save(); c.globalAlpha = p > .85 ? (1 - p) / .15 : 1
+    disc(c, x, y, 7.5 * k, 'rgba(255,179,71,.24)')
     c.beginPath(); c.moveTo(x - 3.5 * k, y - 5 * k); c.lineTo(x + 3.5 * k, y - 5 * k); c.lineTo(x + 2.5 * k, y + 4 * k); c.lineTo(x - 2.5 * k, y + 4 * k); c.closePath()
     c.fillStyle = '#ffb04a'; c.fill(); disc(c, x, y + 3 * k, 1.3 * k, '#fff2b0'); c.restore()
   }
@@ -260,7 +263,7 @@ function lanterns(c: Ctx, w: number, H: number, k: number, time: number) {
 function pumpkins(c: Ctx, w: number, H: number, k: number, night: boolean, desktop = false) {
   for (const [fx, fy] of (desktop ? [[.11, .845], [.755, .840]] as const : [[.12, .74], [.2, .77], [.88, .73]] as const)) {
     const x = w * fx, y = H * fy
-    c.save(); if (night) { c.shadowColor = '#ffa13d'; c.shadowBlur = 8 * k }
+    c.save(); if (night) disc(c, x, y, 9.5 * k, 'rgba(255,161,61,.24)')
     c.beginPath(); c.ellipse(x, y, 6 * k, 4.6 * k, 0, 0, Math.PI * 2); c.fillStyle = '#f08a24'; c.fill(); c.strokeStyle = '#7a3d10'; c.lineWidth = .8 * k; c.stroke()
     c.fillStyle = '#4c7a2a'; c.fillRect(x - .8 * k, y - 6.5 * k, 1.6 * k, 2.5 * k)
     if (night) { c.fillStyle = '#ffe28a'; c.fillRect(x - 3 * k, y - 1.5 * k, 1.6 * k, 1.6 * k); c.fillRect(x + 1.4 * k, y - 1.5 * k, 1.6 * k, 1.6 * k) }
@@ -281,8 +284,9 @@ function treeLights(c: Ctx, w: number, H: number, k: number, time: number) {
   for (let i = 0; i < 18; i++) {
     const on = time ? Math.sin(time * 2 + i * 1.7) > -.3 : true
     if (!on) continue
-    c.save(); c.shadowColor = colors[i % 4]; c.shadowBlur = 5 * k
-    disc(c, w * (.05 + rnd(i, 16) * .25), H * (.08 + rnd(i, 17) * .3), 1.4 * k, colors[i % 4]); c.restore()
+    const lx = w * (.05 + rnd(i, 16) * .25), ly = H * (.08 + rnd(i, 17) * .3), col = colors[i % 4]
+    disc(c, lx, ly, 3.6 * k, `${col}44`)
+    disc(c, lx, ly, 1.4 * k, col)
   }
 }
 
@@ -317,7 +321,8 @@ function skyHolidayBurst(c: Ctx, burst: OfficeHolidayBurst, w: number, H: number
       const lp = Math.max(0, Math.min(1, (age - i * .22) / 4))
       const x = burst.x + ((i - 1.5) * 26 + Math.sin(age * 1.4 + i) * 6 + burst.seed * 8) * k
       const y = H * .68 - lp * H * .62
-      c.save(); c.globalAlpha = fade * (1 - lp * .35); c.shadowColor = '#ffb347'; c.shadowBlur = 9 * k
+      c.save(); c.globalAlpha = fade * (1 - lp * .35)
+      disc(c, x, y, 8 * k, 'rgba(255,179,71,.26)')
       c.beginPath(); c.moveTo(x - 3.6 * k, y - 5.2 * k); c.lineTo(x + 3.6 * k, y - 5.2 * k); c.lineTo(x + 2.5 * k, y + 4 * k); c.lineTo(x - 2.5 * k, y + 4 * k); c.closePath()
       c.fillStyle = '#ffb04a'; c.fill(); disc(c, x, y + 3 * k, 1.4 * k, '#fff2b0'); c.restore()
     }
@@ -352,7 +357,7 @@ function skyEvent(c: Ctx, event: SkyEvent, w: number, H: number, k: number, time
         const x = ((p * w + rnd(i, 31) * w) % (w + 20 * k)) - 10 * k
         const y = H * (.25 + rnd(i, 32) * .48) + Math.sin(time * 2 + i) * 7 * k
         if (event.kind === 'fireflies') {
-          c.save(); c.globalAlpha *= .5 + .5 * Math.sin(time * 3 + i) ** 2; c.shadowColor = '#e5ff8a'; c.shadowBlur = 8 * k; disc(c, x, y, 1.5 * k, '#e5ff8a'); c.restore()
+          c.save(); c.globalAlpha *= .5 + .5 * Math.sin(time * 3 + i) ** 2; disc(c, x, y, 4.5 * k, 'rgba(229,255,138,.28)'); disc(c, x, y, 1.5 * k, '#e5ff8a'); c.restore()
         } else if (event.kind === 'leaves') {
           c.save(); c.translate(x, y); c.rotate(time + i); c.fillStyle = ['#d5a34c','#b7bc55','#db8752'][i % 3]; c.beginPath(); c.ellipse(0, 0, 4 * k, 1.7 * k, 0, 0, Math.PI * 2); c.fill(); c.restore()
         } else {

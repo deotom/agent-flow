@@ -75,3 +75,38 @@ test('reads referenced parent nodes only and resolves latest-run items without a
  baseline.runs=original.call(db,'SELECT * FROM orchestration_v2_projection_runs').all()
  assert.deepEqual(current,projectT3Teams(baseline,null,now).map(team=>team.event),'current-run snapshots also remain identical')
 })
+
+test('reads only selected threads subagents and caps prompt/result lengths inside SQLite',t=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'agent-flow-subcap-')),file=path.join(dir,'state.sqlite'),db=new DatabaseSync(file)
+ let watcher:T3SessionWatcher|undefined
+ t.after(()=>{watcher?.dispose();db.close();fs.rmSync(dir,{recursive:true,force:true})})
+ db.exec(`CREATE TABLE projection_projects(project_id TEXT,title TEXT,workspace_root TEXT,deleted_at TEXT,archived_at TEXT);
+ INSERT INTO projection_projects VALUES('p','Project','D:/work',NULL,NULL);
+ CREATE TABLE orchestration_v2_projection_threads(thread_id TEXT,project_id TEXT,title TEXT,default_provider TEXT,active_provider_thread_id TEXT,created_at TEXT,updated_at TEXT,archived_at TEXT,deleted_at TEXT,payload_json TEXT);
+ INSERT INTO orchestration_v2_projection_threads VALUES
+  ('root','p','Active Team','codex',NULL,'2026-11-01','2026-11-16',NULL,NULL,'{}'),
+  ('archived','p','Old Team','codex',NULL,'2026-10-01','2026-10-02','2026-10-05',NULL,'{}');
+ CREATE TABLE orchestration_v2_projection_subagents(subagent_id TEXT,thread_id TEXT,run_id TEXT,parent_node_id TEXT,provider TEXT,provider_thread_id TEXT,child_thread_id TEXT,status TEXT,started_at TEXT,completed_at TEXT,updated_at TEXT,driver TEXT,completion_delivery_state TEXT,payload_json TEXT);
+ CREATE TABLE orchestration_v2_projection_runs(run_id TEXT,thread_id TEXT,ordinal INTEGER,status TEXT,provider_thread_id TEXT,completed_at TEXT,payload_json TEXT);
+ CREATE TABLE orchestration_v2_projection_provider_threads(provider_thread_id TEXT,thread_id TEXT,provider TEXT,driver TEXT,updated_at TEXT,payload_json TEXT);
+ CREATE TABLE orchestration_v2_projection_runtime_requests(runtime_request_id TEXT,thread_id TEXT,node_id TEXT,kind TEXT,status TEXT,created_at TEXT,resolved_at TEXT);
+ CREATE TABLE orchestration_v2_projection_nodes(node_id TEXT PRIMARY KEY,thread_id TEXT,parent_node_id TEXT,provider_thread_id TEXT,started_at TEXT,completed_at TEXT);
+ CREATE TABLE orchestration_v2_projection_turn_items(turn_item_id TEXT,thread_id TEXT,run_id TEXT,provider_thread_id TEXT,type TEXT,status TEXT,updated_at TEXT,payload_json TEXT);`)
+ const insertSub=db.prepare(`INSERT INTO orchestration_v2_projection_subagents VALUES(?,?,NULL,NULL,'codex','native',NULL,'completed','2026-11-01','2026-11-02','2026-11-02','codex','observed',?)`)
+ insertSub.run('selected-task','root',JSON.stringify({title:'Selected',role:'review',prompt:'p'.repeat(5000),result:'r'.repeat(5000)}))
+ insertSub.run('archived-task','archived',JSON.stringify({title:'Archived',role:'review',prompt:'x'.repeat(5000),result:'y'.repeat(5000)}))
+ const observed:{sql:string;values:any[]}[]=[],original=DatabaseSync.prototype.prepare
+ t.mock.method(DatabaseSync.prototype,'prepare',function(this:unknown,sql:string){
+  const statement=original.call(this,sql),all=statement.all.bind(statement)
+  statement.all=(...args:unknown[])=>{const rows=all(...args);observed.push({sql,values:rows});return rows}
+  return statement
+ })
+ watcher=new T3SessionWatcher(null,file);watcher.poll()
+ const subQuery=observed.find(q=>/FROM orchestration_v2_projection_subagents WHERE/.test(q.sql))!
+ assert.ok(subQuery)
+ assert.equal(subQuery.values.length,1,'archived threads subagent payload is never materialized')
+ assert.equal(subQuery.values[0].subagent_id,'selected-task')
+ const payload=JSON.parse(subQuery.values[0].payload_json)
+ assert.equal(payload.prompt.length,2000)
+ assert.equal(payload.result.length,2000)
+})

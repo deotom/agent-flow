@@ -1,3 +1,5 @@
+import type { AnimationMode } from './viewer-preferences'
+
 export type OfficeLiveliness = 'quiet' | 'normal' | 'lively'
 
 export interface OfficeLivelinessPolicy {
@@ -12,6 +14,19 @@ export interface OfficeLivelinessPolicy {
 
 export function officeLiveliness(value:unknown):OfficeLiveliness {
  return value==='quiet'||value==='lively'||value==='normal'?value:'normal'
+}
+
+/** Frame interval in ms: full motion while busy, calmer cadence when stationary. */
+export function officeFrameInterval(mode: AnimationMode, busy: boolean): number {
+ if (busy) return mode === 'low' ? 1000 / 24 : 1000 / 45
+ return mode === 'low' ? 1000 / 10 : 1000 / 15
+}
+
+/** Canvas pixel ratio capped to keep HiDPI sharpness without excessive backing-store RAM. */
+export function officeCanvasScale(clientWidth: number, sceneWidth: number, dpr: number, maxRatio = 2): number {
+ const safeScene = Math.max(1, sceneWidth || 1)
+ const raw = ((clientWidth || safeScene) * (dpr || 1)) / safeScene
+ return Math.max(1, Math.min(maxRatio, Math.ceil(raw * 4) / 4))
 }
 
 /** Cosmetic activity only. Pause/reduced motion and scheduled meal ownership remain upstream. */
