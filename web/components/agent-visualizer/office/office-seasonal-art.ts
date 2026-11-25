@@ -136,3 +136,50 @@ export function drawOfficeSeasonalRooms(c:Ctx,scene:OfficeScene,date:Date,time:n
     c.restore()
   }
 }
+
+function desktopHolidayCharm(c:Ctx,holiday:Holiday,time:number){
+  const sway=time?Math.sin(time*1.5)*.08:0
+  c.save();c.rotate(sway)
+  line(c,[[0,-6],[0,0]],'#746245',.9)
+  if(holiday==='loy-krathong'){
+    box(c,-5,0,10,9,'#f4a640');box(c,-4,0,8,2,'#7c4e24');dot(c,0,5,1.8,'#fff1a8')
+  }else if(holiday==='songkran'){
+    dot(c,0,3,5,'#f3ca52');dot(c,0,3,2.5,'#ef7ca2');line(c,[[-2,8],[-2,13],[2,8],[2,13]],'#fff8e0',1)
+  }else if(holiday==='christmas'){
+    c.strokeStyle='#38724b';c.lineWidth=3.2;c.beginPath();c.ellipse(0,4,5,5,0,0,Math.PI*2);c.stroke()
+    dot(c,0,-1,1.8,'#cf4e4a')
+  }else if(holiday==='halloween'){
+    c.fillStyle='#f3eee2';c.beginPath();c.ellipse(0,5,5,5.5,0,0,Math.PI*2);c.fill()
+    dot(c,-1.5,4,.9,'#3a2d40');dot(c,1.5,4,.9,'#3a2d40')
+  }else if(holiday==='new-year'){
+    dot(c,0,4,4.5,'#f4cf62');dot(c,0,4,2,'#fff6c8')
+  }else{
+    heart(c,0,4,3.5)
+  }
+  c.restore()
+}
+
+/** Subtle Desktop holiday trim on beams and break-room bar, keeping boards, stations, and the lift clear. */
+export function drawOfficeDesktopHolidayRooms(c:Ctx,scene:OfficeScene,date:Date,time:number):void{
+  const sky=officeSky(date)
+  if(!sky.holiday)return
+  const rooms=scene.floors.filter(f=>f.desktopArt&&(f.kind==='team'||f.kind==='break')&&!f.constructing&&(f.height??0)>0&&!(f.clipHeight!==undefined&&f.clipHeight<=0.5))
+  if(!rooms.length)return
+  const w=scene.width,scale=w/450
+  for(const floor of rooms){
+    const h=floor.height!,clipH=floor.clipHeight??h
+    const variant=[...(floor.annexOf??floor.id)].reduce((sum,ch)=>sum+ch.charCodeAt(0),0)%3
+    c.save()
+    c.beginPath();c.rect(0,floor.y,w*.80,Math.min(clipH,h*.92));c.clip()
+    if(floor.transitionOpacity!==undefined)c.globalAlpha*=floor.transitionOpacity
+    if(floor.kind==='team'){
+      c.save();c.translate(w*.14,floor.y+h*.142);c.scale(scale,scale);garland(c,92,sky.holiday,variant,time);c.restore()
+      c.save();c.translate(w*.635,floor.y+h*.142);c.scale(scale,scale);garland(c,64,sky.holiday,(variant+1)%3,time);c.restore()
+      c.save();c.translate(w*.345,floor.y+h*.175);c.scale(scale*.55,scale*.55);desktopHolidayCharm(c,sky.holiday,time);c.restore()
+    }else{
+      c.save();c.translate(w*.11,floor.y+h*.215);c.scale(scale,scale);garland(c,290,sky.holiday,variant,time);c.restore()
+      c.save();c.translate(w*.12,floor.y+h*.565);c.scale(scale*.55,scale*.55);holidayProp(c,sky.holiday,time);c.restore()
+    }
+    c.restore()
+  }
+}

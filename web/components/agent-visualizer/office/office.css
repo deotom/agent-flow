@@ -106,3 +106,5 @@
 .of-view .of-workbench[data-painted="true"]{z-index:2;background-image:none;filter:none}.of-workbench[data-painted="true"]:hover,.of-workbench[data-painted="true"]:focus-visible{outline:1px solid #edce86;outline-offset:-3px;box-shadow:0 0 6px #edce8630}
 
 .of-atmosphere{flex-wrap:wrap}.of-atmosphere>button{font:inherit;color:#ffe9c0;background:#51412e;border:1px solid #8a7050;border-radius:5px;min-height:24px;padding:2px 6px}.of-atmosphere>button[aria-pressed=true]{background:#365047}.of-atmosphere>button:disabled{opacity:.5}
+.of-sound-quick{display:inline-grid;place-items:center;padding:0}.of-sound-quick svg{width:14px;height:14px}
+.of-sound-vol{display:inline-flex;align-items:center;gap:4px;font-size:9px}.of-sound-vol input{width:56px;accent-color:#c8a26a;cursor:pointer}

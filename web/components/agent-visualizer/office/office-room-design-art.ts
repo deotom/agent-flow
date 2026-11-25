@@ -63,7 +63,14 @@ function drawUnlitBulb(c:Ctx,x:number,y:number,width:number,height:number,angle=
 
 /** Switch off the equipment on the painted plate. The room lanterns still light the furniture. */
 export function drawOfficeRoomDeskLights(c:Ctx,scene:OfficeScene,floor:OfficeFloor,art:OfficeRoomArt){
+ if(floor.clipHeight!==undefined&&floor.clipHeight<=0.5)return
+ const clipped=floor.clipHeight!==undefined||floor.transitionOpacity!==undefined
  const w=scene.width,h=floor.height??w*.72,lit=officePaintedStationOccupancy(scene,floor)
+ if(clipped){
+  c.save()
+  if(floor.clipHeight!==undefined){c.beginPath();c.rect(0,floor.y,w,floor.clipHeight);c.clip()}
+  if(floor.transitionOpacity!==undefined)c.globalAlpha*=floor.transitionOpacity
+ }
  c.save();c.translate(0,floor.y);c.scale(w/1000,h/721)
  if(!lit.has('build')){
   drawUnlitSurface(c,art.shell,1000,721,buildBacksplash,.43)
@@ -91,45 +98,57 @@ export function drawOfficeRoomDeskLights(c:Ctx,scene:OfficeScene,floor:OfficeFlo
   drawUnlitBulb(c,98,246,30,7,-.45)
   c.restore()
  }
+ if(clipped)c.restore()
 }
 /** Paint before the interactive station DOM/sprites and actors. Never bakes duplicate workbenches. */
 export function drawOfficeRoomDesign(c:Ctx,scene:OfficeScene,floor:OfficeFloor,art:OfficeRoomArt|null){
  if(!art||floor.kind!=='team'||floor.constructing||floor.annexOf)return
+ if(floor.clipHeight!==undefined&&floor.clipHeight<=0.5)return
  const w=scene.width,design=roomDesignFor(floor),lead=roomLeadRestPoint(floor,w)
- drawOfficeRoomShell(c,scene,floor,art)
- if(floor.desktopArt&&art.canteenShell){
-  if(art.planningDesk){
-   const desk=roomDesktopPlanningDesk(floor,w)
-   const image=art.planningDesk as HTMLImageElement
-   const sw=image.naturalWidth??image.width,sh=image.naturalHeight??image.height
-   // The plaque uses the same DOM style as the other stations. Keep the furniture on its original anchors.
-   const firstRow=Math.round(sh*.182),plaqueDepth=desk.height*firstRow/sh
-   c.drawImage(image,0,firstRow,sw,sh-firstRow,desk.left,desk.top+plaqueDepth,desk.width,desk.height-plaqueDepth)
-  }
-  if(art.leadTable){
-   const visitor=roomLeadMeetingPoint(floor,w),center=(lead.x+visitor.x)/2
-   const floorHeight=floor.height??w*.72
-   // The rug ends at the front bench's canopy so both actors stand on the same floorboards.
-   if(art.leadRug)c.drawImage(art.leadRug,center-w*.092,lead.y-floorHeight*.059,w*.184,floorHeight*.066)
-   const width=visitor.x-lead.x-w*.014,height=Math.min(floorHeight*.13,w*.095)
-   c.drawImage(art.leadTable,center-width/2,lead.y-height-w*.0015,width,height)
-  }
-  return
+ const clipped=floor.clipHeight!==undefined||floor.transitionOpacity!==undefined
+ if(clipped){
+  c.save()
+  if(floor.clipHeight!==undefined){c.beginPath();c.rect(0,floor.y,w,floor.clipHeight);c.clip()}
+  if(floor.transitionOpacity!==undefined)c.globalAlpha*=floor.transitionOpacity
  }
- c.save();c.globalCompositeOperation='color';c.globalAlpha=art.canteenShell?.22:.66
- c.fillStyle=design.accent;c.fillRect(w*.027,floor.y+w*.122,w*.79,w*.228);c.restore()
- // Keep each room's stained boards in the same palette as the painted shell.
- const h=floor.height??w*.5625,floorStart=floor.y+w*.36,floorEnd=floor.y+h-w*.12
- c.save();c.globalCompositeOperation='color';c.globalAlpha=art.canteenShell?.12:.36;c.fillStyle=design.accent
- const laneX=w*(design.theme==='operations'?.055:.035),laneWidth=w*(design.theme==='research'?.65:.73)
- c.fillRect(laneX,floorStart,laneWidth,Math.max(0,floorEnd-floorStart))
- if(design.large&&!art.canteenShell){c.globalAlpha=.18;c.fillRect(w*(.055+design.detail*.014),floor.y+w*.49,w*.68,w*.012)}
- c.restore()
- if(!art.canteenShell){
-  const x=w*(.045+(design.variant%3)*.018)
-  drawRoomProp(c,art,cells[design.theme],x,floor.y+w*.135,w*.245,w*.215)
-  drawOfficeRoomCurios(c,scene,floor,art)
+ try{
+  drawOfficeRoomShell(c,scene,floor,art)
+  if(floor.desktopArt&&art.canteenShell){
+   if(art.planningDesk){
+    const desk=roomDesktopPlanningDesk(floor,w)
+    const image=art.planningDesk as HTMLImageElement
+    const sw=image.naturalWidth??image.width,sh=image.naturalHeight??image.height
+    // The plaque uses the same DOM style as the other stations. Keep the furniture on its original anchors.
+    const firstRow=Math.round(sh*.182),plaqueDepth=desk.height*firstRow/sh
+    c.drawImage(image,0,firstRow,sw,sh-firstRow,desk.left,desk.top+plaqueDepth,desk.width,desk.height-plaqueDepth)
+   }
+   if(art.leadTable){
+    const visitor=roomLeadMeetingPoint(floor,w),center=(lead.x+visitor.x)/2
+    const floorHeight=floor.height??w*.72
+    // The rug ends at the front bench's canopy so both actors stand on the same floorboards.
+    if(art.leadRug)c.drawImage(art.leadRug,center-w*.092,lead.y-floorHeight*.059,w*.184,floorHeight*.066)
+    const width=visitor.x-lead.x-w*.014,height=Math.min(floorHeight*.13,w*.095)
+    c.drawImage(art.leadTable,center-width/2,lead.y-height-w*.0015,width,height)
+   }
+   return
+  }
+  c.save();c.globalCompositeOperation='color';c.globalAlpha=(floor.transitionOpacity??1)*(art.canteenShell?.22:.66)
+  c.fillStyle=design.accent;c.fillRect(w*.027,floor.y+w*.122,w*.79,w*.228);c.restore()
+  // Keep each room's stained boards in the same palette as the painted shell.
+  const h=floor.height??w*.5625,floorStart=floor.y+w*.36,floorEnd=floor.y+h-w*.12
+  c.save();c.globalCompositeOperation='color';c.globalAlpha=(floor.transitionOpacity??1)*(art.canteenShell?.12:.36);c.fillStyle=design.accent
+  const laneX=w*(design.theme==='operations'?.055:.035),laneWidth=w*(design.theme==='research'?.65:.73)
+  c.fillRect(laneX,floorStart,laneWidth,Math.max(0,floorEnd-floorStart))
+  if(design.large&&!art.canteenShell){c.globalAlpha=(floor.transitionOpacity??1)*.18;c.fillRect(w*(.055+design.detail*.014),floor.y+w*.49,w*.68,w*.012)}
+  c.restore()
+  if(!art.canteenShell){
+   const x=w*(.045+(design.variant%3)*.018)
+   drawRoomProp(c,art,cells[design.theme],x,floor.y+w*.135,w*.245,w*.215)
+   drawOfficeRoomCurios(c,scene,floor,art)
+  }
+  // The chair is wholly inside its workroom, outside work stations and the lift aisle.
+  drawRoomProp(c,art,4,lead.x-w*.062,lead.y-w*.115,w*.135,w*.135)
+ }finally{
+  if(clipped)c.restore()
  }
- // The chair is wholly inside its workroom, outside work stations and the lift aisle.
- drawRoomProp(c,art,4,lead.x-w*.062,lead.y-w*.115,w*.135,w*.135)
 }

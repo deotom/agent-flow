@@ -71,8 +71,10 @@ it('connects the calendar to the garden theme, weather summary and holiday activ
  const html=renderToStaticMarkup(<OfficeView {...props} now={new Date(2026,3,13,12).getTime()} snapshots={[team('s','Lead')]}/>)
  assert.ok(html.includes('data-season="hot"')&&html.includes('data-holiday="songkran"'))
  assert.ok(html.includes('Songkran · water play')&&html.includes('simulated weather'))
+ assert.ok(html.includes('of-holiday-hit')&&html.includes('aria-label="Splash Songkran water, '))
  const cool=renderToStaticMarkup(<OfficeView {...props} now={new Date(2026,10,13,12).getTime()} snapshots={[team('s','Lead')]}/>)
  assert.ok(cool.includes('data-season="cool"')&&cool.includes('Cool season'))
+ assert.ok(!cool.includes('of-holiday-hit'))
 })
 it('keeps reconnect status in the existing Office toolbar while retaining the last known scene',()=>{
  const html=renderToStaticMarkup(<OfficeView {...props} live={false} snapshots={[team('s','Lead')]} connection={{label:'Reconnecting',tone:'warn',detail:'Last read 12 seconds ago'}}/>)
@@ -148,4 +150,16 @@ it('renders a compact proportional lift call plate without an oversized arrow gl
   assert.ok(hatch, 'garden lift button renders')
   assert.equal(hatch[1], '<span class="of-lift-call-plate" aria-hidden="true"></span>')
   assert.ok(!hatch[1].includes('↕'))
+})
+
+it('includes a quick ambient sound toggle in the Desktop toolbar without duplicating it in Web', () => {
+  const snap = team('sound', 'Workshop')
+  const desktopHtml = onDesktop(() => renderToStaticMarkup(<OfficeView {...props} snapshots={[snap]} />))
+  assert.ok(desktopHtml.includes('class="of-sound-quick"'))
+  assert.ok(desktopHtml.includes('aria-label="Play Office ambient sound"'))
+  assert.ok(desktopHtml.includes('aria-pressed="false"'))
+  assert.ok(desktopHtml.includes('aria-label="Office ambient sound"'))
+  const webHtml = renderToStaticMarkup(<OfficeView {...props} snapshots={[snap]} />)
+  assert.ok(!webHtml.includes('class="of-sound-quick"'))
+  assert.ok(webHtml.includes('aria-label="Office ambient sound"'))
 })

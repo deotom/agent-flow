@@ -335,7 +335,7 @@
   color: var(--desktop-text);
 }
 
-[data-agent-flow-host="desktop"] .of-view .of-atmosphere button[aria-pressed="true"] {
+[data-agent-flow-host="desktop"] .of-view :is(.of-atmosphere button, .of-toolbar button.of-sound-quick)[aria-pressed="true"] {
   background: var(--desktop-selection);
   color: var(--desktop-accent);
 }

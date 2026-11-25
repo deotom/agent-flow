@@ -12,6 +12,8 @@ import { drawOfficePaintedWorkwear } from '../components/agent-visualizer/office
 import { officeWardrobeFor, officeWardrobeTheme } from '../lib/office-wardrobe'
 import { drawOfficeGarden } from '../components/agent-visualizer/office/office-garden-art'
 import { createOfficeTravelPath, officeTripFrame, type OfficeTrip } from '../lib/office-motion'
+import { drawOfficeRoomDesign, drawOfficeRoomDeskLights } from '../components/agent-visualizer/office/office-room-design-art'
+import { skyWeather } from '../lib/office-sky'
 
 type Call = { op: string; args: unknown[]; fill: string }
 class RecordingContext {
@@ -702,4 +704,91 @@ it('draws lunch eating trays after avatars and keeps Desktop ambient fireflies/b
   const plainOut=ctx()
   drawOfficeFrame(plainOut,scene([desktopGarden],[restingGarden]),options({motion:false,time:3,date:new Date(2026,10,22,20),avatarArt:parts,roomArt}))
   assert.ok(!plainOut.calls.some(call=>call.fill==='#4a8248'),'non-holiday garden actor does not hold a krathong')
+
+  const clippedZero=ctx(),clippedHalf=ctx(),settledRoomCtx=ctx()
+  const roomFloor:OfficeScene['floors'][number]={id:'f-clip',sessionId:'s',title:'Clip',subtitle:'',color:'#fff',kind:'team',desktopArt:true,y:200,height:300,actorKeys:['g']}
+  const roomActor={key:'g',sessionId:'s',agent:{status:'running' as const,role:'member' as const,runtime:null,activities:[]},task:null,parentKey:null,
+    appearance:officeAppearance(0),floorId:'f-clip',zone:'desk' as const,stand:false,x:140,y:340} as unknown as OfficeScene['actors'][number]
+  drawOfficeRoomDesign(clippedZero,scene([{...roomFloor,clipHeight:0,transitionOpacity:0}],[]),{...roomFloor,clipHeight:0,transitionOpacity:0},roomArt)
+  drawOfficeRoomDeskLights(clippedZero,scene([{...roomFloor,clipHeight:0,transitionOpacity:0}],[]),{...roomFloor,clipHeight:0,transitionOpacity:0},roomArt)
+  assert.equal(clippedZero.calls.length,0,'room design and desk lights skip floors clipped to 0')
+  drawOfficeRoomDesign(clippedHalf,scene([{...roomFloor,clipHeight:150,transitionOpacity:.5}],[]),{...roomFloor,clipHeight:150,transitionOpacity:.5},roomArt)
+  assert.ok(clippedHalf.calls.some(call=>call.op==='rect'&&call.args[1]===200&&call.args[3]===150),'transitioning room clips to clipHeight')
+  drawOfficeRoomDesign(settledRoomCtx,scene([roomFloor],[]),roomFloor,roomArt)
+  assert.ok(!settledRoomCtx.calls.some(call=>call.op==='rect'),'settled Desktop room calls no extra clip rect')
+
+  const actorHidden=ctx(),actorClipped=ctx()
+  drawOfficeFrame(actorHidden,scene([{...roomFloor,clipHeight:0,transitionOpacity:0}],[roomActor]),options({motion:false,time:3,avatarArt:parts,roomArt}))
+  assert.ok(!actorHidden.calls.some(call=>call.op==='image'&&call.args[0]===parts),'actor on zero-clipped floor is not painted')
+  drawOfficeFrame(actorClipped,scene([{...roomFloor,clipHeight:160,transitionOpacity:.5}],[roomActor]),options({motion:false,time:3,avatarArt:parts,roomArt}))
+  assert.ok(actorClipped.calls.some(call=>call.op==='rect'&&call.args[1]===200&&call.args[3]===160),'actor on transitioning floor clips to floor clipHeight')
+})
+
+it('renders Desktop holiday room decor, break-room headwear, shared holiday effects, and garden bursts',()=>{
+  const {parts}=paintedWardrobeAtlas()
+  const props={width:1536,height:1024} as HTMLImageElement
+  const roomArt={shell:{width:1000,height:721} as HTMLImageElement,canteenShell:{width:1000,height:721} as HTMLImageElement,props}
+  const teamFloor:OfficeScene['floors'][number]={id:'team',sessionId:'s',title:'Team',subtitle:'',color:'#fff',kind:'team',desktopArt:true,y:200,height:300,actorKeys:[]}
+  const songkranTeam=ctx(),plainTeam=ctx()
+  drawOfficeFrame(songkranTeam,scene([teamFloor],[]),options({motion:false,time:1,date:new Date(2026,3,13,12),avatarArt:parts,roomArt}))
+  drawOfficeFrame(plainTeam,scene([teamFloor],[]),options({motion:false,time:1,date:new Date(2026,10,13,12),avatarArt:parts,roomArt}))
+  assert.ok(songkranTeam.calls.length>plainTeam.calls.length,'Desktop team floor adds holiday room decor on Songkran')
+
+  const breakFloor:OfficeScene['floors'][number]={id:'b',sessionId:'s',title:'Break',subtitle:'',color:'#fff',kind:'break',annexOf:'team',desktopArt:true,y:200,height:300,actorKeys:['g']}
+  const breakActor={key:'g',sessionId:'s',agent:{status:'done' as const,role:'member' as const,runtime:null,activities:[]},task:null,parentKey:null,
+    appearance:{...officeAppearance(0),slot:0},floorId:'b',zone:'lounge' as const,stand:true,x:200,y:380} as unknown as OfficeScene['actors'][number]
+  const xmasBreak=ctx(),plainBreak=ctx()
+  drawOfficeFrame(xmasBreak,scene([breakFloor],[breakActor]),options({motion:false,time:1,date:new Date(2026,11,25,12),avatarArt:parts,roomArt}))
+  drawOfficeFrame(plainBreak,scene([breakFloor],[breakActor]),options({motion:false,time:1,date:new Date(2026,10,13,12),avatarArt:parts,roomArt}))
+  assert.ok(xmasBreak.calls.some(call=>call.fill==='#c44440'),'Desktop break-room actor wears holiday headwear on Christmas')
+  assert.ok(!plainBreak.calls.some(call=>call.fill==='#c44440'),'non-holiday break-room actor does not wear Christmas headwear')
+
+  const gardenFloor:OfficeScene['floors'][number]={id:'lounge',sessionId:null,title:'Garden',subtitle:'',color:'#fff',kind:'lounge',desktopArt:true,y:0,height:195,actorKeys:['a','b']}
+  const actorA={key:'a',sessionId:'s',agent:{status:'done' as const,role:'member' as const,runtime:null,activities:[]},task:null,parentKey:null,
+    appearance:officeAppearance(0),floorId:'lounge',zone:'lounge' as const,stand:true,x:120,y:150} as unknown as OfficeScene['actors'][number]
+  const actorB={...actorA,key:'b',x:180} as unknown as OfficeScene['actors'][number]
+  const sharedRest=[{kind:'holiday' as const,firstKey:'a',secondKey:'b',progress:.5,poses:new Map<string,OfficePose>([['a',{face:1,sit:false,walk:false,offer:.8}],['b',{face:-1,sit:false,walk:false,offer:.8}]])}]
+  const sharedCtx=ctx(),burstCtx=ctx()
+  drawOfficeFrame(sharedCtx,scene([gardenFloor],[actorA,actorB]),options({motion:true,time:1,date:new Date(2026,3,13,12),avatarArt:parts,roomArt,sharedRest}))
+  assert.ok(sharedCtx.calls.some(call=>call.fill==='#9ae6ff'),'shared holiday Songkran pair paints water splash droplets')
+  drawOfficeFrame(burstCtx,scene([gardenFloor],[actorA,actorB]),options({motion:true,time:1,date:new Date(2026,3,13,12),avatarArt:parts,roomArt,sharedRest,holidayBurst:{holiday:'songkran',startedAt:0,seed:.5,x:186,y:164}}))
+  assert.ok(burstCtx.calls.length>sharedCtx.calls.length,'active holidayBurst adds garden burst geometry')
+
+  for(const c of [songkranTeam,xmasBreak,sharedCtx,burstCtx]){
+    for(const call of c.calls)for(const arg of call.args)assert.ok(typeof arg!=='number'||Number.isFinite(arg))
+  }
+})
+
+it('paints morning mist, rain, and Christmas snow in front of the garden shopkeeper, actors, and lift doors',()=>{
+  const {parts}=paintedWardrobeAtlas()
+  const props={width:1536,height:1024} as HTMLImageElement
+  const roomArt={shell:{width:1000,height:721} as HTMLImageElement,canteenShell:{width:1000,height:721} as HTMLImageElement,props}
+  const gardenFloor:OfficeScene['floors'][number]={id:'lounge',sessionId:null,title:'Garden',subtitle:'',color:'#fff',kind:'lounge',desktopArt:true,y:0,height:195,actorKeys:['guest']}
+  const guest={key:'guest',sessionId:'s',agent:{status:'done' as const,role:'member' as const,runtime:null,activities:[]},task:null,parentKey:null,
+    appearance:officeAppearance(0),floorId:'lounge',zone:'lounge' as const,stand:true,x:140,y:150} as unknown as OfficeScene['actors'][number]
+  const mistDate=Array.from({length:30},(_,i)=>new Date(2026,11,i+1,7)).find(d=>skyWeather(d)==='mist')!
+  const rainDate=Array.from({length:31},(_,i)=>new Date(2026,7,i+1,12)).find(d=>skyWeather(d)==='rain')!
+  const xmasDate=new Date(2026,11,25,12)
+  assert.ok(mistDate&&rainDate)
+
+  const sc=scene([gardenFloor],[guest])
+  const mistCtx=ctx(),rainCtx=ctx(),xmasCtx=ctx()
+  drawOfficeFrame(mistCtx,sc,options({motion:true,time:1,date:mistDate,avatarArt:parts,roomArt}))
+  const lastAvatarMist=mistCtx.calls.findLastIndex(call=>call.op==='image'&&call.args[0]===parts)
+  const lastMistRect=mistCtx.calls.findLastIndex(call=>call.op==='rect'&&Number(call.args[2])>sc.width)
+  assert.ok(lastAvatarMist>=0&&lastMistRect>lastAvatarMist,'foreground morning mist draws after avatars and shopkeeper')
+
+  drawOfficeFrame(rainCtx,sc,options({motion:true,time:1,date:rainDate,avatarArt:parts,roomArt}))
+  const lastAvatarRain=rainCtx.calls.findLastIndex(call=>call.op==='image'&&call.args[0]===parts)
+  const lastRainStroke=rainCtx.calls.findLastIndex(call=>call.op==='stroke')
+  assert.ok(lastAvatarRain>=0&&lastRainStroke>lastAvatarRain,'foreground rain streaks draw after avatars and lift doors')
+
+  drawOfficeFrame(xmasCtx,sc,options({motion:true,time:1,date:xmasDate,avatarArt:parts,roomArt}))
+  const lastAvatarXmas=xmasCtx.calls.findLastIndex(call=>call.op==='image'&&call.args[0]===parts)
+  const lastSnow=xmasCtx.calls.findLastIndex(call=>call.op==='ellipse'&&call.fill==='rgba(255,255,255,.9)')
+  assert.ok(lastAvatarXmas>=0&&lastSnow>lastAvatarXmas,'Christmas snow falls in front of garden actors')
+
+  for(const c of [mistCtx,rainCtx,xmasCtx]){
+    for(const call of c.calls)for(const arg of call.args)assert.ok(typeof arg!=='number'||Number.isFinite(arg))
+  }
 })

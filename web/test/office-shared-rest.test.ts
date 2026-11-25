@@ -1,6 +1,6 @@
 import {it} from 'node:test'
 import assert from 'node:assert/strict'
-import {officeSharedRest} from '../lib/office-shared-rest'
+import {officeSharedRest, type OfficeSharedRestOptions} from '../lib/office-shared-rest'
 import {officeHandContacts} from '../lib/office-contacts'
 import {officeLife,officeLifeCanChat,officeLifePairs} from '../lib/office-life'
 import type {OfficeActor, OfficeScene} from '../lib/office-types'
@@ -11,7 +11,7 @@ const actor=(key:string,x:number,y=100):OfficeActor=>({key,x,y,floorId:'garden',
  agent:{id:key,parentId:null,role:'worker',name:key,runtime:'codex',model:null,status:'done',task:null,activities:[],requestKind:null,context:null,toolCallCount:0,hasThread:true,startedAt:null,updatedAt:null,completedAt:null}})
 const scene=(actors=[actor('a',100),actor('b',160)]):OfficeScene=>({width:450,height:300,actors,floors:[{id:'garden',sessionId:null,title:'Garden',subtitle:'',color:'',y:0,kind:'lounge',actorKeys:actors.map(a=>a.key)}],quietTeams:[],totalAgents:actors.length,finishedCount:actors.length})
 const empty=new Set<string>()
-const active=(s:OfficeScene,options=day)=>{
+const active=(s:OfficeScene,options:OfficeSharedRestOptions=day)=>{
  for(let t=4;t<250;t+=.25){const pairs=officeSharedRest(s,t,empty,options);if(pairs.length&&pairs[0].progress>.25&&pairs[0].progress<.75)return {t,pairs}}
  assert.fail('expected a shared resting window')
 }
@@ -121,4 +121,27 @@ it('does not mutate scene actors, source agents, poses or busy ownership',()=>{
  const s=scene();s.actors[0].pose={objectAction:'book',face:-1};const before=structuredClone(s),busy=new Set<string>()
  const {t}=active(s);officeSharedRest(s,t,busy,day);assert.deepEqual(s,before);assert.equal(busy.size,0)
  s.actors[0].agent.status='running';assert.deepEqual(officeSharedRest(s,t,busy,day),[])
+})
+
+it('forms coordinated standing holiday pairs in the outdoor lounge without changing indoor break rooms',()=>{
+ const holidayOptions=[{...day,holiday:'songkran' as const},{...night,holiday:'loy-krathong' as const}]
+ for(const options of holidayOptions){
+  const s=scene(),before=structuredClone(s)
+  const {pairs}=active(s,options)
+  assert.equal(pairs.length,1)
+  assert.equal(pairs[0].kind,'holiday')
+  const a=pairs[0].poses.get('a')!,b=pairs[0].poses.get('b')!
+  assert.equal(a.face,1);assert.equal(b.face,-1)
+  for(const pose of [a,b]){
+   assert.equal(pose.sit,false)
+   assert.equal(pose.mug,false)
+   assert.equal(pose.walk,false)
+   assert.equal(pose.objectAction,undefined)
+   assert.ok((pose.offer??0)>0)
+  }
+  assert.deepEqual(s,before)
+ }
+ const indoor=scene()
+ indoor.floors[0].kind='break'
+ assert.equal(active(indoor,{...day,holiday:'songkran' as const}).pairs[0].kind,'chat')
 })

@@ -14,7 +14,7 @@ export interface OfficeAppearance {
   face?: 'round' | 'square' | 'oval'
 }
 export interface OfficePoint { x: number; y: number }
-export interface OfficePose { planningNote?:true; acknowledgment?:number; workGesture?:import('./office-work-gestures').OfficeWorkGesture;workLift?:number;workBack?:boolean;stepLength?:number;stepDirection?:OfficePoint;dressing?:number;seatBack?:boolean;seatProfile?:boolean;supportHands?:{left:OfficePoint;right:OfficePoint}; inLift?:boolean; liftCrossing?:boolean; liftBlend?:number; liftWait?:'press'|'wait'; meeting?:boolean; rising?:boolean; opacity?:number;objectAction?:OfficeLeisureAction;climb?: boolean; climbStep?:number; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean; face?: 1 | -1;stretch?:number;turn?:number;lookUp?:boolean;walkWeight?:number;gait?:number;seatBlend?:number;seatHeight?:number;offer?:number;cupTilt?:number }
+export interface OfficePose { planningNote?:true; acknowledgment?:number; workGesture?:import('./office-work-gestures').OfficeWorkGesture;workLift?:number;workBack?:boolean;stepLength?:number;stepDirection?:OfficePoint;dressing?:number;seatBack?:boolean;seatProfile?:boolean;supportHands?:{left:OfficePoint;right:OfficePoint}; inLift?:boolean; liftCrossing?:boolean; liftBlend?:number; liftWait?:'press'|'wait'; meeting?:boolean; rising?:boolean; opacity?:number;objectAction?:OfficeLeisureAction;holidayProp?:import('./office-seasonal').OfficeHolidayGardenAction|null;wave?:boolean|number;hop?:number;climb?: boolean; climbStep?:number; walk?: boolean; sit?: boolean; carry?: boolean; hand?: boolean; typing?: boolean; mug?: boolean; lead?: boolean; face?: 1 | -1;stretch?:number;turn?:number;lookUp?:boolean;walkWeight?:number;gait?:number;seatBlend?:number;seatHeight?:number;offer?:number;cupTilt?:number }
 export interface OfficeActor extends OfficePoint {
   key: string
   sessionId: string
@@ -63,6 +63,9 @@ export interface OfficeFloor {
   annexOf?: string
   constructing?: boolean
   constructionProgress?: number
+  clipHeight?: number
+  transitionOpacity?: number
+  exiting?: boolean
   height?: number
   room?: 'room-a' | 'room-b-lead' | 'room-c-big' | 'room-stations' | 'room-stations-large' | 'room-canteen' | OfficeBreakRoom
   overflow?: number
@@ -114,7 +117,9 @@ export interface OfficeDailyVisual {
   cleanup:boolean
   guests:readonly {actorKey:string;kind:'coffee'|'lunch'|'tea'|'outing';phase:'outbound'|'eating'|'relocating'|'returning';floorId:string;x:number;y:number;seat:number;action?:import('./office-rest-outings').OfficeOutingAction;night?:boolean;collected?:boolean;pickupProgress?:number}[]
 }
+export interface OfficeHolidayBurst { holiday: import('./office-sky').Holiday; startedAt: number; seed: number; x: number; y: number }
 export interface OfficePaintOptions {
+  holidayBurst?: OfficeHolidayBurst | null
   selectionCue?:import('./office-selection-gesture').OfficeSelectionCue|null
   wardrobeLooks?:ReadonlyMap<string,import('./office-wardrobe-transition').OfficeWardrobeTransitionLook>
   socialCadenceMultiplier?:number

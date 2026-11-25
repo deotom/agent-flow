@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { gardenWetness, moonAge, officeClouds, officeSky, officeSkyIcon, skyEvent, skyHoliday, skyPhase, skySeason, skyWeather, SKY_EVENT_SLOT_MS } from '../lib/office-sky'
-import { DESKTOP_BACKGROUND_SKY_EVENTS, drawOfficeSky, drawOfficeSkyBackgroundEvents, drawOfficeSkyBalloon } from '../components/agent-visualizer/office/office-sky-art'
+import { DESKTOP_BACKGROUND_SKY_EVENTS, drawOfficeForegroundWeather, drawOfficeSky, drawOfficeSkyBackgroundEvents, drawOfficeSkyBalloon } from '../components/agent-visualizer/office/office-sky-art'
 import type {OfficeScene} from '../lib/office-types'
 
 const at = (y: number, m: number, d: number, h = 12, min = 0, s = 0) => new Date(y, m - 1, d, h, min, s)
@@ -84,6 +84,44 @@ test('routes distant Desktop sky events and New Year night fireworks behind the 
  drawOfficeSkyBackgroundEvents(nyBgHol.c,desktopScene(),1,nyDate,nyHoliday)
  assert.deepEqual(nyFgHol.ops,nyFgBase.ops,'foreground sky skips Desktop New Year night fireworks')
  assert.ok(nyBgHol.ops.length>0,'background sky layer paints Desktop New Year night fireworks')
+ const lkDate=at(2026,11,24,21)
+ const lkBase={...officeSky(lkDate),phase:'night' as const,weather:'clear' as const,holiday:null,event:null}
+ const lkHoliday={...lkBase,holiday:'loy-krathong' as const}
+ const lkFgBase=mkCtx(),lkFgHol=mkCtx(),lkBgMoving=mkCtx(),lkBgStatic=mkCtx()
+ drawOfficeSky(lkFgBase.c,desktopScene(),1,lkDate,lkBase)
+ drawOfficeSky(lkFgHol.c,desktopScene(),1,lkDate,lkHoliday)
+ drawOfficeSkyBackgroundEvents(lkBgMoving.c,desktopScene(),1,lkDate,lkHoliday)
+ drawOfficeSkyBackgroundEvents(lkBgStatic.c,desktopScene(),0,lkDate,lkHoliday)
+ assert.deepEqual(lkFgHol.ops,lkFgBase.ops,'foreground sky skips Desktop Loy Krathong night lanterns')
+ assert.ok(lkBgMoving.ops.length>0,'background sky layer paints moving Desktop Loy Krathong night lanterns')
+ assert.ok(lkBgStatic.ops.length>0,'background sky layer paints static Desktop Loy Krathong night lanterns at time=0')
+ const hwDate=at(2026,10,31,21)
+ const hwHoliday={...officeSky(hwDate),phase:'night' as const,weather:'clear' as const,holiday:'halloween' as const,event:null}
+ const hwFgStatic=mkCtx(),hwFgMoving=mkCtx(),hwBgMoving=mkCtx()
+ drawOfficeSky(hwFgStatic.c,desktopScene(),0,hwDate,hwHoliday)
+ drawOfficeSky(hwFgMoving.c,desktopScene(),1,hwDate,hwHoliday)
+ drawOfficeSkyBackgroundEvents(hwBgMoving.c,desktopScene(),1,hwDate,hwHoliday)
+ assert.deepEqual(hwFgMoving.ops,hwFgStatic.ops,'foreground sky skips Desktop Halloween night bats')
+ assert.ok(hwBgMoving.ops.length>0,'background sky layer paints Desktop Halloween night bats')
+ for(const [holiday,d] of [['new-year',at(2026,1,1,12)],['songkran',at(2026,4,13,12)],['loy-krathong',at(2026,11,24,12)]] as const){
+  const base={...officeSky(d),phase:'day' as const,weather:'clear' as const,holiday:null,event:null}
+  const hol={...base,holiday}
+  const dBase=mkCtx(),dHol=mkCtx(),wBase=mkCtx(),wHol=mkCtx()
+  const nonDesktop=desktopScene();nonDesktop.floors[0].desktopArt=false
+  drawOfficeSky(dBase.c,desktopScene(),0,d,base)
+  drawOfficeSky(dHol.c,desktopScene(),0,d,hol)
+  drawOfficeSky(wBase.c,nonDesktop,0,d,base)
+  drawOfficeSky(wHol.c,nonDesktop,0,d,hol)
+  assert.deepEqual(dHol.ops,dBase.ops,`foreground sky skips Desktop daytime bunting for ${holiday}`)
+  assert.ok(wHol.ops.length>wBase.ops.length,`non-Desktop daytime sky still paints bunting for ${holiday}`)
+ }
+ for(const holiday of ['loy-krathong','new-year','halloween'] as const){
+  const d=at(2026,11,24,12)
+  const daySky={...officeSky(d),phase:'day' as const,weather:'clear' as const,holiday,event:null}
+  const bgBurst=mkCtx()
+  drawOfficeSkyBackgroundEvents(bgBurst.c,desktopScene(),1,d,daySky,{holiday,startedAt:0,seed:.5,x:450*.415,y:188*.84})
+  assert.ok(bgBurst.ops.length>0,`background sky layer paints ${holiday} burst`)
+ }
  const webScene=desktopScene()
  webScene.floors[0].desktopArt=false
  const planeSky={...officeSky(date),phase:'day' as const,weather:'clear' as const,holiday:null,event:{kind:'plane' as const,seed:.5,progress:.5}}
@@ -216,9 +254,9 @@ test('keeps Desktop Halloween pumpkins clear of the lift and walks the cat along
   const scene:OfficeScene={width:450,height:500,floors:[{id:'lounge',kind:'lounge',sessionId:null,title:'Garden',subtitle:'',color:'#abc',y:0,height:195.75,actorKeys:[],desktopArt:true}],actors:[],quietTeams:[],totalAgents:0,finishedCount:0}
   const date=at(2026,10,31,12),sky={...officeSky(date),weather:'clear' as const,holiday:'halloween' as const,event:{kind:'cat' as const,seed:.5,progress:.5}}
   drawOfficeSky(canvas,scene,2,date,sky)
-  assert.ok(ellipses.length>=4)
-  assert.ok(ellipses.slice(0,3).every(p=>p.x<450*.80),'Desktop pumpkins remain left of the lift column')
-  assert.ok(ellipses.slice(3).every(p=>p.y>195.75*.80),'Desktop cat walks along the stone foreground path')
+  assert.equal(ellipses.length,4)
+  assert.ok(ellipses.slice(0,2).every(p=>p.x<450*.80&&Math.abs(p.x-450*.415)>40),'Desktop pumpkins remain left of the lift column and clear of the focal spot')
+  assert.ok(ellipses.slice(2).every(p=>p.y>195.75*.80),'Desktop cat walks along the stone foreground path')
 })
 
 test('summary label and toolbar icon', () => {
@@ -228,4 +266,53 @@ test('summary label and toolbar icon', () => {
   assert.equal(officeSkyIcon(sky), '🏮')
   assert.equal(officeSkyIcon({ ...sky, holiday: null, weather: 'rain' }), '🌧')
   assert.equal(officeSkyIcon({ ...sky, holiday: null, weather: 'clear', phase: 'night' }), '☾')
+})
+
+test('separates mist, rain/storm, and Christmas snow into background valley mist and foreground weather over characters', () => {
+  const noop = () => {}
+  const grad = { addColorStop: noop }
+  const mk = () => {
+    const ops: string[] = []
+    const c = {
+      fillStyle: '', strokeStyle: '', lineWidth: 1, globalAlpha: 1,
+      save: noop, restore: noop, beginPath: noop, closePath: noop, rect: noop, clip: noop,
+      translate: noop, moveTo: () => ops.push('moveTo'), lineTo: () => ops.push('lineTo'),
+      fill: () => ops.push('fill'), fillRect: () => ops.push('fillRect'),
+      stroke: () => ops.push('stroke'), ellipse: () => ops.push('ellipse'),
+      createLinearGradient: () => grad,
+    } as unknown as CanvasRenderingContext2D
+    return { c, ops }
+  }
+  const scene: OfficeScene = {
+    width: 450, height: 500,
+    floors: [{ id: 'lounge', kind: 'lounge', sessionId: null, title: 'Garden', subtitle: '', color: '#abc', y: 0, height: 195, actorKeys: [], desktopArt: true }],
+    actors: [], quietTeams: [], totalAgents: 0, finishedCount: 0,
+  }
+  const date = at(2026, 12, 10, 7)
+  const clearSky = { ...officeSky(date), phase: 'dawn' as const, weather: 'clear' as const, holiday: null, event: null }
+  for (const weather of ['mist', 'rain', 'storm'] as const) {
+    const fgClear = mk(), fgWeather = mk()
+    drawOfficeSky(fgClear.c, scene, 1, date, clearSky)
+    drawOfficeSky(fgWeather.c, scene, 1, date, { ...clearSky, weather })
+    assert.deepEqual(fgWeather.ops, fgClear.ops, `drawOfficeSky defers ${weather} out of pre-actor pass`)
+  }
+  const bgClear = mk(), bgMist = mk()
+  drawOfficeSkyBackgroundEvents(bgClear.c, scene, 1, date, clearSky)
+  drawOfficeSkyBackgroundEvents(bgMist.c, scene, 1, date, { ...clearSky, weather: 'mist' })
+  assert.equal(bgClear.ops.length, 0)
+  assert.ok(bgMist.ops.length > 0, 'Desktop background sky paints distant valley morning mist')
+
+  const fgClean = mk()
+  drawOfficeForegroundWeather(fgClean.c, scene, 1, date, clearSky)
+  assert.equal(fgClean.ops.length, 0)
+  for (const sky of [
+    { ...clearSky, weather: 'mist' as const },
+    { ...clearSky, weather: 'rain' as const },
+    { ...clearSky, weather: 'storm' as const },
+    { ...clearSky, weather: 'clear' as const, holiday: 'christmas' as const },
+  ]) {
+    const out = mk()
+    drawOfficeForegroundWeather(out.c, scene, 1, date, sky)
+    assert.ok(out.ops.length > 0, `foreground weather paints ${sky.holiday ?? sky.weather}`)
+  }
 })

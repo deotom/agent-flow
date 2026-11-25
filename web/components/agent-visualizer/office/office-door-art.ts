@@ -10,8 +10,8 @@ export function drawOfficeInteriorDoors(c: Ctx, scene: OfficeScene, activeDoorFl
     ? !scene.floors.some(parent => parent.id === floor.annexOf)
     : floor.kind === 'team' && scene.floors.some(annex => annex.annexOf === floor.id))
   for (const floor of doors) {
-    const height = floor.height ?? 0
-    if (floor.constructing || height < 60 * scale) continue
+    const height = floor.height ?? 0, clipHeight = floor.clipHeight ?? height
+    if (floor.constructing || clipHeight <= 0.5 || height < 60 * scale) continue
     const annex = scene.floors.find(item => item.annexOf === floor.id)
     const open = activeDoorFloorId === floor.id || activeDoorFloorId === annex?.id || activeDoorFloorId === floor.annexOf || transitDoorIds.has(floor.id) || !!annex&&transitDoorIds.has(annex.id)
     // The painted Desktop cutaway returns through its header, clear of the shaft jamb.
@@ -19,7 +19,8 @@ export function drawOfficeInteriorDoors(c: Ctx, scene: OfficeScene, activeDoorFl
     const point=officeInteriorDoor(scene,floor.id),bounds=officeDoorBounds(scene,floor.id)
     if(!point||!bounds)continue
     c.save()
-    c.beginPath(); c.rect(0, floor.y, scene.width * .89, height); c.clip()
+    if (floor.transitionOpacity !== undefined) c.globalAlpha *= floor.transitionOpacity
+    c.beginPath(); c.rect(0, floor.y, scene.width * .89, clipHeight); c.clip()
     if(art){
       c.drawImage(open?art.doorOpen:art.doorClosed,bounds.x,bounds.y,bounds.width,bounds.height)
       c.restore();continue

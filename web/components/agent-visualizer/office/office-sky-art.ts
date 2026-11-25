@@ -1,4 +1,4 @@
-import type { OfficeScene } from '../../../lib/office-types'
+import type { OfficeHolidayBurst, OfficeScene } from '../../../lib/office-types'
 import { officeClouds, officeSky, skyEvent as currentSkyEvent, type OfficeSky, type SkyEvent } from '../../../lib/office-sky'
 
 /**
@@ -41,25 +41,70 @@ export function drawOfficeSky(c: Ctx, scene: OfficeScene, time: number, date: Da
   const sky = override ?? skyFor(date), w = scene.width, k = w / 450, desktop = Boolean(lawn?.desktopArt)
   c.save()
   c.beginPath(); c.rect(0, 0, w, H * (desktop ? .88 : .82)); c.clip()
-  // The daylight canvas owns the sun path, stars and moon. This layer adds weather and events.
-  const dim = sky.weather === 'storm' ? .16 : sky.weather === 'rain' ? .10 : 0
-  if (dim) { c.fillStyle = `rgba(40,48,66,${dim})`; c.fillRect(0, 0, w, H) }
-  weather(c, sky, w, H, k, time)
+  // The daylight canvas owns sun/moon/clouds; foreground weather (mist, rain, snow) is painted over actors by drawOfficeForegroundWeather.
   if (sky.holiday) holiday(c, sky, w, H, k, time, desktop)
   if (sky.event && time && !(desktop && DESKTOP_BACKGROUND_SKY_EVENTS.has(sky.event.kind))) skyEvent(c, sky.event, w, H, k, time, desktop)
   c.restore()
   return sky
 }
 
-/** Distant sky events (planes, birds, stars, rainbow, ufo, balloon) & New Year fireworks fly behind the garden tree canopy. */
-export function drawOfficeSkyBackgroundEvents(c: Ctx, scene: OfficeScene, time: number, date: Date, override?: OfficeSky): void {
+/** Distant valley mist, sky events (planes, birds, stars, rainbow, ufo, balloon), night lanterns, bats & fireworks sit behind the tree canopy. */
+export function drawOfficeSkyBackgroundEvents(c: Ctx, scene: OfficeScene, time: number, date: Date, override?: OfficeSky, burst?: OfficeHolidayBurst | null): void {
   const lawn = scene.floors.find(f => f.kind === 'lounge')
-  if (!lawn?.desktopArt || !lawn.height || time <= 0) return
-  const sky = override ?? skyFor(date), w = scene.width, H = lawn.height, k = w / 450
+  if (!lawn?.desktopArt || !lawn.height) return
+  const sky = override ?? skyFor(date), w = scene.width, H = lawn.height, k = w / 450, night = sky.phase === 'night' || sky.phase === 'dusk'
   c.save()
   c.beginPath(); c.rect(0, 0, w, H * .88); c.clip()
-  if (sky.holiday === 'new-year' && (sky.phase === 'night' || sky.phase === 'dusk')) fireworks(c, w, H, k, time)
-  if (sky.event && DESKTOP_BACKGROUND_SKY_EVENTS.has(sky.event.kind)) skyEvent(c, sky.event, w, H, k, time, true)
+  if (sky.weather === 'mist' && typeof c.createLinearGradient === 'function') {
+    const shift = time ? Math.sin(time * .12) * 14 * k : 0
+    const y0 = H * .28, h = H * .56
+    const g = c.createLinearGradient(0, y0, 0, y0 + h)
+    g.addColorStop(0, 'rgba(248,243,236,0)')
+    g.addColorStop(.48, 'rgba(248,243,236,.30)')
+    g.addColorStop(.82, 'rgba(248,243,236,.14)')
+    g.addColorStop(1, 'rgba(248,243,236,0)')
+    c.save(); c.translate(shift, 0); c.fillStyle = g; c.fillRect(-24 * k, y0, w + 48 * k, h); c.restore()
+  }
+  if (sky.holiday === 'new-year' && night && time > 0) fireworks(c, w, H, k, time)
+  if (sky.holiday === 'loy-krathong' && night) lanterns(c, w, H, k, time)
+  if (sky.holiday === 'halloween' && night && time > 0) bats(c, w, H, k, time)
+  if (time > 0 && sky.event && DESKTOP_BACKGROUND_SKY_EVENTS.has(sky.event.kind)) skyEvent(c, sky.event, w, H, k, time, true)
+  if (burst && burst.holiday === sky.holiday) {
+    const age = time > 0 ? time - burst.startedAt : .5
+    if (age >= 0 && age < 4.5) skyHolidayBurst(c, burst, w, H, k, age)
+  }
+  c.restore()
+}
+
+/** Atmospheric mist veils, rain/storm precipitation, and winter snow rendered in front of garden scenery, actors, shopkeeper, and lift doors. */
+export function drawOfficeForegroundWeather(c: Ctx, scene: OfficeScene, time: number, date: Date, override?: OfficeSky): void {
+  const lawn = scene.floors.find(f => f.kind === 'lounge'), H = lawn?.height ?? 0
+  if (!H || typeof c.createLinearGradient !== 'function') return
+  const sky = override ?? skyFor(date), w = scene.width, k = w / 450, desktop = Boolean(lawn?.desktopArt), bottom = H * (desktop ? .88 : .82)
+  if (sky.weather !== 'rain' && sky.weather !== 'storm' && sky.weather !== 'mist' && sky.holiday !== 'christmas') return
+  c.save()
+  c.beginPath(); c.rect(0, 0, w, bottom); c.clip()
+  if (sky.weather === 'rain' || sky.weather === 'storm') {
+    const dim = sky.weather === 'storm' ? .14 : .09
+    c.fillStyle = `rgba(40,48,66,${dim})`; c.fillRect(0, 0, w, bottom)
+    weather(c, sky, w, H, k, time)
+  }
+  if (sky.weather === 'mist') {
+    const y1 = H * .42, shift1 = time ? Math.sin(time * .15) * 20 * k : 0
+    const g1 = c.createLinearGradient(0, y1, 0, bottom)
+    g1.addColorStop(0, 'rgba(246,241,234,0)')
+    g1.addColorStop(.48, 'rgba(246,241,234,.22)')
+    g1.addColorStop(.82, 'rgba(246,241,234,.11)')
+    g1.addColorStop(1, 'rgba(246,241,234,0)')
+    c.save(); c.translate(shift1, 0); c.fillStyle = g1; c.fillRect(-24 * k, y1, w + 48 * k, bottom - y1); c.restore()
+    const y2 = H * .56, shift2 = time ? Math.sin(time * .11 + 1.4) * 26 * k : 0
+    const g2 = c.createLinearGradient(0, y2, 0, bottom)
+    g2.addColorStop(0, 'rgba(248,244,238,0)')
+    g2.addColorStop(.52, 'rgba(248,244,238,.13)')
+    g2.addColorStop(1, 'rgba(248,244,238,0)')
+    c.save(); c.translate(shift2, 0); c.fillStyle = g2; c.fillRect(-30 * k, y2, w + 60 * k, bottom - y2); c.restore()
+  }
+  if (sky.holiday === 'christmas') snow(c, w, H, k, time)
   c.restore()
 }
 
@@ -155,22 +200,17 @@ function weather(c: Ctx, sky: OfficeSky, w: number, H: number, k: number, time: 
       if (strike) { c.fillStyle = 'rgba(255,255,240,.45)'; c.fillRect(0, 0, w, H) }
     }
   }
-  if (sky.weather === 'mist') {
-    const shift = time ? Math.sin(time * .15) * 20 * k : 0
-    const g = c.createLinearGradient(0, H * .4, 0, H * .8); g.addColorStop(0, 'rgba(245,240,235,0)'); g.addColorStop(.5, 'rgba(245,240,235,.42)'); g.addColorStop(1, 'rgba(245,240,235,.1)')
-    c.save(); c.translate(shift, 0); c.fillStyle = g; c.fillRect(-30 * k, H * .4, w + 60 * k, H * .4); c.restore()
-  }
 }
 
 function holiday(c: Ctx, sky: OfficeSky, w: number, H: number, k: number, time: number, desktop = false) {
   const night = sky.phase === 'night' || sky.phase === 'dusk'
   switch (sky.holiday) {
-    case 'new-year': return night ? (desktop ? undefined : fireworks(c, w, H, k, time)) : bunting(c, w, H, k, ['#e8473f', '#f2c94c', '#3f8ee8', '#5cc272'])
-    case 'songkran': bunting(c, w, H, k, ['#3fb4e8', '#7fd3f5', '#f2c94c', '#ff8fb1']); return !night && time ? water(c, w, H, k, time) : undefined
-    case 'loy-krathong': return night ? lanterns(c, w, H, k, time) : bunting(c, w, H, k, ['#f2a03f', '#f2c94c', '#e86a3f'])
-    case 'halloween': pumpkins(c, w, H, k, night, desktop); return night && time ? bats(c, w, H, k, time) : undefined
-    case 'christmas': treeLights(c, w, H, k, time); return snow(c, w, H, k, time)
-    case 'valentine': return hearts(c, w, H, k, time)
+    case 'new-year': return night ? (desktop ? undefined : fireworks(c, w, H, k, time)) : (desktop ? undefined : bunting(c, w, H, k, ['#e8473f', '#f2c94c', '#3f8ee8', '#5cc272']))
+    case 'songkran': if (!desktop) bunting(c, w, H, k, ['#3fb4e8', '#7fd3f5', '#f2c94c', '#ff8fb1']); return !night && time ? water(c, w, H, k, time, desktop) : undefined
+    case 'loy-krathong': return night ? (desktop ? undefined : lanterns(c, w, H, k, time)) : (desktop ? undefined : bunting(c, w, H, k, ['#f2a03f', '#f2c94c', '#e86a3f']))
+    case 'halloween': pumpkins(c, w, H, k, night, desktop); return night && time && !desktop ? bats(c, w, H, k, time) : undefined
+    case 'christmas': return treeLights(c, w, H, k, time)
+    case 'valentine': return hearts(c, w, H, k, time, desktop)
   }
 }
 
@@ -195,15 +235,17 @@ function fireworks(c: Ctx, w: number, H: number, k: number, time: number) {
   c.globalAlpha = 1
 }
 
-function water(c: Ctx, w: number, H: number, k: number, time: number) {
+function water(c: Ctx, w: number, H: number, k: number, time: number, desktop = false) {
+  if (desktop) { c.save(); c.beginPath(); c.rect(0, 0, w * .80, H); c.clip() }
   for (let s = 0; s < 3; s++) {
-    const x0 = w * (.3 + s * .2), y0 = H * .72, dir = s % 2 ? -1 : 1
+    const x0 = w * (.26 + s * .18), y0 = H * .72, dir = s % 2 ? -1 : 1
     for (let i = 0; i < 8; i++) {
       const p = ((time * .9 + i / 8 + s * .3) % 1), x = x0 + dir * p * 40 * k, y = y0 - Math.sin(p * Math.PI) * 30 * k
       c.globalAlpha = .75; disc(c, x, y, 1.6 * k, '#8fd8ff')
     }
   }
   c.globalAlpha = 1
+  if (desktop) c.restore()
 }
 
 function lanterns(c: Ctx, w: number, H: number, k: number, time: number) {
@@ -216,7 +258,7 @@ function lanterns(c: Ctx, w: number, H: number, k: number, time: number) {
 }
 
 function pumpkins(c: Ctx, w: number, H: number, k: number, night: boolean, desktop = false) {
-  for (const [fx, fy] of (desktop ? [[.11, .845], [.405, .845], [.755, .840]] as const : [[.12, .74], [.2, .77], [.88, .73]] as const)) {
+  for (const [fx, fy] of (desktop ? [[.11, .845], [.755, .840]] as const : [[.12, .74], [.2, .77], [.88, .73]] as const)) {
     const x = w * fx, y = H * fy
     c.save(); if (night) { c.shadowColor = '#ffa13d'; c.shadowBlur = 8 * k }
     c.beginPath(); c.ellipse(x, y, 6 * k, 4.6 * k, 0, 0, Math.PI * 2); c.fillStyle = '#f08a24'; c.fill(); c.strokeStyle = '#7a3d10'; c.lineWidth = .8 * k; c.stroke()
@@ -256,13 +298,47 @@ function heart(c: Ctx, x: number, y: number, s: number, color: string) {
   c.beginPath(); c.moveTo(x, y + s); c.bezierCurveTo(x - 2 * s, y - .2 * s, x - s, y - 1.6 * s, x, y - .6 * s); c.bezierCurveTo(x + s, y - 1.6 * s, x + 2 * s, y - .2 * s, x, y + s); c.fillStyle = color; c.fill()
 }
 
-function hearts(c: Ctx, w: number, H: number, k: number, time: number) {
+function hearts(c: Ctx, w: number, H: number, k: number, time: number, desktop = false) {
+  if (desktop) { c.save(); c.beginPath(); c.rect(0, 0, w * .80, H); c.clip() }
   for (let i = 0; i < 6; i++) {
     const p = time ? (time * .05 + rnd(i, 21)) % 1 : rnd(i, 21)
     c.globalAlpha = p > .8 ? (1 - p) / .2 : .9
-    heart(c, w * (.2 + rnd(i, 22) * .6) + (time ? Math.sin(time + i) * 5 * k : 0), H * (.72 - p * .6), 3.2 * k, i % 2 ? '#ff7aa8' : '#ff4f7b')
+    heart(c, w * (.18 + rnd(i, 22) * .54) + (time ? Math.sin(time + i) * 5 * k : 0), H * (.72 - p * .6), 3.2 * k, i % 2 ? '#ff7aa8' : '#ff4f7b')
   }
   c.globalAlpha = 1
+  if (desktop) c.restore()
+}
+
+function skyHolidayBurst(c: Ctx, burst: OfficeHolidayBurst, w: number, H: number, k: number, age: number) {
+  const p = Math.max(0, Math.min(1, age / 4.5)), fade = Math.min(1, age / .25) * (1 - p)
+  if (fade <= .01) return
+  if (burst.holiday === 'loy-krathong') {
+    for (let i = 0; i < 4; i++) {
+      const lp = Math.max(0, Math.min(1, (age - i * .22) / 4))
+      const x = burst.x + ((i - 1.5) * 26 + Math.sin(age * 1.4 + i) * 6 + burst.seed * 8) * k
+      const y = H * .68 - lp * H * .62
+      c.save(); c.globalAlpha = fade * (1 - lp * .35); c.shadowColor = '#ffb347'; c.shadowBlur = 9 * k
+      c.beginPath(); c.moveTo(x - 3.6 * k, y - 5.2 * k); c.lineTo(x + 3.6 * k, y - 5.2 * k); c.lineTo(x + 2.5 * k, y + 4 * k); c.lineTo(x - 2.5 * k, y + 4 * k); c.closePath()
+      c.fillStyle = '#ffb04a'; c.fill(); disc(c, x, y + 3 * k, 1.4 * k, '#fff2b0'); c.restore()
+    }
+  } else if (burst.holiday === 'new-year') {
+    const colors = ['#ff7474', '#ffe066', '#69d2ff', '#d08aff', '#7dffa0']
+    for (let b = 0; b < 2; b++) {
+      const bp = ((age + b * .6) / 2.2) % 1
+      const cx = w * (.24 + ((burst.seed + b * .37) % .52)), cy = H * (.12 + b * .09), r = bp * 28 * k
+      c.save(); c.globalAlpha = fade * Math.max(0, 1 - bp)
+      for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; disc(c, cx + Math.cos(a) * r, cy + Math.sin(a) * r + bp * bp * 5 * k, 1.3 * k, colors[(b + i) % colors.length]) }
+      c.restore()
+    }
+  } else if (burst.holiday === 'halloween') {
+    c.save(); c.globalAlpha = fade; c.strokeStyle = '#1d1424'; c.lineWidth = 1.4 * k
+    for (let i = 0; i < 5; i++) {
+      const x = w * (.14 + i * .14 + ((burst.seed * 20) % 10) * .005) + age * 14 * k * (i % 2 ? 1 : -1)
+      const y = H * .56 - p * H * .44 + Math.sin(age * 4 + i) * 5 * k, flap = Math.sin(age * 16 + i) * 3 * k
+      c.beginPath(); c.moveTo(x - 6 * k, y - flap); c.quadraticCurveTo(x - 3 * k, y + k, x, y); c.quadraticCurveTo(x + 3 * k, y + k, x + 6 * k, y - flap); c.stroke()
+    }
+    c.restore()
+  }
 }
 
 /** Random sky events; `progress` runs 0..1 across the event. */

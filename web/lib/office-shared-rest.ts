@@ -1,14 +1,15 @@
 import type {OfficeActor, OfficePose, OfficeScene} from './office-types'
 import {officeSeed} from './office-life'
+import type {Holiday} from './office-sky'
 
 export interface OfficeSharedRestPair {
- kind:'toast'|'snack'|'stargaze'|'chat'
+ kind:'toast'|'snack'|'stargaze'|'chat'|'holiday'
  firstKey:string
  secondKey:string
  progress:number
  poses:ReadonlyMap<string,OfficePose>
 }
-export interface OfficeSharedRestOptions {night:boolean;wet:boolean;clear:boolean;cutawayFloor?:string}
+export interface OfficeSharedRestOptions {night:boolean;wet:boolean;clear:boolean;cutawayFloor?:string;holiday?:Holiday|null}
 
 const resting=new Set(['idle','done','cancelled'])
 const smooth=(t:number)=>{const k=Math.max(0,Math.min(1,t));return k*k*(3-2*k)}
@@ -36,18 +37,31 @@ export function officeSharedRest(scene:OfficeScene,time:number,busyKeys:Readonly
   // Match before checking the clock: a window never switches an actor between neighbours.
   used.add(first.key);used.add(second.key)
   const id=JSON.stringify([first.key,second.key]),seed=officeSeed(id)
-  const period=options.night?120+60*seed:48+24*seed
-  const duration=options.night?4+2*officeSeed(id+'window'):6+2*officeSeed(id+'window')
+  const floor=floors.get(first.floorId)
+  const holidayPair=Boolean(options.holiday&&floor?.kind==='lounge')
+  const period=holidayPair?(options.night?40+20*seed:26+14*seed):(options.night?120+60*seed:48+24*seed)
+  const duration=holidayPair?7+2*officeSeed(id+'window'):(options.night?4+2*officeSeed(id+'window'):6+2*officeSeed(id+'window'))
   const start=4+officeSeed(id+'start')*period,elapsed=time-start
   if(elapsed<0)continue
   const phase=elapsed%period
   if(phase>=duration)continue
   const progress=phase/duration,envelope=smooth(phase/.8)*smooth((duration-phase)/.8)
   const firstObject=object(first),secondObject=object(second)
-  const kind:OfficeSharedRestPair['kind']=firstObject==='coffee'&&secondObject==='coffee'?'toast'
+  const kind:OfficeSharedRestPair['kind']=holidayPair?'holiday'
+   :firstObject==='coffee'&&secondObject==='coffee'?'toast'
    :firstObject==='snack'&&secondObject==='snack'?'snack'
-   :options.night&&!options.wet&&options.clear&&floors.get(first.floorId)?.kind==='lounge'?'stargaze':'chat'
+   :options.night&&!options.wet&&options.clear&&floor?.kind==='lounge'?'stargaze':'chat'
   const pose=(actor:OfficeActor,partner:OfficeActor):OfficePose=>{
+   if(kind==='holiday'){
+    const reach=Math.max(0,Math.min(1,((Math.abs(partner.x-actor.x)/scale-8)/2-14)/14))
+    const h=options.holiday!
+    return {...actor.pose,face:partner.x>actor.x?1:-1,walk:false,typing:false,sit:false,objectAction:undefined,mug:false,
+     offer:envelope*reach*(h==='loy-krathong'?.7:h==='christmas'?.8:h==='new-year'?.6:1),
+     wave:h==='christmas'||h==='new-year',
+     lookUp:(h==='loy-krathong'&&progress>.55)||(h==='new-year'&&progress>.5),
+     hop:h==='songkran'?Math.abs(Math.sin(progress*Math.PI*4))*2.5*envelope:h==='christmas'?Math.abs(Math.sin(progress*Math.PI*3))*1.4*envelope:h==='new-year'?Math.abs(Math.sin(progress*Math.PI*5))*2.2*envelope:0,
+     turn:h==='loy-krathong'?.12*envelope:h==='halloween'?.18*envelope:h==='valentine'?.15*envelope:0}
+   }
    const action=object(actor),offering=kind==='toast'||kind==='snack'
    const baseReach=kind==='snack'?12:16,maxReach=(Math.abs(partner.x-actor.x)/scale-8)/2
    const reach=Math.max(0,Math.min(1,(maxReach-baseReach)/(28-baseReach)))
@@ -58,7 +72,7 @@ export function officeSharedRest(scene:OfficeScene,time:number,busyKeys:Readonly
     cupTilt:kind==='toast'?.12*envelope:0,lookUp:kind==='stargaze',turn:kind==='chat'?.2*envelope:0}
   }
   pairs.push({kind,firstKey:first.key,secondKey:second.key,progress,poses:new Map([[first.key,pose(first,second)],[second.key,pose(second,first)]])})
-  if(pairs.length>=(options.night?1:2))break
+  if(pairs.length>=(options.holiday&&!options.wet?2:options.night?1:2))break
  }
  return pairs
 }

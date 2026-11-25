@@ -21,6 +21,32 @@ export function officeGardenHolidayActivity(date: Date, slot = 0): OfficeGardenH
   const index = Number.isFinite(slot) ? ((Math.trunc(slot) % 2) + 2) % 2 : 0
   return { holiday, prop: entry.prop, activity: entry.captions[index] }
 }
+
+export interface OfficeGardenHolidaySpot { holiday: Holiday; label: string; groupCaption: string; action: OfficeLeisureAction; x: number; y: number; width: number; height: number }
+
+const holidaySpots: Record<Holiday, { label: string; groupCaption: string; action: OfficeLeisureAction }> = {
+  'loy-krathong': { label: 'Float krathong & release lantern', groupCaption: 'is floating a krathong together', action: 'water' },
+  songkran: { label: 'Splash Songkran water', groupCaption: 'is playing Songkran water together', action: 'water' },
+  christmas: { label: 'Twinkle tree & ring bells', groupCaption: 'is celebrating by the Christmas tree', action: 'music' },
+  halloween: { label: 'Light pumpkins & wake bats', groupCaption: 'is trick-or-treating together', action: 'snack' },
+  'new-year': { label: 'Launch New Year fireworks', groupCaption: 'is lighting sparklers together', action: 'snack' },
+  valentine: { label: 'Send Valentine hearts', groupCaption: 'is sharing Valentine flowers together', action: 'snack' },
+}
+
+export function officeGardenHolidaySpot(floor: OfficeFloor, width: number, date: Date): OfficeGardenHolidaySpot | null {
+  if (floor.kind !== 'lounge' || !floor.height) return null
+  const holiday = officeSky(date).holiday
+  if (!holiday) return null
+  const desktop = Boolean(floor.desktopArt), scale = width / 450, meta = holidaySpots[holiday]
+  return {
+    holiday,
+    ...meta,
+    x: width * (desktop ? .415 : .23),
+    y: floor.y + floor.height * (desktop ? .84 : .735),
+    width: 46 * scale,
+    height: 38 * scale,
+  }
+}
 const festivals: Record<Holiday, OfficeSeasonalActivity> = {
   'new-year': { label: 'New Year · celebration snacks', action: 'snack' },
   songkran: { label: 'Songkran · water play', action: 'water' },

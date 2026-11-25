@@ -8,10 +8,15 @@ export function drawOfficeShaft(c:CanvasRenderingContext2D,scene:OfficeScene,fro
  const s=n.scale,x=n.shaftX,h=n.bottom-n.top
  const rider=scene.actors.find(a=>!a.hidden&&(a.pose?.climb||a.pose?.inLift))
  const car=lift??{y:rider?.y??n.hatch.y,doorsOpen:rider&&!rider.pose?.inLift?1:0,moving:Boolean(rider?.pose?.inLift),passengerKeys:rider?[rider.key]:[]}
- const stops=[{...n.hatch,id:'surface',surface:true},...n.landings.map(p=>({...p,surface:false}))].map(p=>({
-  ...p,open:Math.abs(car.y-p.y)<2*s?Math.max(car.doorsOpen,p.surface&&surfaceOpen&&!car.moving&&!car.passengerKeys.length?1:0):0,
-  waiting:scene.actors.some(actor=>!actor.hidden&&actor.pose?.liftWait&&Math.abs(actor.y-p.y)<2*s&&Math.abs(actor.x-(x-officeLiftApproachDistance(scene,p.id)))<4*s),
- }))
+ const floorsById=new Map(scene.floors.map(f=>[f.id,f]))
+ const stops=[{...n.hatch,id:'surface',surface:true},...n.landings.map(p=>({...p,surface:false}))].map(p=>{
+  const floor=p.surface?undefined:floorsById.get(p.id)
+  const clip=floor&&(floor.clipHeight!==undefined||floor.transitionOpacity!==undefined)?{top:floor.y,height:floor.clipHeight??(floor.height??0),opacity:floor.transitionOpacity??1}:undefined
+  return {
+   ...p,clip,open:Math.abs(car.y-p.y)<2*s?Math.max(car.doorsOpen,p.surface&&surfaceOpen&&!car.moving&&!car.passengerKeys.length?1:0):0,
+   waiting:scene.actors.some(actor=>!actor.hidden&&actor.pose?.liftWait&&Math.abs(actor.y-p.y)<2*s&&Math.abs(actor.x-(x-officeLiftApproachDistance(scene,p.id)))<4*s),
+  }
+ })
  if(scene.floors[0]?.desktopArt&&art?.referenceLift){
   drawOfficeReferenceLift(c,art.referenceLift,n,front,car,stops,gardenLampOn)
   return
@@ -51,6 +56,8 @@ export function drawOfficeShaft(c:CanvasRenderingContext2D,scene:OfficeScene,fro
   fill('#9b7849',x-22*s,car.y-81*s,2*s,83*s);fill('#87643c',x+20*s,car.y-81*s,2*s,83*s)
   c.restore()
   for(const p of stops){
+   if(p.clip&&p.clip.height<=0.5)continue
+   if(p.clip){c.save();c.beginPath();c.rect(0,p.clip.top,scene.width,p.clip.height);c.clip();c.globalAlpha*=p.clip.opacity}
    // One painted arch, with a visible right-hand thickness and a recessed inner
    // reveal. No second pair of posts or flat roof competing with its silhouette.
    c.fillStyle='#21170f40';c.beginPath();c.moveTo(x-27*s,p.y+3*s);c.lineTo(x+29*s,p.y+3*s);c.lineTo(x+34*s,p.y+10*s);c.lineTo(x-22*s,p.y+8*s);c.closePath();c.fill()
@@ -106,6 +113,7 @@ export function drawOfficeShaft(c:CanvasRenderingContext2D,scene:OfficeScene,fro
    fill('#3a3024',x-14*s,p.y-91*s,28*s,6*s)
    c.fillStyle='#e5c994';c.font=`bold ${5*s}px sans-serif`;c.textAlign='center';c.fillText('LIFT',x,p.y-85*s)
    fill(p.open>0?'#f5d688':'#a59667',x-2*s,p.y-80*s,4*s,2*s)
+   if(p.clip)c.restore()
   }
  }
  c.restore()

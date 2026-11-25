@@ -1,5 +1,5 @@
 import type {OfficePoint,OfficePose} from './office-types'
-export interface OfficeGripPose extends OfficePose {wave?:boolean;cup?:boolean;scratch?:boolean}
+export interface OfficeGripPose extends OfficePose {cup?:boolean;scratch?:boolean}
 export interface OfficeHandMotion {left:number;right:number;sip:number;wave:number;lift?:number}
 const unit=(value:number|undefined)=>Number.isFinite(value)?Math.max(0,Math.min(1,value!)):0
 const mix=(from:number,to:number,amount:number)=>from+(to-from)*amount

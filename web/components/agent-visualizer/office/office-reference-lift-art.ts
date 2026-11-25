@@ -32,13 +32,16 @@ function gardenOpening(center: number, y: number, scale: number): Rect {
   return { x: center - 24 * scale, y: y - 80 * scale, width: 48 * scale, height: 80 * scale }
 }
 
-function referenceLiftGeometry(nav: ReturnType<typeof officeNavigation>) {
+type LiftStop = { y: number; surface: boolean; open: number; waiting?: boolean; clip?: { top: number; height: number; opacity: number } }
+
+function referenceLiftGeometry(nav: ReturnType<typeof officeNavigation>, stops?: readonly LiftStop[]) {
   const unit = nav.scale * 450 / 992
   const center = nav.shaftX
   const left = center - shaft.center * unit
   const width = shaft.width * unit
   const shaftTop = nav.top + (4.5 + OFFICE_GARDEN_LIFT_SILL_OFFSET) * nav.scale
-  const shaftBottom = Math.max(shaftTop, ...nav.landings.map(stop => stop.y))
+  const bottomYs = stops ? stops.filter(s => !s.surface).map(s => s.clip ? Math.min(s.y, s.clip.top + s.clip.height) : s.y) : nav.landings.map(stop => stop.y)
+  const shaftBottom = Math.max(shaftTop, ...bottomYs)
   const shaftHeight = shaftBottom - shaftTop
   const opening = gardenOpening(center, nav.hatch.y, nav.scale)
   const shaftCavityWidth = landing.door.width * unit
@@ -73,7 +76,7 @@ function drawGardenDoors(c: CanvasRenderingContext2D, atlas: CanvasImageSource, 
 
 export function drawOfficeReferenceLift(
   c: CanvasRenderingContext2D, atlas: CanvasImageSource, nav: ReturnType<typeof officeNavigation>,
-  front: boolean, car: OfficeLiftVisual, stops: readonly { y: number; surface: boolean; open: number; waiting?: boolean }[],gardenLampOn=true,
+  front: boolean, car: OfficeLiftVisual, stops: readonly LiftStop[],gardenLampOn=true,
 ) {
   const unit = nav.scale * 450 / 992
   const center = nav.shaftX
@@ -83,6 +86,14 @@ export function drawOfficeReferenceLift(
       if (stop.surface) {
         drawGardenDoors(c, atlas, center, stop.y, nav.scale, stop.open,gardenLampOn)
         continue
+      }
+      if (stop.clip && stop.clip.height <= 0.5) continue
+      if (stop.clip) {
+        c.save()
+        c.beginPath()
+        c.rect(0, stop.clip.top, 1e6, stop.clip.height)
+        c.clip()
+        c.globalAlpha *= stop.clip.opacity
       }
       const { door } = landing
       const left = center - landing.center * unit
@@ -112,9 +123,10 @@ export function drawOfficeReferenceLift(
       c.fillRect(plateX,plateY,7*scale,12*scale)
       c.fillStyle=stop.open>.95?'#bfdb97':stop.waiting?'#ffb54c':'#cc9455'
       c.fillRect(plateX+2*scale,plateY+3*scale,3*scale,5*scale)
+      if (stop.clip) c.restore()
     }
   } else {
-    const { unit, center, left, width, shaftTop, shaftHeight, opening } = referenceLiftGeometry(nav)
+    const { unit, center, left, width, shaftTop, shaftHeight, opening } = referenceLiftGeometry(nav, stops)
     c.beginPath()
     c.rect(left, shaftTop, width, shaftHeight)
     c.rect(opening.x, opening.y, opening.width, opening.height)

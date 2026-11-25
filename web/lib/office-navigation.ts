@@ -60,8 +60,12 @@ export function officeNavigation(scene:OfficeScene){
  const surface=scene.floors.find(f=>f.kind==='lounge'),hatch=surface?officeLanding(scene,surface.id)!:{x:shaftX,y:scene.width*.5625*.66}
  const occupied=scene.floors.filter(f=>!f.annexOf&&(f.kind==='team'||f.kind==='break')&&(f.actorKeys.length>0||scene.actors.some(a=>a.floorId===f.id&&!a.hidden)))
  const landings=occupied.map(f=>({...officeLanding(scene,f.id)!,id:f.id}))
+ const visibleLandingY=(f:OfficeFloor)=>{
+  const landingY=officeAisle(scene,f.id)!.y
+  return f.clipHeight!==undefined?Math.min(landingY,f.y+f.clipHeight):landingY
+ }
  return {scale,shaftX,hatch,top:hatch.y+4*scale,left:shaftX-22*scale,right:shaftX+22*scale,railHalf:18*scale,rungPitch:18*scale,
-   bottom:Math.max(hatch.y,...occupied.map(f=>officeAisle(scene,f.id)!.y))+12*scale,landings,visible:landings.length>0}
+   bottom:Math.max(hatch.y,...occupied.map(visibleLandingY))+12*scale,landings,visible:landings.length>0}
 }
 export function officeHatchOpen(scene:OfficeScene,point:OfficePoint|null,manual:boolean){
  const nav=officeNavigation(scene)

@@ -1,6 +1,6 @@
 import { it } from 'node:test'
 import assert from 'node:assert/strict'
-import { OfficeSound } from '../lib/office-sound'
+import { chooseAmbientMotif, OfficeSound } from '../lib/office-sound'
 
 class Param {
   value = 0
@@ -122,5 +122,95 @@ it('plays a soft attention cue only when audible and stops it immediately on mut
   assert.equal(osc.type, 'sine')
   t.sound.update({ ...live, active: false })
   assert.equal(osc.immediatelyStopped, true)
+  t.sound.dispose()
+})
+
+it('paints dry breeze & room warmth beds, scales volume, and zeroes all beds when muted or disposed', async () => {
+  const ctx = new Context(); let now = 0
+  const timers: { id: number; fn: () => void; ms: number }[] = []
+  let nextId = 1
+  const cleared = new Set<number>()
+  const sound = new OfficeSound({
+    createContext: () => ctx as unknown as AudioContext,
+    now: () => now,
+    random: () => 0.4,
+    setTimer: (fn, ms) => { const id = nextId++; timers.push({ id, fn, ms }); return id },
+    clearTimer: (h) => { cleared.add(Number(h)) },
+  })
+  sound.update({ active: true, night: false, wet: false, phase: 'day', season: 'hot', liveliness: 'normal', working: true })
+  await sound.toggleFromGesture()
+  assert.equal(ctx.gains[1].gain.value, 0, 'rain bed stays silent when dry')
+  assert.ok(ctx.gains[2].gain.value > 0, 'dry gentle breeze bed is active')
+  assert.ok(ctx.gains[3].gain.value > 0, 'warm room tone bed is active')
+  const baseline = ctx.gains[0].gain.value
+  sound.setVolume(0.3)
+  assert.ok(ctx.gains[0].gain.value < baseline, 'setVolume scales master gain proportionally')
+  sound.setVolume(0); assert.equal(sound.volume, 0.1)
+  sound.setVolume(2); assert.equal(sound.volume, 1)
+  sound.update({ active: false, night: false, wet: false })
+  for (const g of ctx.gains.slice(0, 4)) assert.equal(g.gain.value, 0)
+  sound.dispose()
+})
+
+it('chooseAmbientMotif reflects weather, time of day, liveliness, and holidays', () => {
+  assert.equal(chooseAmbientMotif({ active: true, night: false, wet: true, weather: 'storm' }, 0.1), 'thunder')
+  assert.equal(chooseAmbientMotif({ active: true, night: false, wet: true, weather: 'rain' }, 0.2), 'raindrop')
+  assert.equal(chooseAmbientMotif({ active: true, night: true, wet: false }, 0.2), 'cricket')
+  assert.equal(chooseAmbientMotif({ active: true, night: false, wet: false, phase: 'day', holiday: 'loy-krathong' }, 0.6), 'chime')
+  assert.equal(chooseAmbientMotif({ active: true, night: false, wet: false, phase: 'day', working: true, liveliness: 'normal' }, 0.9), 'workshop')
+  assert.equal(chooseAmbientMotif({ active: true, night: false, wet: false, phase: 'day', working: true, liveliness: 'quiet' }, 0.9), 'bird')
+})
+
+it('schedules ambient synth motifs cleanly and stops or cancels timers on mute or disposal', async () => {
+  const ctx = new Context(); let now = 0
+  const queue: { id: number; fn: () => void; ms: number }[] = []
+  const cleared: number[] = []
+  let nextId = 1
+  const sound = new OfficeSound({
+    createContext: () => ctx as unknown as AudioContext,
+    now: () => now,
+    random: () => 0.15,
+    setTimer: (fn, ms) => { const entry = { id: nextId++, fn, ms }; queue.push(entry); return entry.id },
+    clearTimer: (h) => { cleared.push(Number(h)) },
+  })
+  const dayState = { active: true, night: false, wet: false, phase: 'day' as const, weather: 'clear' as const, season: 'cool' as const, liveliness: 'normal' as const }
+  sound.update(dayState)
+  await sound.toggleFromGesture()
+  assert.equal(queue.length, 1)
+  assert.equal(ctx.sources.length, 1, 'initial toggle creates only the shared noise loop')
+  queue.shift()!.fn()
+  assert.ok(ctx.sources.length > 1, 'scheduled ambient timer synthesizes a bird/nature motif')
+  assert.equal(queue.length, 1, 're-schedules the next organic motif')
+  const ambientSources = ctx.sources.slice(1)
+  const pendingTimer = queue.at(-1)!.id
+  sound.update({ ...dayState, active: false })
+  assert.ok(cleared.includes(pendingTimer), 'muting clears pending ambient timer')
+  assert.ok(ambientSources.every(s => s.immediatelyStopped), 'muting immediately stops active ambient motif nodes')
+  sound.update(dayState)
+  assert.ok(queue.length >= 2)
+  const beforeDisposeTimer = queue.at(-1)!.id
+  queue.pop()!.fn()
+  const finalTimer = queue.at(-1)!.id
+  assert.notEqual(finalTimer, beforeDisposeTimer)
+  sound.dispose()
+  assert.ok(cleared.includes(finalTimer))
+  assert.ok(ctx.sources.every(s => s.stopped))
+})
+
+it('plays distinct throttled holiday synth cues across all 6 festivals', async () => {
+  const t = setup()
+  t.sound.update({ active: true, night: false, wet: false, holiday: 'songkran' })
+  await t.sound.toggleFromGesture()
+  for (const holiday of ['loy-krathong', 'songkran', 'christmas', 'halloween', 'new-year', 'valentine'] as const) {
+    t.sound.update({ active: true, night: false, wet: false, holiday })
+    t.advance()
+    const before = t.ctx.sources.length
+    assert.equal(t.sound.playCue('holiday'), true, `plays ${holiday} cue`)
+    assert.equal(t.sound.playCue('holiday'), false, `throttles rapid ${holiday} repeat`)
+    assert.ok(t.ctx.sources.length > before, `${holiday} cue allocates synth notes`)
+  }
+  const latest = t.ctx.sources.at(-1)!
+  t.sound.update({ active: false, night: false, wet: false, holiday: 'valentine' })
+  assert.equal(latest.immediatelyStopped, true)
   t.sound.dispose()
 })

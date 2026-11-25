@@ -1,6 +1,6 @@
 import { it } from 'node:test'
 import assert from 'node:assert/strict'
-import { drawOfficeSeasonalRooms } from '../components/agent-visualizer/office/office-seasonal-art'
+import { drawOfficeDesktopHolidayRooms, drawOfficeSeasonalRooms } from '../components/agent-visualizer/office/office-seasonal-art'
 import type { OfficeScene, OfficeFloor } from '../lib/office-types'
 
 function recorder() {
@@ -43,4 +43,39 @@ it('places the interactive lounge prop at the shared left corner in both ordinar
     const {c,calls}=recorder();drawOfficeSeasonalRooms(c,scene([floor('break')]),date,0)
     assert.ok(calls.some(call=>call.op==='translate'&&call.args[0]===450*.12&&call.args[1]===250+253*.74))
   }
+})
+it('draws subtle Desktop holiday decor for team and break rooms, clipped left of the lift and skipped on non-holidays or zero-clipped floors',()=>{
+  const holiday=new Date(2026,3,13,12),nonHoliday=new Date(2026,6,12,12)
+  const skippedCases:[string,OfficeFloor[],Date][]=[
+    ['non-holiday',[{...floor('team'),desktopArt:true},{...floor('break'),desktopArt:true}],nonHoliday],
+    ['non-desktop',[{...floor('team'),desktopArt:false},{...floor('break'),desktopArt:false}],holiday],
+    ['lounge-and-quiet',[{...floor('lounge'),desktopArt:true},{...floor('quiet'),desktopArt:true}],holiday],
+    ['constructing',[{...floor('team'),desktopArt:true,constructing:true}],holiday],
+    ['zero-clipped',[{...floor('team'),desktopArt:true,clipHeight:0}],holiday],
+  ]
+  for(const [label,floors,date] of skippedCases){
+    const skipped=recorder();drawOfficeDesktopHolidayRooms(skipped.c,scene(floors),date,1)
+    assert.equal(skipped.calls.length,0,`skips ${label}`)
+  }
+  const holidayDates=[
+    new Date(2026,0,1,12),
+    new Date(2026,3,13,12),
+    new Date(2026,9,31,12),
+    new Date(2026,11,25,12),
+    new Date(2026,1,14,12),
+    new Date(2026,10,24,12),
+  ]
+  const variants=new Set<string>()
+  for(const date of holidayDates){
+    const room=scene([{...floor('team'),desktopArt:true},{...floor('break'),desktopArt:true}])
+    const before=JSON.stringify(room),{c,calls}=recorder()
+    drawOfficeDesktopHolidayRooms(c,room,date,0)
+    assert.ok(calls.length>0)
+    assert.equal(JSON.stringify(room),before)
+    for(const call of calls)for(const arg of call.args)if(typeof arg==='number')assert.ok(Number.isFinite(arg))
+    for(const call of calls.filter(c=>c.op==='translate'))assert.ok((call.args[0] as number)<450*.80)
+    for(const call of calls.filter(c=>c.op==='rect'))assert.ok((call.args[2] as number)<=450*.80)
+    variants.add(JSON.stringify(calls))
+  }
+  assert.equal(variants.size,6)
 })

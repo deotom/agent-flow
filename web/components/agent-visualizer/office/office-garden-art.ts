@@ -1,4 +1,4 @@
-import type { OfficeScene } from '../../../lib/office-types'
+import type { OfficeHolidayBurst, OfficeScene } from '../../../lib/office-types'
 import { gardenWetness, officeSky, skyPhase, type Holiday, type Season } from '../../../lib/office-sky'
 import { officeDaylight } from '../../../lib/office-daylight'
 
@@ -154,8 +154,51 @@ function buntingSwag(c:Ctx,x0:number,y0:number,x1:number,y1:number,sag:number,co
   }
 }
 
+function drawGardenHolidayBurst(c:Ctx,holiday:Holiday,age:number){
+  const p=Math.max(0,Math.min(1,age/4.5)),fade=Math.min(1,age/.25)*(1-p)
+  if(fade<=.01)return
+  c.save();c.globalAlpha=fade
+  if(holiday==='loy-krathong'){
+    for(const rOff of [0,.45]){
+      const rp=((age*.7+rOff)%1)
+      c.strokeStyle='#92d4e0';c.lineWidth=.8;c.beginPath();c.ellipse(0,-3,5+rp*12,1.6+rp*2.8,0,0,Math.PI*2);c.stroke()
+    }
+    for(let i=0;i<5;i++)oval(c,(i-2)*5+Math.sin(age*5+i)*2,-8-age*7-i*2,1.1,1.3,'#ffe394')
+  }else if(holiday==='songkran'){
+    for(let i=0;i<7;i++){
+      const sp=(age*1.4+i*.14)%1,side=i%2?1:-1
+      const sx=side*(3+sp*16),sy=-6-Math.sin(sp*Math.PI)*16
+      oval(c,sx,sy,1.3,1.3,i%3?'#9ae6ff':'#ffffff')
+      oval(c,sx*.7,sy-3,1.2,1,i%2?'#fff9eb':'#f697b5')
+    }
+  }else if(holiday==='christmas'){
+    const pulse=.7+.45*Math.sin(age*8)
+    oval(c,0,-28,4.2*pulse,4.2*pulse,'rgba(255,240,166,.55)');oval(c,0,-28,2.6,2.6,'#fff0a6')
+    for(let i=0;i<6;i++){
+      const sy=-26+((age*12+i*5)%22),sx=Math.sin(age*3+i*1.3)*14
+      oval(c,sx,sy,1.1,1.1,'#ffffff');oval(c,-sx*.7,sy-2,1,1,'#ffd875')
+    }
+  }else if(holiday==='halloween'){
+    const flare=.75+.25*Math.sin(age*10)
+    oval(c,-6.5,-5,1.4*flare,1.4*flare,'#ffe27a');oval(c,-2.5,-5,1.4*flare,1.4*flare,'#ffe27a')
+    for(let i=0;i<6;i++)oval(c,Math.cos(age*3+i*1.1)*12,-8-age*6-(i%3)*4,1.3,1.3,i%2?'#c896ff':'#ffb347')
+  }else if(holiday==='new-year'){
+    const colors=['#ffe47a','#ff8274','#75d1ff']
+    for(let i=0;i<8;i++){
+      const a=i/8*Math.PI-Math.PI,r=4+((age*18+i*3)%22)
+      oval(c,Math.cos(a)*r,-9+Math.sin(a)*r,1.3,1.3,colors[i%3])
+    }
+  }else if(holiday==='valentine'){
+    for(let i=0;i<6;i++){
+      const hp=((age*.55+i*.16)%1),hx=(i-2.5)*4.5+Math.sin(age*3+i)*2,hy=-7-hp*24
+      c.fillStyle=i%2?'#ff638d':'#ff9eb8';c.beginPath();c.moveTo(hx,hy+2.5);c.bezierCurveTo(hx-4,hy,hx-2,hy-3.5,hx,hy-1.2);c.bezierCurveTo(hx+2,hy-3.5,hx+4,hy,hx,hy+2.5);c.fill()
+    }
+  }
+  c.restore()
+}
+
 /** Subtle per-holiday garden props and overhead accents, kept clear of the right lift shaft. */
-export function drawOfficeHolidayGarden(c:Ctx,scene:OfficeScene,date:Date,time:number,overrideHoliday?:Holiday|null):void{
+export function drawOfficeHolidayGarden(c:Ctx,scene:OfficeScene,date:Date,time:number,overrideHoliday?:Holiday|null,burst?:OfficeHolidayBurst|null):void{
   const garden=scene.floors.find(f=>f.kind==='lounge'),h=garden?.height??0
   if(!garden||!h)return
   const sky=officeSky(date),holiday=overrideHoliday===undefined?sky.holiday:overrideHoliday
@@ -248,11 +291,15 @@ export function drawOfficeHolidayGarden(c:Ctx,scene:OfficeScene,date:Date,time:n
       for(const [rx,ry,col] of [[-4,-5.5,'#e35d81'],[0,-6.5,'#f48fb1'],[4,-5.5,'#e35d81'],[-2,-4,'#f8bbd0'],[2,-4,'#c9496e']] as const)oval(c,rx,ry,2.5,2,col)
     })
   }
+  if(burst&&burst.holiday===holiday){
+    const age=time>0?time-burst.startedAt:.4
+    if(age>=0&&age<4.5)place(focalX,focalY,()=>drawGardenHolidayBurst(c,holiday,age))
+  }
   c.restore()
 }
 
 /** Small wildlife and plant accents live on grass margins, clear of furniture and the hatch. */
-export function drawOfficeGarden(c:Ctx,scene:OfficeScene,date:Date,time:number,light=officeDaylight(date)):void{
+export function drawOfficeGarden(c:Ctx,scene:OfficeScene,date:Date,time:number,light=officeDaylight(date),burst?:OfficeHolidayBurst|null):void{
   const garden=scene.floors.find(f=>f.kind==='lounge'),h=garden?.height??0
   if(!garden||!h)return
   const sky=officeSky(date),w=scene.width,k=w/450
@@ -266,7 +313,7 @@ export function drawOfficeGarden(c:Ctx,scene:OfficeScene,date:Date,time:number,l
     const paintLamp=lit?drawLitGardenLamp:drawUnlitGardenLamp
     for(const [x,y] of paintedLampCenters)paintLamp(c,x*w,garden.y+y*h,k,h/195)
   }
-  if(sky.holiday)drawOfficeHolidayGarden(c,scene,date,time,sky.holiday)
+  if(sky.holiday)drawOfficeHolidayGarden(c,scene,date,time,sky.holiday,burst)
   const desktop=Boolean(garden.desktopArt)
   c.globalAlpha=(Number.isFinite(c.globalAlpha)?c.globalAlpha:1)*(afterDark?.7:1)
   c.beginPath();c.rect(w*(desktop?.02:.025),garden.y+h*(desktop?.60:.61),w*(desktop?.77:.795),h*(desktop?.275:.145));c.clip()

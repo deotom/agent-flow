@@ -2,9 +2,10 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { OfficeScene } from '../../../lib/office-types'
-import { officeLayoutChanged, officeLayoutCommitsImmediately, officeLayoutFrame } from '../../../lib/office-layout'
+import { officeLayoutChanged, officeLayoutFrame } from '../../../lib/office-layout'
 
 const DURATION=420
+const useIsomorphicLayoutEffect=typeof window!=='undefined'?useLayoutEffect:useEffect
 type Transition={from:OfficeScene;to:OfficeScene;elapsed:number;last:number|null;duration:number}
 
 /** Retarget geometry from the last displayed frame; ordinary clock/status updates do not restart it. */
@@ -16,12 +17,13 @@ export function useOfficeLayout(target:OfficeScene,animate:boolean,suspended=fal
   controls.current={animate,suspended}
   const suspendedDesktop=suspended&&Boolean(target.floors[0]?.desktopArt)
   // Supply new metadata on the same render, while retaining displayed room geometry.
-  const rendered=frame===target||suspendedDesktop?target:officeLayoutFrame(frame,target,0)
-  useLayoutEffect(()=>{displayed.current=rendered},[rendered])
+  const rendered=!animate||frame===target||suspendedDesktop?target:officeLayoutFrame(frame,target,0)
+  useIsomorphicLayoutEffect(()=>{displayed.current=rendered},[rendered])
   useEffect(()=>{
     const prior=priorTarget.current,changed=officeLayoutChanged(prior,target)
     const newRoom=target.floors.some(f=>f.kind==='team'&&!prior.floors.some(p=>p.id===f.id))
-    if(!animate||suspendedDesktop||officeLayoutCommitsImmediately(prior,target)||typeof requestAnimationFrame==='undefined'){
+    const desktop=Boolean(target.floors[0]?.desktopArt||prior.floors[0]?.desktopArt)
+    if(!animate||suspendedDesktop||typeof requestAnimationFrame==='undefined'){
       if(handle.current!==null)cancelAnimationFrame(handle.current)
       priorTarget.current=target
       handle.current=null;transition.current=null;displayed.current=target;setFrame(target);return
@@ -34,7 +36,7 @@ export function useOfficeLayout(target:OfficeScene,animate:boolean,suspended=fal
     }
     priorTarget.current=target
     if(changed){
-      transition.current={from:displayed.current,to:target,elapsed:0,last:null,duration:newRoom?900:DURATION}
+      transition.current={from:displayed.current,to:target,elapsed:0,last:null,duration:newRoom&&!desktop?900:DURATION}
       const initial=officeLayoutFrame(displayed.current,target,0)
       displayed.current=initial;setFrame(initial)
     }else if(transition.current){

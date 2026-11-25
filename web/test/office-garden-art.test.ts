@@ -2,6 +2,7 @@ import { it } from 'node:test'
 import assert from 'node:assert/strict'
 import { drawOfficeGarden, drawOfficeGardenActorShadow, drawOfficeHolidayGarden } from '../components/agent-visualizer/office/office-garden-art'
 import { officeDaylight } from '../lib/office-daylight'
+import { skyHoliday } from '../lib/office-sky'
 import type { OfficeScene, OfficeFloor } from '../lib/office-types'
 
 function recorder(){
@@ -87,5 +88,30 @@ it('renders distinct holiday garden decor left of the lift across all 6 holidays
       drawOfficeHolidayGarden(indoor.c,scene(kind),d,1)
       assert.equal(indoor.calls.length,0)
     }
+  }
+})
+
+it('paints interactive garden holiday bursts across all 6 holidays while staying left of the lift',()=>{
+  const sc={...scene(),floors:[{...floor('lounge'),desktopArt:true}]}
+  const holidayDates=[
+    new Date(2026,10,24,19), // loy-krathong
+    new Date(2026,3,14,12),  // songkran
+    new Date(2026,11,25,12), // christmas
+    new Date(2026,9,31,19),  // halloween
+    new Date(2027,0,1,20),   // new-year
+    new Date(2026,1,14,12),  // valentine
+  ]
+  for(const d of holidayDates){
+    const holiday=skyHoliday(d)!
+    const base=recorder(),withBurst=recorder(),expired=recorder()
+    const burst={holiday,startedAt:.2,seed:.5,x:sc.width*.415,y:280*.84}
+    drawOfficeHolidayGarden(base.c,sc,d,1)
+    drawOfficeHolidayGarden(withBurst.c,sc,d,1,undefined,burst)
+    drawOfficeHolidayGarden(expired.c,sc,d,1,undefined,{...burst,startedAt:-10})
+    assert.ok(withBurst.calls.length>base.calls.length,`burst adds shapes for ${holiday}`)
+    for(const call of withBurst.calls)for(const arg of call.args)if(typeof arg==='number')assert.ok(Number.isFinite(arg))
+    const xs=withBurst.calls.filter(c=>c.op==='translate'||c.op==='fillRect'||c.op==='ellipse'||c.op==='moveTo'||c.op==='lineTo').map(c=>Number(c.args[0])).filter(Number.isFinite)
+    assert.ok(xs.every(x=>x<sc.width*.80),`holiday garden burst stays clear of Desktop lift for ${holiday}`)
+    assert.deepEqual(expired.calls,base.calls,`expired burst leaves no residual shapes for ${holiday}`)
   }
 })
